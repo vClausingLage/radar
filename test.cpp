@@ -3,9 +3,10 @@
 #include <cmath>
 #include <chrono>
 #include <vector>
+#include <SFML/Graphics.hpp>
 
 constexpr double SPEED_OF_TRAVEL = 10; // m/s
-constexpr int TIME_STEP = 10; // milliseconds
+constexpr int TIME_STEP = 200; // milliseconds
 
 class Vector {
     public: 
@@ -39,15 +40,31 @@ class Signal {
             position.y += direction.y * speed * time;
             position.z += direction.z * speed * time;
         }
+
+        void reflectToRadar(const Vector::Vector3& radarPosition) {
+            // Reflect the signal back to the radar
+            direction.x = radarPosition.x - position.x;
+            direction.y = radarPosition.y - position.y;
+            direction.z = radarPosition.z - position.z;
+            double length = std::sqrt(
+                direction.x * direction.x +
+                direction.y * direction.y +
+                direction.z * direction.z
+            );
+            direction.x /= length;
+            direction.y /= length;
+            direction.z /= length;
+        }
 };
 
 class Radar {
     public:
         Vector::Vector3 position;
+        Vector::Vector3 pulseDirection;
 
         Radar(const Vector::Vector3& pos) : position(pos) {}
 
-        Signal transmitAndReceive(const Vector::Vector3& pulseDirection) const {
+        Signal transmit(const Vector::Vector3& pulseDirection) const {
             Vector::Vector3 direction(
                 pulseDirection.x - position.x,
                 pulseDirection.y - position.y,
@@ -58,6 +75,15 @@ class Radar {
             direction.y /= length;
             direction.z /= length;
             return Signal(position, direction, SPEED_OF_TRAVEL);
+        }
+
+        void turnRadarDirection(Vector::Vector3 &pulseDirection, double angle = 1.0) {
+            // Rotate the direction 1 degree to the right
+            angle = 5.0 * M_PI / 180.0; // 1 degree in radians
+            double newX = pulseDirection.x * std::cos(angle) - pulseDirection.y * std::sin(angle);
+            double newY = pulseDirection.x * std::sin(angle) + pulseDirection.y * std::cos(angle);
+            pulseDirection.x = newX;
+            pulseDirection.y = newY;
         }
 };
 
@@ -90,32 +116,26 @@ class Map {
         }
 };
 
+class Track {
+
+};
+
 class Search {
     Radar radar;
     Map map;
     Target target;
-    Vector::Vector3 pulseDirection;
     public:
-        Search(const Radar& radar, const Map map, const Target& target, Vector::Vector3 pulseDirection) : radar(radar), map(map), target(target), pulseDirection(pulseDirection) {}
+        Search(const Radar& radar, const Map map, const Target& target) : radar(radar), map(map), target(target) {}
         
         double time = 0.0;
         double timeStep = 0.1;
         bool hit = false;
-
-        void turnRadarDirection(Vector::Vector3 &pulseDirection) {
-            // Rotate the direction 1 degree to the right
-            double angle = 1.0 * M_PI / 180.0; // 1 degree in radians
-            double newX = pulseDirection.x * std::cos(angle) - pulseDirection.y * std::sin(angle);
-            double newY = pulseDirection.x * std::sin(angle) + pulseDirection.y * std::cos(angle);
-            pulseDirection.x = newX;
-            pulseDirection.y = newY;
-            pulseDirection.z = 0;
-        }
         
         void search() {
-            Signal signal = radar.transmitAndReceive(pulseDirection);
-            std::cout << "Pulse direction begin search: (" << pulseDirection.x << ", " << pulseDirection.y << ", " << pulseDirection.z << ")" << std::endl;
+            Signal signal = radar.transmit(radar.pulseDirection);
+            std::cout << "Pulse direction begin search: (" << radar.pulseDirection.x << ", " << radar.pulseDirection.y << ", " << radar.pulseDirection.z << ")" << std::endl;
             while (map.isWithinBounds(Vector::Vector3(signal.position))) {
+                // time = 0;
                 signal.move(timeStep);
                 time += timeStep;
             
@@ -130,12 +150,24 @@ class Search {
 
             if (hit) {
                 std::cout << "Signal hit target!" << std::endl;
+                //! change doppler effect
+                signal.reflectToRadar(radar.position);
+                while (map.isWithinBounds(signal.position)) {
+                    signal.move(timeStep);
+                    std::cout << "Signal returning position: (" << signal.position.x << ", " << signal.position.y << ", " << signal.position.z << ")" << std::endl;
+                    if (signal.position.distanceTo(radar.position) < 1.0) {
+                        std::cout << "Signal returned to radar!" << std::endl;
+                        break;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(TIME_STEP));
+                }
             } else {
                 std::cout << "No target." << std::endl;
             }
 
-            turnRadarDirection(pulseDirection);
-            std::cout << "Pulse direction after search: (" << pulseDirection.x << ", " << pulseDirection.y << ", " << pulseDirection.z << ")" << std::endl;
+            radar.turnRadarDirection(radar.pulseDirection);
+            std::cout << "Pulse direction after search: (" << radar.pulseDirection.x << ", " << radar.pulseDirection.y << ", " << radar.pulseDirection.z << ")" << std::endl;
+            // search();
         }
 };
 
@@ -146,22 +178,24 @@ int main() {
 
     // II
     // spawn target(s)
-    Target target(Vector::Vector3(10, 1, 0), Vector::Vector3(1, 1, 1));
-    std::vector<Target> targets;
-    targets.push_back(target);
-    targets.push_back(Target(Vector::Vector3(15, 5, 0), Vector::Vector3(1, 1, 1)));
-    targets.push_back(Target(Vector::Vector3(20, 10, 0), Vector::Vector3(1, 1, 1)));
+    Target target(Vector::Vector3(7, 0, 0), Vector::Vector3(1, 1, 1));
+    //! implement search for multiple targets
+    // std::vector<Target> targets;
+    // targets.push_back(target);
+    // targets.push_back(Target(Vector::Vector3(15, 5, 0), Vector::Vector3(1, 1, 1)));
+    // targets.push_back(Target(Vector::Vector3(20, 10, 0), Vector::Vector3(1, 1, 1)));
 
     // III
     // spawn radar
     Vector::Vector3 radarPos = Vector::Vector3(0, 0, 0);
+    Radar radar(radarPos);
     // radar config
     Vector::Vector3 pulseDirection = Vector::Vector3(10, 0, 0);
+    radar.pulseDirection = pulseDirection;
 
-    //! implement search for multiple targets
-
-    Search search = Search(radarPos, map, target, pulseDirection);
-    
+    // IV
+    // search for targets
+    Search search = Search(radar, map, target);
     search.search();
 
     return 0;
