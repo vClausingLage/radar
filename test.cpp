@@ -4,6 +4,11 @@
 #include <chrono>
 #include <vector>
 #include <chrono>
+// SERVER REQUIREMENTS
+#include <websocketpp/config/asio_no_tls_client.hpp>
+#include <websocketpp/client.hpp>
+#include <iostream>
+#include <string>
 
 constexpr double SPEED_OF_TRAVEL = 20; // m/s
 constexpr int TIME_STEP = 2; // milliseconds
@@ -128,10 +133,53 @@ class Search {
     Radar radar;
     Map map;
     Target target;
+    typedef websocketpp::client<websocketpp::config::asio_client> client;
+    client c;
+
     public:
-        Search(const Radar& radar, const Map map, const Target& target) : radar(radar), map(map), target(target) {}
+        Search(const Radar& radar, const Map map, const Target& target) : radar(radar), map(map), target(target) {
+            c.init_asio();
+            c.set_open_handler(&on_open);
+            c.set_message_handler(&on_message);
+        }
+
+        static void on_open(websocketpp::connection_hdl hdl) {
+            std::cout << "Connection opened" << std::endl;
+        }
+
+        static void on_message(websocketpp::connection_hdl hdl, client::message_ptr msg) {
+            std::cout << "Received message: " << msg->get_payload() << std::endl;
+        }
+
+        void sendDataToServer(const std::string& data) {
+            websocketpp::lib::error_code ec;
+            client::connection_ptr con = c.get_connection("ws://localhost:8080", ec);
+
+            if (ec) {
+                std::cerr << "Could not create connection because: " << ec.message() << std::endl;
+                return;
+            }
+
+            c.connect(con);
+
+            std::thread asio_thread([this]() {
+                c.run();
+            });
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+            con->send("test");
+            std::cout << "Data sent to server" << std::endl;
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+
+            asio_thread.detach();
+        }
         
         void search(Vector3 i, int j) {
+            std::string jsonData = "{\"x\": " + std::to_string(i.x) + ", \"y\": " + std::to_string(i.y) + ", \"z\": " + std::to_string(i.z) + "}";
+            sendDataToServer(jsonData);
             std::cout << "Search index " << j << std::endl;
             double time = 0.0;
             double timeStep = 0.1;
@@ -165,6 +213,10 @@ class Search {
                     std::cout << "Signal returning position: (" << signal.position.x << ", " << signal.position.y << ", " << signal.position.z << ")" << std::endl;
                     if (signal.position.distanceTo(radar.position) < 1.0) {
                         std::cout << "Signal returned to radar!" << std::endl;
+                        std::string returnData = "{\"x\": " + std::to_string(signal.position.x) + 
+                                                ", \"y\": " + std::to_string(signal.position.y) + 
+                                                ", \"z\": " + std::to_string(signal.position.z) + "}";
+                        sendDataToServer(returnData);
                         break;
                     }
                 }
