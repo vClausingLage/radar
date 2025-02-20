@@ -1,13 +1,14 @@
 package main
 
 import (
-	"fmt"
+	worldmap "radar/map"
+	radar "radar/radar"
+	search "radar/search"
 	Vector "radar/vector"
 )
 
 func main() {
-	v := Vector.New(1, 1, 0)
-	w := Vector.New(1, 2, 0)
-	fmt.Println(v.DistanceTo(w))
-	fmt.Println(v)
+	world := worldmap.New(100)
+	search := search.New(*radar.New(*Vector.New(0, 0, 0), *Vector.New(10, 0, 0)), *world)
+	search.Search()
 }

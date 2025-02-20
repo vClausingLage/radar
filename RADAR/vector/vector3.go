@@ -1,13 +1,16 @@
 package Vector
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
 
 type Vector3 struct {
 	X, Y, Z float64
 }
 
-func New(x, y, z float64) Vector3 {
-	return Vector3{x, y, z}
+func New(x, y, z float64) *Vector3 {
+	return &Vector3{x, y, z}
 }
 
 func (v Vector3) DistanceTo(other Vector3) float64 {
@@ -29,4 +32,8 @@ func (v Vector3) Add(other Vector3) Vector3 {
 
 func (v Vector3) Scale(scalar float64) Vector3 {
 	return Vector3{v.X * scalar, v.Y * scalar, v.Z * scalar}
+}
+
+func (v Vector3) String() string {
+	return fmt.Sprintf("(%f, %f, %f)", v.X, v.Y, v.Z)
 }

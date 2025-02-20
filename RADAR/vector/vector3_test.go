@@ -16,7 +16,7 @@ func TestDistanceTo(t *testing.T) {
 	v1 := New(1, 2, 3)
 	v2 := New(4, 5, 6)
 	expected := math.Sqrt(27)
-	result := v1.DistanceTo(v2)
+	result := v1.DistanceTo(*v2)
 	if result != expected {
 		t.Errorf("v1.DistanceTo(v2) = %v; want %v", result, expected)
 	}
@@ -35,7 +35,7 @@ func TestNormalize(t *testing.T) {
 	v := New(3, 0, 4)
 	expected := New(0.6, 0, 0.8)
 	result := v.Normalize()
-	if result != expected {
+	if result != *expected {
 		t.Errorf("v.Normalize() = %v; want %v", result, expected)
 	}
 }
@@ -44,8 +44,8 @@ func TestAdd(t *testing.T) {
 	v1 := New(1, 2, 3)
 	v2 := New(4, 5, 6)
 	expected := New(5, 7, 9)
-	result := v1.Add(v2)
-	if result != expected {
+	result := v1.Add(*v2)
+	if result != *expected {
 		t.Errorf("v1.Add(v2) = %v; want %v", result, expected)
 	}
 }
@@ -55,7 +55,7 @@ func TestScale(t *testing.T) {
 	scalar := 2.0
 	expected := New(2, 4, 6)
 	result := v.Scale(scalar)
-	if result != expected {
+	if result != *expected {
 		t.Errorf("v.Scale(scalar) = %v; want %v", result, expected)
 	}
 }
