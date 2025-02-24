@@ -1,7 +1,6 @@
 package search
 
 import (
-	"fmt"
 	Worldmap "radar/map"
 	Radar "radar/radar"
 	"time"
@@ -16,17 +15,21 @@ func New(radar Radar.Radar, worldMap Worldmap.WorldMap) *SearchCycle {
 	return &SearchCycle{Radar: radar, WorldMap: worldMap}
 }
 
-func (s *SearchCycle) Search() {
+func pulse(s *SearchCycle) {
 	signal := s.Radar.Transmit()
-	fmt.Print(signal)
-	for {
+	maxSteps := s.WorldMap.Radius / signal.Speed
+	for range int(maxSteps + 1) {
 		signal.Move()
 		if !s.WorldMap.Contains(signal) {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
-		// hit logic
-		// miss logic
+		time.Sleep(50 * time.Millisecond)
+	}
+}
 
+func (s *SearchCycle) Search(m *Worldmap.WorldMap) {
+	for range int(3) {
+		pulse(s)
+		s.Radar.UpdatePulseDirection()
 	}
 }

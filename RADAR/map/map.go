@@ -5,12 +5,12 @@ import (
 	Signal "radar/signal"
 )
 
-func New(radius float64) *WorldMap {
-	return &WorldMap{Radius: radius}
-}
-
 type WorldMap struct {
 	Radius float64
+}
+
+func New(radius float64) *WorldMap {
+	return &WorldMap{Radius: radius}
 }
 
 func (m *WorldMap) Contains(s *Signal.Signal) bool {
