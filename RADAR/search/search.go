@@ -1,9 +1,9 @@
 package search
 
 import (
+	"fmt"
 	Worldmap "radar/map"
 	Radar "radar/radar"
-	"time"
 )
 
 type SearchCycle struct {
@@ -16,20 +16,14 @@ func New(radar Radar.Radar, worldMap Worldmap.WorldMap) *SearchCycle {
 }
 
 func pulse(s *SearchCycle) {
-	signal := s.Radar.Transmit()
-	maxSteps := s.WorldMap.Radius / signal.Speed
-	for range int(maxSteps + 1) {
-		signal.Move()
-		if !s.WorldMap.Contains(signal) {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	signal := s.Radar.Transceive()
+
 }
 
 func (s *SearchCycle) Search(m *Worldmap.WorldMap) {
 	for range int(3) {
 		pulse(s)
+		fmt.Println("Pulse sent" + s.Radar.PulseDirection.String())
 		s.Radar.UpdatePulseDirection()
 	}
 }

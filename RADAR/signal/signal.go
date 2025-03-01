@@ -1,7 +1,6 @@
 package signal
 
 import (
-	"fmt"
 	Vector "radar/vector"
 )
 
@@ -16,7 +15,7 @@ func New(position, direction Vector.Vector3, speed float64) *Signal {
 }
 
 func (s *Signal) Move() {
-	fmt.Println("Moving signal" + s.Position.String())
+	// fmt.Println("Moving signal" + s.Position.String())
 	s.Position.X += s.Direction.X * s.Speed
 	s.Position.Y += s.Direction.Y * s.Speed
 	s.Position.Z += s.Direction.Z * s.Speed

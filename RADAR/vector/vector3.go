@@ -29,3 +29,10 @@ func (v Vector3) Normalize() *Vector3 {
 func (v Vector3) String() string {
 	return fmt.Sprintf("(%f, %f, %f)", v.X, v.Y, v.Z)
 }
+
+func (v Vector3) TurnDegrees(angle float64) *Vector3 {
+	angle = angle * math.Pi / 180
+	x := v.X*math.Cos(angle) - v.Y*math.Sin(angle)
+	y := v.X*math.Sin(angle) + v.Y*math.Cos(angle)
+	return &Vector3{x, y, v.Z}
+}

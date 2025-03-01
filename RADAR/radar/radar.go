@@ -1,6 +1,7 @@
 package radar
 
 import (
+	"fmt"
 	Signal "radar/signal"
 	Vector "radar/vector"
 )
@@ -8,20 +9,23 @@ import (
 type Radar struct {
 	Position       Vector.Vector3
 	PulseDirection Vector.Vector3
+	Speed          float64
 }
 
-func New(position Vector.Vector3, pulseDirection Vector.Vector3) *Radar {
-	return &Radar{Position: position, PulseDirection: pulseDirection}
+func New(position Vector.Vector3, pulseDirection Vector.Vector3, speed float64) *Radar {
+	return &Radar{Position: position, PulseDirection: pulseDirection, Speed: speed}
 }
 
-func (r Radar) Transmit() *Signal.Signal {
+func (r Radar) Transceive() *Signal.Signal {
 	direction := r.PulseDirection.Normalize()
-	return Signal.New(r.Position, *direction, 1.0)
+	return Signal.New(r.Position, *direction, r.Speed)
 }
 
-func (r Radar) UpdatePulseDirection() {
+func (r *Radar) UpdatePulseDirection() {
 	// Rotate the pulse direction
-	r.PulseDirection = *Vector.New(2, 0, 0)
+	fmt.Println("Updating pulse direction")
+	r.PulseDirection = *r.PulseDirection.TurnDegrees(1)
+	fmt.Println("Pulse direction updated" + r.PulseDirection.String())
 
 }
 
