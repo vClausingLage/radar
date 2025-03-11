@@ -24,4 +24,8 @@ export class Vector2 {
     normalize(): Vector2 {
         return this.divide(this.magnitude())
     }
+
+    equals(v: Vector2): boolean {
+        return this.x === v.x && this.y === v.y
+    }
 }

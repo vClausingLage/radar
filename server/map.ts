@@ -5,7 +5,7 @@ export class WorldMap {
     constructor(private range: number, private targets: Target[]) {
     }
 
-    getTartgets(): Target[] {
+    getTargets(): Target[] {
         return this.targets
     }
 
@@ -17,11 +17,9 @@ export class WorldMap {
         return Math.sqrt(v.x * v.x + v.y * v.y) <= this.range
     }
 
-    addTargets(t: Target[]): Target[] {
-        const res = []
+    addTargets(t: Target[]): void {
         for (const target of t) {
-            if (this.isWithinRange(target.position)) res.push(target)
+            if (this.isWithinRange(target.position)) this.targets.push(target)
         }
-        return res
     }
 }
