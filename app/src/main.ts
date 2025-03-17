@@ -1,12 +1,22 @@
-import Phaser from "phaser";
+import Phaser, { Math as PM } from "phaser"
+import { Asteroid, Radar, Target } from "./radar"
 
 class Broomster extends Phaser.Scene
 {
+  private canvas: HTMLCanvasElement | null = null
+  private targets: Target[] = []
+  private asteroids: Asteroid[] = []
+  private radar: Radar | null = null
+
+  constructor ()
+  {
+    super();
+  }
   preload ()
   {
     // this.load.setBaseURL('https://cdn.phaserfiles.com/v385');
-
-    this.load.image('ship', 'ship.png');
+    this.canvas = this.sys.game.canvas;
+    this.load.image('ship', 'Ship.png');
     this.load.image('rwr', 'screen.png');
     this.load.image('radar', 'screen.png');
     this.load.image('track', 'track.png');
@@ -15,29 +25,62 @@ class Broomster extends Phaser.Scene
 
   create ()
   {
-    // this.add.image(400, 300, 'sky');
-
-    // const particles = this.add.particles(0, 0, 'red', {
-    //     speed: 100,
-    //     scale: { start: 1, end: 0 },
-    //     blendMode: 'ADD'
-    // });
-
     const ship = this.physics.add.image(500, 500, 'ship');
+    ship.setVelocity(0, 0);
+    ship.setBounce(1, 1);
+    ship.setCollideWorldBounds(true);
     this.add.image(50, 450, 'rwr');
     this.add.text(3, 380, 'RWR', { font: '16px Courier', color: '#00ff00' });
     this.add.image(950, 450, 'radar');
     this.add.text(903, 380, 'RADAR', { font: '16px Courier', color: '#00ff00' });
+    
 
-    ship.setVelocity(0, 0);
-    ship.setBounce(1, 1);
-    ship.setCollideWorldBounds(true);
+    // create targets and aasteroids and push them to radar
+    this.targets.push(new Target(0, new PM.Vector2(100, 100), new PM.Vector2(1, 0), 1))
+    this.targets.push(new Target(1, new PM.Vector2(200, 200), new PM.Vector2(1, 0), 2))
+    this.asteroids.push(new Asteroid(0, new PM.Vector2(300, 300), new PM.Vector2(1, 0), 1, 10))
+    this.asteroids.push(new Asteroid(1, new PM.Vector2(400, 400), new PM.Vector2(1, 0), 2, 20))
 
-    // particles.startFollow(logo);
+    this.radar = new Radar(this.targets, 450, new PM.Vector2(500, 500));
+    this.radar.setDirection(new PM.Vector2(1, 0));
+    this.radar.search();
   }
 
   update ()
   {
+    // show targets for development
+    this.targets.forEach(target => {
+      const circle = this.add.circle(target.position.x, target.position.y, 2, 0xffffff);
+      this.time.delayedCall(1500, () => {
+        circle.destroy();
+      });
+    })
+    // show asteroids for development
+    this.asteroids.forEach(asteroid => {
+      const circle = this.add.circle(asteroid.position.x, asteroid.position.y, 2, 0xff0000);
+      this.time.delayedCall(1500, () => {
+        circle.destroy();
+      }
+    )});
+    // move targets
+    if (this.time.now % 500 < 16.67) {
+      this.targets.forEach(target => {
+        target.position.add(target.direction.clone().scale(target.speed));
+        if (target.position.x <= 0 || target.position.x >= Number(this?.canvas?.width || 1000)) {
+          target.direction.x *= -1;
+        }
+        if (target.position.y <= 0 || target.position.y >= Number(this.sys.game.config.height)) {
+          target.direction.y *= -1;
+        }
+      });
+    }
+    // move asteroids
+    if (this.time.now % 500 < 16.67) {
+      this.asteroids.forEach(asteroid => {
+        asteroid.position.add(asteroid.direction.clone().scale(asteroid.speed));
+      });
+    }
+    // search for targets
     
   }
 }
