@@ -13,8 +13,12 @@ export class Asteroid extends Target {
 export class Radar {
     private range: number
     private targets: Target[]
+    private time: Phaser.Time.Clock
+    private scene: Phaser.Scene
 
-    constructor(t: Target[], r: number, private pos: PM.Vector2 = new PM.Vector2(), private pulseDir?: PM.Vector2) {
+    constructor(scene: Phaser.Scene, time: Phaser.Time.Clock, t: Target[], r: number, private pos: PM.Vector2 = new PM.Vector2(), private pulseDir?: PM.Vector2) {
+        this.scene = scene
+        this.time = time
         this.range = r
         this.targets = t
     }
@@ -46,7 +50,10 @@ export class Radar {
         // add left and right tolerance
         // use sin / cos for tolerance
         for (const t of this.targets) {
-            
+            console.log('TARGET',t)
+            // console.log(this.range)
+            // console.log(this.pos)
+            // console.log(d)
         }
 
         return null
@@ -58,7 +65,6 @@ export class Radar {
     * @param endDirection: PM.Vector2
     */
     async search(startDirection?: PM.Vector2, endDirection?: PM.Vector2): Promise<void> {
-        const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
         if (startDirection && endDirection) {
             console.log('searchging from', startDirection, 'to', endDirection)
         }
@@ -69,14 +75,44 @@ export class Radar {
             console.log('searching to', endDirection)
         }
         if (!startDirection && !endDirection) {
-            console.log('searching full circle')
-            for (let angle = 0; angle < 360; angle++) {
-                await delay(1000);
-                const direction = new PM.Vector2()
-                this.setDirection(direction)
-                const target = this.transceive(direction)
-                console.log('searching', this.pulseDir)
+            let i = 360
+            if (i > 0) {
+                this.time.addEvent({
+                    delay: 20,
+                    callback: () => {
+                        console.log('searching full circle', i)
+                        i--
+                        
+                        // const radarBeam = new Phaser.GameObjects.Line(this.scene, this.pos.x, this.pos.y - 20, 0, 0, this.range, 0, 0x801d)
+                        var line = new Phaser.GameObjects.Line(
+                            this.scene,
+                            this.pos.x,
+                            this.pos.y,
+                            this.pos.x,
+                            this.pos.y,
+                            this.pos.x + this.pulseDir?.x! * 200,
+                            this.pos.y + this.pulseDir?.y! * 200,
+                            0x801d,
+                            0.5
+                        )
+                        // var line = this.scene.add.line(this.pos.x, this.pos.y, this.pos.x, this.pos.y, this.pulseDir?.x! * 100, this.pulseDir?.y! *100, 0x801d)
+                        line.setRotation(Phaser.Math.DegToRad(i))
+                        // this.scene.tweens.add({
+                        //     targets: line,
+                        //     alpha: 0,
+                        //     duration: 2000,
+                        //     onComplete: () => line.destroy()
+                        // })
+
+                    },
+                    repeat: i
+                })
             }
+                // const direction = new PM.Vector2()
+                // this.setDirection(direction)
+                // const target = this.transceive(direction)
+                // console.log('searching', this.pulseDir, target)
+            
         }
     }
 }
