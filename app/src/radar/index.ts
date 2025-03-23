@@ -11,15 +11,13 @@ export class Asteroid extends Target {
 }
 
 export class Radar {
-    private range: number
     private targets: Target[]
     private time: Phaser.Time.Clock
     private scene: Phaser.Scene
 
-    constructor(scene: Phaser.Scene, time: Phaser.Time.Clock, t: Target[], r: number, private pos: PM.Vector2 = new PM.Vector2(), private pulseDir?: PM.Vector2) {
+    constructor(scene: Phaser.Scene, time: Phaser.Time.Clock, t: Target[], private pos?: PM.Vector2, private range?: number, private pulseDir?: PM.Vector2) {
         this.scene = scene
         this.time = time
-        this.range = r
         this.targets = t
     }
 
@@ -29,6 +27,10 @@ export class Radar {
 
     setPosition(pos: PM.Vector2) {
         this.pos = pos
+    }
+
+    setRange(r: number) {
+        this.range = r
     }
 
     addTarget(target: Target) {
@@ -45,7 +47,7 @@ export class Radar {
         }
     }
 
-    transceive(d: PM.Vector2): Target | null {
+    transceive(d: Phaser.Geom.Line): Target | null {
         // create a target if vector equals vector to target from radar
         // add left and right tolerance
         // use sin / cos for tolerance
@@ -65,6 +67,12 @@ export class Radar {
     * @param endDirection: PM.Vector2
     */
     async search(startDirection?: PM.Vector2, endDirection?: PM.Vector2): Promise<void> {
+        if (!this.pos) {
+            console.error('Radar position not set')
+        }
+        if (!this.range) {
+            console.error('Radar range not set')
+        }
         if (startDirection && endDirection) {
             console.log('searchging from', startDirection, 'to', endDirection)
         }
@@ -75,49 +83,47 @@ export class Radar {
             console.log('searching to', endDirection)
         }
         if (!startDirection && !endDirection) {
-            let i = 360
-            if (i > 0) {
-                this.time.addEvent({
-                    delay: 20,
-                    callback: () => {
-                        console.log('searching full circle', i)
-                        i--
-                        
-                        const radarBeam = new Phaser.Geom.Line(
-                            this.pos.x,
-                            this.pos.y,
-                            this.pos.x + this.pulseDir?.x! * this.range,
-                            this.pos.y + this.pulseDir?.y! * this.range
-                        )
-                        Phaser.Geom.Line.RotateAroundXY(radarBeam, this.pos.x, this.pos.y, Phaser.Math.DegToRad(i))
-                        const graphics = this.scene.add.graphics({
-                            lineStyle: { width: .3, color: 0x00ff00, alpha: 0.5 }
-                        });
-                        graphics.strokeLineShape(radarBeam);
-                        this.time.addEvent({
-                            delay: 600,
-                            callback: () => {
-                                this.scene.tweens.add({
-                                    targets: graphics,
-                                    alpha: 0,
-                                    duration: 1000,
-                                    onComplete: () => {
-                                        graphics.clear();
-                                    }
-                                });
-                            },
-                            callbackScope: this
-                        });
-                        graphics.strokeLineShape(radarBeam);
-                    },
-                    repeat: i
-                })
-            }
-                // const direction = new PM.Vector2()
-                // this.setDirection(direction)
-                // const target = this.transceive(direction)
-                // console.log('searching', this.pulseDir, target)
-            
+            let repetitions = 360
+            let degree = 0
+            this.time.addEvent({
+                delay: 20,
+                callback: () => {
+                    degree++
+                    const radarBeam = new Phaser.Geom.Line(
+                        this.pos?.x,
+                        this.pos?.y,
+                        this.pos?.x! + this.pulseDir?.x! * this.range!,
+                        this.pos?.y! + this.pulseDir?.y! * this.range!
+                    )
+                    Phaser.Geom.Line.RotateAroundXY(radarBeam, this.pos?.x!, this.pos?.y!, Phaser.Math.DegToRad(degree))
+                    // watch for targets
+                    const target = this.transceive(radarBeam)
+                    if (target) {
+                        console.log('TARGET', target)
+                    }
+                    // draw radar beam
+                    const graphics = this.scene.add.graphics({
+                        lineStyle: { width: .3, color: 0x00ff00, alpha: 0.5 }
+                    });
+                    graphics.strokeLineShape(radarBeam);
+                    this.time.addEvent({
+                        delay: 600,
+                        callback: () => {
+                            this.scene.tweens.add({
+                                targets: graphics,
+                                alpha: 0,
+                                duration: 1000,
+                                onComplete: () => {
+                                    graphics.clear();
+                                }
+                            });
+                        },
+                        callbackScope: this
+                    });
+                    graphics.strokeLineShape(radarBeam);
+                },
+                repeat: repetitions
+            })
         }
     }
 }

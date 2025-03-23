@@ -40,13 +40,11 @@ class Broomster extends Phaser.Scene
     this.asteroids.push(new Asteroid(0, new PM.Vector2(300, 300), new PM.Vector2(1, 0), 1, 10))
     this.asteroids.push(new Asteroid(1, new PM.Vector2(400, 400), new PM.Vector2(1, 0), 2, 20))
 
-    this.radar = new Radar(this, this.time, this.targets, 450, new PM.Vector2(500, 500))
-    this.radar.setDirection(new PM.Vector2(1, 0))
+    this.radar = new Radar(this, this.time, this.targets)
+    this.radar.setPosition(new PM.Vector2(500, 480))
+    this.radar.setDirection(new PM.Vector2(0, -1))
+    this.radar.setRange(450)
     this.radar.search()
-
-    const line = new Phaser.GameObjects.Line(this, 200, 200, 100, 100, 300, 300, 0x00ff00)
-    this.add.existing(line)
-    line.setRotation(Phaser.Math.DegToRad(100))
   }
 
   update ()
@@ -88,8 +86,8 @@ class Broomster extends Phaser.Scene
 
 const config = {
     type: Phaser.AUTO,
-    width: 2000,
-    height: 1500,
+    width: 1000,
+    height: 500,
     scene: Broomster,
     physics: {
         default: 'arcade',
