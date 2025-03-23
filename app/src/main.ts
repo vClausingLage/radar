@@ -30,8 +30,9 @@ class Broomster extends Phaser.Scene
     ship.setCollideWorldBounds(true)
     this.add.image(50, 450, 'rwr')
     this.add.text(3, 380, 'RWR', { font: '16px Courier', color: '#00ff00' })
-    this.add.image(950, 450, 'radar')
-    this.add.text(903, 380, 'RADAR', { font: '16px Courier', color: '#00ff00' })
+    //! radar screen disabled for now
+    // this.add.image(950, 450, 'radar')
+    // this.add.text(903, 380, 'RADAR', { font: '16px Courier', color: '#00ff00' })
 
     // create targets and aasteroids and push them to radar
     this.targets.push(new Target(0, new PM.Vector2(100, 100), new PM.Vector2(1, 0), 1))
@@ -42,6 +43,10 @@ class Broomster extends Phaser.Scene
     this.radar = new Radar(this, this.time, this.targets, 450, new PM.Vector2(500, 500))
     this.radar.setDirection(new PM.Vector2(1, 0))
     this.radar.search()
+
+    const line = new Phaser.GameObjects.Line(this, 200, 200, 100, 100, 300, 300, 0x00ff00)
+    this.add.existing(line)
+    line.setRotation(Phaser.Math.DegToRad(100))
   }
 
   update ()
@@ -83,8 +88,8 @@ class Broomster extends Phaser.Scene
 
 const config = {
     type: Phaser.AUTO,
-    width: 1000,
-    height: 500,
+    width: 2000,
+    height: 1500,
     scene: Broomster,
     physics: {
         default: 'arcade',

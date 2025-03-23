@@ -83,27 +83,32 @@ export class Radar {
                         console.log('searching full circle', i)
                         i--
                         
-                        // const radarBeam = new Phaser.GameObjects.Line(this.scene, this.pos.x, this.pos.y - 20, 0, 0, this.range, 0, 0x801d)
-                        var line = new Phaser.GameObjects.Line(
-                            this.scene,
+                        const radarBeam = new Phaser.Geom.Line(
                             this.pos.x,
                             this.pos.y,
-                            this.pos.x,
-                            this.pos.y,
-                            this.pos.x + this.pulseDir?.x! * 200,
-                            this.pos.y + this.pulseDir?.y! * 200,
-                            0x801d,
-                            0.5
+                            this.pos.x + this.pulseDir?.x! * this.range,
+                            this.pos.y + this.pulseDir?.y! * this.range
                         )
-                        // var line = this.scene.add.line(this.pos.x, this.pos.y, this.pos.x, this.pos.y, this.pulseDir?.x! * 100, this.pulseDir?.y! *100, 0x801d)
-                        line.setRotation(Phaser.Math.DegToRad(i))
-                        // this.scene.tweens.add({
-                        //     targets: line,
-                        //     alpha: 0,
-                        //     duration: 2000,
-                        //     onComplete: () => line.destroy()
-                        // })
-
+                        Phaser.Geom.Line.RotateAroundXY(radarBeam, this.pos.x, this.pos.y, Phaser.Math.DegToRad(i))
+                        const graphics = this.scene.add.graphics({
+                            lineStyle: { width: .3, color: 0x00ff00, alpha: 0.5 }
+                        });
+                        graphics.strokeLineShape(radarBeam);
+                        this.time.addEvent({
+                            delay: 600,
+                            callback: () => {
+                                this.scene.tweens.add({
+                                    targets: graphics,
+                                    alpha: 0,
+                                    duration: 1000,
+                                    onComplete: () => {
+                                        graphics.clear();
+                                    }
+                                });
+                            },
+                            callbackScope: this
+                        });
+                        graphics.strokeLineShape(radarBeam);
                     },
                     repeat: i
                 })
