@@ -35,12 +35,12 @@ class Broomster extends Phaser.Scene
     // this.add.text(903, 380, 'RADAR', { font: '16px Courier', color: '#00ff00' })
 
     // create targets and aasteroids and push them to radar
-    this.targets.push(new Target(0, new PM.Vector2(100, 100), new PM.Vector2(1, 0), 1))
-    this.targets.push(new Target(1, new PM.Vector2(200, 200), new PM.Vector2(1, 0), 2))
-    this.asteroids.push(new Asteroid(0, new PM.Vector2(300, 300), new PM.Vector2(1, 0), 1, 10))
-    this.asteroids.push(new Asteroid(1, new PM.Vector2(400, 400), new PM.Vector2(1, 0), 2, 20))
+    this.targets.push(new Target(new PM.Vector2(100, 100), new PM.Vector2(1, 0), 1))
+    this.targets.push(new Target(new PM.Vector2(200, 200), new PM.Vector2(1, 0), 2))
+    this.asteroids.push(new Asteroid(new PM.Vector2(300, 300), new PM.Vector2(1, 0), 1, 10))
+    this.asteroids.push(new Asteroid(new PM.Vector2(400, 400), new PM.Vector2(1, 0), 2, 20))
 
-    this.radar = new Radar(this, this.time, this.targets)
+    this.radar = new Radar(this, this.time, [...this.targets])
     this.radar.setPosition(new PM.Vector2(500, 480))
     this.radar.setDirection(new PM.Vector2(0, -1))
     this.radar.setRange(450)
