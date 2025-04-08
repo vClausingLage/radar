@@ -1,7 +1,7 @@
 import { Math as PM } from 'phaser'
 
 export class Target {
-    constructor(public position: PM.Vector2, public direction: PM.Vector2, public speed: number) {}
+    constructor(public position: PM.Vector2, public direction: PM.Vector2, public speed: number, public size: number) {}
 }
 
 export class TargetInformation {
@@ -26,7 +26,7 @@ export class Track {
 
 export class Asteroid extends Target {
     constructor(public position: PM.Vector2, public direction: PM.Vector2, public speed: number, public size: number) {
-        super(position, direction, speed)
+        super(position, direction, speed, size)
     }
 }
 
@@ -58,12 +58,7 @@ export class Radar {
         this.targets.push(target)
     }
 
-    transceive(d: Phaser.Geom.Line): TargetInformation[] {
-        // create a target if vector equals vector to target from radar
-        // add left and right tolerance
-        // use sin / cos for tolerance
-        //! add error 
-
+    findTargetByLine(d: Phaser.Geom.Line, targets: Target[]): TargetInformation[] {
         let tgts: TargetInformation[] = []
 
         for (const t of this.targets) {
@@ -76,13 +71,7 @@ export class Radar {
                 const tolerance = Phaser.Math.DegToRad(.5)
 
                 if (Math.abs(angleToTarget - angleOfLine) <= tolerance) {
-
                     const dist = Phaser.Math.Distance.BetweenPoints(d.getPointA(), t.position)
-
-                    // const circle = this.scene.add.circle(x, y, 1, 0xffffff)
-                    // this.time.delayedCall(1500, () => {
-                    //   circle.destroy()
-                    // })
 
                     const ti = new TargetInformation(PM.RadToDeg(angleToTarget), dist, t.speed)
                     tgts.push(ti)
@@ -91,6 +80,36 @@ export class Radar {
         }
 
         return tgts.length > 0 ? tgts : []
+    }
+
+    findTargetByCircle(d: Phaser.Geom.Line, targets: Target[]): TargetInformation[] {
+        let tgts: TargetInformation[] = []
+
+        for (const t of this.targets) {
+            const distance = Phaser.Math.Distance.Between(this.pos!.x, this.pos!.y, t.position.x, t.position.y)
+            const angleToTarget = Phaser.Math.Angle.Between(this.pos!.x, this.pos!.y, t.position.x, t.position.y)
+            const dist = Phaser.Math.Distance.BetweenPoints(d.getPointA(), t.position)
+            const targetCircle = new Phaser.Geom.Circle(t.position.x, t.position.y, 10);
+            if (Phaser.Geom.Intersects.LineToCircle(d, targetCircle)) {
+                tgts.push(new TargetInformation(PM.RadToDeg(angleToTarget), dist, t.speed));
+            }
+        }
+
+        return tgts.length > 0 ? tgts : []
+    }
+
+    transceive(d: Phaser.Geom.Line): TargetInformation[] {
+        // create a target if vector equals vector to target from radar
+        // add left and right tolerance
+        // use sin / cos for tolerance
+        //! add error
+
+        // find tgts by line
+        // const t = this.findTargetByLine(d, this.targets)
+        // find tgts by circle
+        const t = this.findTargetByCircle(d, this.targets)
+
+        return t.length > 0 ? t : []
     }
 
     /*
@@ -116,42 +135,50 @@ export class Radar {
         }
         if (!startDirection && !endDirection) {
             let repetitions = 360
-            let degree = 0
+            let step = 0
             this.time.addEvent({
                 delay: 10,
                 callback: () => {
-                    degree++
+                    if (step >= 360) {
+                        step = 0
+                    }
+                    step += 1
                     const radarBeam = new Phaser.Geom.Line(
                         this.pos?.x,
                         this.pos?.y,
                         this.pos?.x! + this.pulseDir?.x! * this.range!,
                         this.pos?.y! + this.pulseDir?.y! * this.range!
                     )
-                    Phaser.Geom.Line.RotateAroundXY(radarBeam, this.pos?.x!, this.pos?.y!, Phaser.Math.DegToRad(degree))
+                    // console.log('radar beam', Phaser.Math.DegToRad(step), step)
+                    Phaser.Geom.Line.RotateAroundXY(radarBeam, this.pos?.x!, this.pos?.y!, Phaser.Math.DegToRad(step))
                     // watch for targets
                     const target = this.transceive(radarBeam)
                     if (target.length > 0) {
                         for (const t of target) {
+                            console.log('direction', Math.abs(t.getDirection() - 180), 'distance', t.getDistance(), 'speed', t.getSpeed(), step)
 
-                            console.log('direction', Math.abs(t.getDirection()), 'distance', t.getDistance(), 'speed', t.getSpeed())
-
-                            this.tracks.push(new Track(
-                                new PM.Vector2(
-                                    this.pos?.x! + Math.cos(Phaser.Math.DegToRad(t.getDirection())) * t.getDistance(),
-                                    this.pos?.y! + Math.sin(Phaser.Math.DegToRad(t.getDirection())) * t.getDistance()
-                                ),
-                                new PM.Vector2(
-                                    Math.cos(Phaser.Math.DegToRad(t.getDirection())),
-                                    Math.sin(Phaser.Math.DegToRad(t.getDirection()))
-                                ),
-                                t.getSpeed()
-                            ))
-                            this.scene.add.circle(
-                                this.pos?.x! + Math.cos(Phaser.Math.DegToRad(t.getDirection())) * t.getDistance(),
-                                this.pos?.y! + Math.sin(Phaser.Math.DegToRad(t.getDirection())) * t.getDistance(),
-                                2,
-                                0x00ff00
-                            )
+                            this.tracks.push(
+                                new Track(
+                                    new PM.Vector2(
+                                        this.pos?.x! + Math.cos(Phaser.Math.DegToRad(t.getDirection())) * t.getDistance(),
+                                        this.pos?.y! + Math.sin(Phaser.Math.DegToRad(t.getDirection())) * t.getDistance()
+                                    ),
+                                    new PM.Vector2(
+                                        Math.cos(Phaser.Math.DegToRad(t.getDirection())),
+                                        Math.sin(Phaser.Math.DegToRad(t.getDirection()))
+                                    ),
+                                    t.getSpeed()
+                                )
+                            );
+                            if (this.tracks.length > 12) {
+                                this.tracks.shift();
+                            }
+                            // this.scene.add.circle(
+                            //     this.pos?.x! + Math.cos(Phaser.Math.DegToRad(t.getDirection())) * t.getDistance(),
+                            //     this.pos?.y! + Math.sin(Phaser.Math.DegToRad(t.getDirection())) * t.getDistance(),
+                            //     2,
+                            //     0x00ff00
+                            // )
                         }
                     }
                     // draw radar beam
