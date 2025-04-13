@@ -34,6 +34,7 @@ export class Radar {
     private targets: Target[]
     private time: Phaser.Time.Clock
     private scene: Phaser.Scene
+    private returnSignal: TargetInformation[] = []
     private tracks: Track[] = []
 
     constructor(scene: Phaser.Scene, time: Phaser.Time.Clock, t: Target[], private pos?: PM.Vector2, private range?: number, private pulseDir?: PM.Vector2) {
@@ -82,7 +83,7 @@ export class Radar {
         return tgts.length > 0 ? tgts : []
     }
 
-    findTargetByCircle(d: Phaser.Geom.Line, targets: Target[]): TargetInformation[] {
+    findTargetByCircle(d: Phaser.Geom.Line): TargetInformation[] {
         let tgts: TargetInformation[] = []
 
         for (const t of this.targets) {
@@ -107,7 +108,7 @@ export class Radar {
         // find tgts by line
         // const t = this.findTargetByLine(d, this.targets)
         // find tgts by circle
-        const t = this.findTargetByCircle(d, this.targets)
+        const t = this.findTargetByCircle(d)
 
         return t.length > 0 ? t : []
     }
@@ -139,6 +140,7 @@ export class Radar {
             this.time.addEvent({
                 delay: 10,
                 callback: () => {
+                    // begin new serach circle when 360 degrees are reached
                     if (step >= 360) {
                         step = 0
                     }
@@ -152,10 +154,10 @@ export class Radar {
                     // console.log('radar beam', Phaser.Math.DegToRad(step), step)
                     Phaser.Geom.Line.RotateAroundXY(radarBeam, this.pos?.x!, this.pos?.y!, Phaser.Math.DegToRad(step))
                     // watch for targets
-                    const target = this.transceive(radarBeam)
-                    if (target.length > 0) {
-                        for (const t of target) {
-                            console.log('direction', Math.abs(t.getDirection() - 180), 'distance', t.getDistance(), 'speed', t.getSpeed(), step)
+                    const ti = this.transceive(radarBeam)
+                    if (ti.length > 0) {
+                        for (const t of ti) {
+                            console.log('direction', Math.abs(Math.round(t.getDirection() - 180)), 'distance', Math.round(t.getDistance()), 'speed', t.getSpeed(), step)
 
                             this.tracks.push(
                                 new Track(

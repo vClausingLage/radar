@@ -3,6 +3,10 @@ import { Radar, Asteroid, Target } from "./radar"
 
 class Broomster extends Phaser.Scene
 {
+  private window = {
+    height: window.innerHeight,
+    width: window.innerWidth
+  }
   private canvas: HTMLCanvasElement | null = null
   private targets: Target[] = []
   private asteroids: Asteroid[] = []
@@ -29,13 +33,13 @@ class Broomster extends Phaser.Scene
   create ()
   {
     this.cursorKeys = this.input.keyboard?.createCursorKeys()
-    this.ship = this.physics.add.image(500, 500, 'ship')
+    this.ship = this.physics.add.image(this.window.width / 2, this.window.height, 'ship')
     this.ship.setVelocity(0, 0)
     this.ship.setBounce(.5, .5)
     this.ship.setCollideWorldBounds(true)
-    console.log(`Ship rotation: ${this.ship?.rotation}`);
-    this.add.image(50, 450, 'rwr')
-    this.add.text(3, 380, 'RWR', { font: '16px Courier', color: '#00ff00' })
+    console.log(`Ship rotation: ${this.ship?.rotation}`)
+    this.add.image(50, this.window.height - 50, 'rwr')
+    this.add.text(3, this.window.height - 120, 'RWR', { font: '18px Courier', color: '#00ff00' })
     //! radar screen disabled for now
     // this.add.image(950, 450, 'radar')
     // this.add.text(903, 380, 'RADAR', { font: '16px Courier', color: '#00ff00' })
@@ -47,7 +51,7 @@ class Broomster extends Phaser.Scene
     this.asteroids.push(new Asteroid(new PM.Vector2(400, 400), new PM.Vector2(1, 0), 2, 20))
 
     this.radar = new Radar(this, this.time, [...this.targets])
-    this.radar.setPosition(new PM.Vector2(500, 480))
+    this.radar.setPosition(new PM.Vector2(0, 0))
     this.radar.setDirection(new PM.Vector2(0, -1))
     this.radar.setRange(this.radarSettings?.range || 0)
     this.radar.search()
@@ -56,14 +60,12 @@ class Broomster extends Phaser.Scene
   update ()
   {
     if (this.cursorKeys?.left.isDown) {
-      console.log('left')
       this.ship?.setAngularVelocity(-50)
     }
     if (this.cursorKeys?.left.isUp) {
       this.ship?.setAngularVelocity(0)
     }
     if (this.cursorKeys?.right.isDown) {
-      console.log('right')
       this.ship?.setAngularVelocity(50)
     }
     if (this.cursorKeys?.right.isUp) {
@@ -73,11 +75,9 @@ class Broomster extends Phaser.Scene
       this.ship?.setVelocity(0)
     }
     if (this.cursorKeys?.up.isDown) {
-      console.log('up')
       this.ship?.setVelocity(-3)
     }
     if (this.cursorKeys?.down.isDown) {
-      console.log('down')
       this.ship?.setVelocity(3)
     }
     if (this.cursorKeys?.space.isDown) {
@@ -130,8 +130,8 @@ class Broomster extends Phaser.Scene
 
 const config = {
     type: Phaser.AUTO,
-    width: 1000,
-    height: 500,
+    width: window.innerWidth,
+    height: window.innerHeight,
     scene: Broomster,
     physics: {
         default: 'arcade',
