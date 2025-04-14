@@ -1,5 +1,4 @@
 using UnityEngine;
-using RadarSystem;
 
 public class Radar : MonoBehaviour
 {
@@ -67,6 +66,7 @@ public class Radar : MonoBehaviour
                     // Destroy the Ping object after a short period
                     Destroy(ping, 2f);
 
+                    trackingComputer.Transceive(angle, hitPoint);
 
                 }
 

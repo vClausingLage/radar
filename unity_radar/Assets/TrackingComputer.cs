@@ -1,20 +1,19 @@
-using RadarSystem;
-
 public class TrackingComputer
 {
-    private number lastDegree;
+    private int? lastDegree = null;
 
     public TrackingComputer()
     {
-        this.lastDegree = 0;
+        this.lastDegree = null;
     }
 
-    public void transceive(degree, point)
+    public void Transceive(int degree, UnityEngine.Vector3 point)
     {
         if (degree - this.lastDegree == 1) {
             // add to existing Track
+            this.lastDegree = degree;
         }
-        if (degree - this.lastDegree > 1 || !this.lastDegree) {
+        if (degree - this.lastDegree > 1 || this.lastDegree == null) {
             // create new Track
         }
     } 
