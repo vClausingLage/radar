@@ -34,7 +34,7 @@ export class Game extends Scene
         graphics.lineStyle(2, 0x00ff00, 1);
         graphics.strokeLineShape(line2);
 
-        graphics.fillStyle(0x98ff98, 1); 
+        graphics.fillStyle(0x98ff98, 1);
         graphics.fillCircleShape(circle);
 
         var isInterscting = Phaser.Geom.Intersects.LineToCircle(line2, circle);
