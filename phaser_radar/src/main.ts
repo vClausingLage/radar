@@ -39,20 +39,19 @@ class Broomster extends Phaser.Scene
     this.ship.setBounce(.5, .5)
     this.ship.setCollideWorldBounds(true)
     console.log(`Ship rotation: ${this.ship?.rotation}`)
-    this.add.image(50, this.window.height - 50, 'rwr')
-    this.add.text(3, this.window.height - 120, 'RWR', { font: '18px Courier', color: '#00ff00' })
+    this.add.image(60, 80, 'rwr')
+    this.add.text(75 , 135, 'RWR', { font: '18px Courier', color: '#00ff00' })
 
     // create targets and asteroids and push them to radar
-    this.targets.push(new Target(new PM.Vector2(400, 600), new PM.Vector2(1, 0), 1, 1))
-    this.targets.push(new Target(new PM.Vector2(400, 500), new PM.Vector2(1, 0), 2, 1))
-    // this.asteroids.push(new Asteroid(new PM.Vector2(300, 300), new PM.Vector2(1, 0), 1, 10))
-    // this.asteroids.push(new Asteroid(new PM.Vector2(400, 400), new PM.Vector2(1, 0), 2, 20))
+    this.targets.push(new Target(500, 600, new PM.Vector2(1, 0), 1, 1))
+    this.targets.push(new Target(500, 700, new PM.Vector2(1, 0), 2, 10))
 
     this.radar = new Radar(this, this.time, [...this.targets])
     this.radar.setPosition(new PM.Vector2(0, 0))
     this.radar.setDirection(new PM.Vector2(0, -1))
     this.radar.setRange(this.radarSettings?.range || 0)
     this.radar.search()
+   
   }
 
   update ()
@@ -93,34 +92,22 @@ class Broomster extends Phaser.Scene
     }
     // show targets for development
     this.targets.forEach(target => {
-      const circle = this.add.circle(target.position.x, target.position.y, 2, 0xffffff)
-      this.time.delayedCall(1500, () => {
+      const circle = this.add.circle(target.x, target.y, target.size, 0xffffff)
+      this.time.delayedCall(500, () => {
         circle.destroy()
       })
     })
-    // show asteroids for development
-    this.asteroids.forEach(asteroid => {
-      const circle = this.add.circle(asteroid.position.x, asteroid.position.y, 2, 0xff0000)
-      this.time.delayedCall(1500, () => {
-        circle.destroy()
-      }
-    )})
     // move targets
     if (this.time.now % 500 < 16.67) {
       this.targets.forEach(target => {
-        target.position.add(target.direction.clone().scale(target.speed))
-        if (target.position.x <= 0 || target.position.x >= Number(this?.canvas?.width || 1000)) {
+        target.x += target.direction.x * target.speed
+        target.y += target.direction.y * target.speed
+        if (target.x <= 0 || target.x >= Number(this?.canvas?.width)) {
           target.direction.x *= -1
         }
-        if (target.position.y <= 0 || target.position.y >= Number(this.sys.game.config.height)) {
+        if (target.y <= 0 || target.y >= Number(this.sys.game.config.height)) {
           target.direction.y *= -1
         }
-      })
-    }
-    // move asteroids
-    if (this.time.now % 500 < 16.67) {
-      this.asteroids.forEach(asteroid => {
-        asteroid.position.add(asteroid.direction.clone().scale(asteroid.speed))
       })
     }
   }

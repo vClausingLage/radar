@@ -1,6 +1,6 @@
 import { Scene } from 'phaser';
 
-export class Game extends Scene
+export class Math  extends Scene
 {
     constructor ()
     {
