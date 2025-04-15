@@ -20,6 +20,7 @@ class Broomster extends Phaser.Scene
   {
     super()
   }
+  
   preload ()
   {
     this.canvas = this.sys.game.canvas
@@ -40,15 +41,12 @@ class Broomster extends Phaser.Scene
     console.log(`Ship rotation: ${this.ship?.rotation}`)
     this.add.image(50, this.window.height - 50, 'rwr')
     this.add.text(3, this.window.height - 120, 'RWR', { font: '18px Courier', color: '#00ff00' })
-    //! radar screen disabled for now
-    // this.add.image(950, 450, 'radar')
-    // this.add.text(903, 380, 'RADAR', { font: '16px Courier', color: '#00ff00' })
 
-    // create targets and aasteroids and push them to radar
-    this.targets.push(new Target(new PM.Vector2(100, 100), new PM.Vector2(1, 0), 1, 1))
-    this.targets.push(new Target(new PM.Vector2(200, 200), new PM.Vector2(1, 0), 2, 1))
-    this.asteroids.push(new Asteroid(new PM.Vector2(300, 300), new PM.Vector2(1, 0), 1, 10))
-    this.asteroids.push(new Asteroid(new PM.Vector2(400, 400), new PM.Vector2(1, 0), 2, 20))
+    // create targets and asteroids and push them to radar
+    this.targets.push(new Target(new PM.Vector2(400, 600), new PM.Vector2(1, 0), 1, 1))
+    this.targets.push(new Target(new PM.Vector2(400, 500), new PM.Vector2(1, 0), 2, 1))
+    // this.asteroids.push(new Asteroid(new PM.Vector2(300, 300), new PM.Vector2(1, 0), 1, 10))
+    // this.asteroids.push(new Asteroid(new PM.Vector2(400, 400), new PM.Vector2(1, 0), 2, 20))
 
     this.radar = new Radar(this, this.time, [...this.targets])
     this.radar.setPosition(new PM.Vector2(0, 0))
