@@ -1,27 +1,12 @@
 import { Math as PM } from 'phaser'
 
+import { Target } from './target'
+import { Track } from './track'
+import { renderTrack } from './radarRenderHelper'
+
 type ReturnSignal = {
     point: Phaser.Math.Vector2
     time: number
-}
-
-export class Target extends Phaser.Geom.Circle {
-    constructor(x: number, y: number, public direction: PM.Vector2, public speed: number, public size: number) {
-        super(x, y, size)
-    }
-}
-
-export class Track {
-    constructor(public position: PM.Vector2, public direction: PM.Vector2, public speed: number) {}
-}
-
-export class Asteroid extends Phaser.Geom.Circle {
-    constructor(public position: PM.Vector2, public direction: PM.Vector2, public speed: number, public size: number) {
-        super(position.x, position.y, size)
-    }
-    move() {
-        this.position.add(this.direction.clone().scale(this.speed))
-    }
 }
 
 export class Radar {
@@ -29,7 +14,9 @@ export class Radar {
     private time: Phaser.Time.Clock
     private scene: Phaser.Scene
     private returnSignals: {point: Phaser.Math.Vector2, time: number}[] = []
-    private tracks: Track[] = []
+    private lastReturnSignal: ReturnSignal | null = null
+    private radarTrackSensitivity: number = 5
+    // private tracks: Track[] = []
 
     constructor(scene: Phaser.Scene, time: Phaser.Time.Clock, t: Target[], private pos?: PM.Vector2, private range?: number, private pulseDir?: PM.Vector2) {
         this.scene = scene
@@ -49,11 +36,15 @@ export class Radar {
         this.range = r
     }
 
+    setSensitivity(s: number) {
+        this.radarTrackSensitivity = s
+    }
+
     addTarget(target: Target) {
         this.targets.push(target)
     }
 
-    findTargetByCircle(d: Phaser.Geom.Line): ReturnSignal[] {
+    findTargetByCircle(d: Phaser.Geom.Line): ReturnSignal {
         let tgts: { point: Phaser.Math.Vector2; time: number }[] = []
         
         for (const t of this.targets) {
@@ -67,7 +58,7 @@ export class Radar {
                     graphics.fillStyle(0xff0000, 1);
                     graphics.fillPoint(result[0].x, result[0].y, 2);
                     this.scene.time.addEvent({
-                        delay: 20000,
+                        delay: 9000,
                         callback: () => {
                             graphics.clear();
                         },
@@ -77,12 +68,11 @@ export class Radar {
             }
         }
 
-        return tgts.length > 0 ? tgts : []
+        return tgts[0] || null
     }
 
-    transceive(d: Phaser.Geom.Line): ReturnSignal[] {
-        const t = this.findTargetByCircle(d)
-        return t.length > 0 ? t : []
+    transceive(d: Phaser.Geom.Line): ReturnSignal {
+        return this.findTargetByCircle(d)
     }
 
     /*
@@ -126,10 +116,48 @@ export class Radar {
                     Phaser.Geom.Line.RotateAroundXY(radarBeam, this.pos?.x!, this.pos?.y!, Phaser.Math.DegToRad(step))
                     // watch for targets
                     const rs = this.transceive(radarBeam)
-                    if (rs.length > 0) {
-                        for (const t of rs) {
-                            //! target computer logic
+                    if (rs) {
+                        if (!this.lastReturnSignal) {
+                            this.lastReturnSignal = rs
                         }
+                        if (this.lastReturnSignal) {
+                            const distance = Phaser.Math.Distance.Between(
+                                this.lastReturnSignal.point.x,
+                                this.lastReturnSignal.point.y,
+                                rs.point.x,
+                                rs.point.y
+                            );
+                            // feed track with new data
+                            if (distance > this.radarTrackSensitivity) {
+                                console.log('problem')
+                                this.returnSignals = []
+                            }
+                            if (distance < this.radarTrackSensitivity) {
+                                this.returnSignals.push(rs)
+                            }
+
+                            this.lastReturnSignal = rs;
+                        }
+                    }
+                    if (!rs) {
+                        if (this.lastReturnSignal) {
+                            // now is the time to calculate the track
+                            const averagePoint = this.returnSignals.reduce(
+                                (acc, signal) => {
+                                    acc.x += signal.point.x;
+                                    acc.y += signal.point.y;
+                                    return acc;
+                                },
+                                { x: 0, y: 0 }
+                            );
+
+                            averagePoint.x /= this.returnSignals.length;
+                            averagePoint.y /= this.returnSignals.length;
+
+                            renderTrack(this.scene, averagePoint)
+                            this.returnSignals = []
+                        }
+                        this.lastReturnSignal = null
                     }
                     // draw radar beam
                     const graphics = this.scene.add.graphics({

@@ -1,5 +1,6 @@
 import Phaser, { Math as PM } from "phaser"
-import { Radar, Asteroid, Target } from "./radar"
+import { Radar } from "./radar/radar"
+import { Target } from "./radar/target"
 
 class Broomster extends Phaser.Scene
 {
@@ -9,7 +10,6 @@ class Broomster extends Phaser.Scene
   }
   private canvas: HTMLCanvasElement | null = null
   private targets: Target[] = []
-  private asteroids: Asteroid[] = []
   private radar: Radar | null = null
   private radarSettings = {
     range: 450,
@@ -29,6 +29,7 @@ class Broomster extends Phaser.Scene
     this.load.image('radar', 'screen.png')
     this.load.image('track', 'track.png')
     this.load.image('target', 'target.png')
+    this.load.image('missile', 'missile.png')
   }
 
   create ()
@@ -50,6 +51,7 @@ class Broomster extends Phaser.Scene
     this.radar.setPosition(new PM.Vector2(0, 0))
     this.radar.setDirection(new PM.Vector2(0, -1))
     this.radar.setRange(this.radarSettings?.range || 0)
+    this.radar.setSensitivity(5)
     this.radar.search()
    
   }
@@ -91,12 +93,12 @@ class Broomster extends Phaser.Scene
       this.radar?.setPosition(this.ship.getWorldPoint())
     }
     // show targets for development
-    this.targets.forEach(target => {
-      const circle = this.add.circle(target.x, target.y, target.size, 0xffffff)
-      this.time.delayedCall(500, () => {
-        circle.destroy()
-      })
-    })
+    // this.targets.forEach(target => {
+    //   const circle = this.add.circle(target.x, target.y, target.size, 0xffffff)
+    //   this.time.delayedCall(500, () => {
+    //     circle.destroy()
+    //   })
+    // })
     // move targets
     if (this.time.now % 500 < 16.67) {
       this.targets.forEach(target => {
