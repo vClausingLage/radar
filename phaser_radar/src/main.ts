@@ -1,8 +1,9 @@
-import Phaser, { Math as PM } from "phaser"
-import { Radar } from "./radar/radar"
-import { Target } from "./radar/target"
+import Phaser, { Math } from "phaser"
+import { Radar } from "./radar/systems/radar"
+import { Target } from "./radar/entities/target"
+import { radarSettings } from "./constants/index"
 
-class Broomster extends Phaser.Scene
+class Game extends Phaser.Scene
 {
   private window = {
     height: window.innerHeight,
@@ -11,10 +12,6 @@ class Broomster extends Phaser.Scene
   private canvas: HTMLCanvasElement | null = null
   private targets: Target[] = []
   private radar: Radar | null = null
-  private radarSettings = {
-    range: 450,
-    pulseDir: new PM.Vector2(0, -1)
-  }
 
   constructor (private cursorKeys?: Phaser.Types.Input.Keyboard.CursorKeys, private ship?: Phaser.Physics.Arcade.Image)
   {
@@ -44,16 +41,15 @@ class Broomster extends Phaser.Scene
     this.add.text(75 , 135, 'RWR', { font: '18px Courier', color: '#00ff00' })
 
     // create targets and asteroids and push them to radar
-    this.targets.push(new Target(500, 600, new PM.Vector2(1, 0), 1, 1))
-    this.targets.push(new Target(500, 700, new PM.Vector2(1, 0), 2, 10))
+    this.targets.push({ position: new Math.Vector2(300, 300), direction: new Math.Vector2(1, 0), speed: 2, size: 10 })
+    this.targets.push({ position: new Math.Vector2(400, 300), direction: new Math.Vector2(-1, 0), speed: 2, size: 10 })
 
     this.radar = new Radar(this, this.time, [...this.targets])
-    this.radar.setPosition(new PM.Vector2(0, 0))
-    this.radar.setDirection(new PM.Vector2(0, -1))
-    this.radar.setRange(this.radarSettings?.range || 0)
+    this.radar.setPosition(new Math.Vector2(0, 0))
+    this.radar.setDirection(new Math.Vector2(0, -1))
+    this.radar.setRange(radarSettings?.range || 0)
     this.radar.setSensitivity(5)
     this.radar.search()
-   
   }
 
   update ()
@@ -100,18 +96,17 @@ class Broomster extends Phaser.Scene
     //   })
     // })
     // move targets
-    if (this.time.now % 500 < 16.67) {
-      this.targets.forEach(target => {
-        target.x += target.direction.x * target.speed
-        target.y += target.direction.y * target.speed
-        if (target.x <= 0 || target.x >= Number(this?.canvas?.width)) {
-          target.direction.x *= -1
-        }
-        if (target.y <= 0 || target.y >= Number(this.sys.game.config.height)) {
-          target.direction.y *= -1
-        }
-      })
-    }
+    const delta = this.game.loop.delta / 1000; // Convert delta time to seconds
+    this.targets.forEach(target => {
+      target.position.x += target.direction.x * target.speed * delta;
+      target.position.y += target.direction.y * target.speed * delta;
+      if (target.position.x <= 0 || target.position.x >= Number(this?.canvas?.width)) {
+        target.direction.x *= -1;
+      }
+      if (target.position.y <= 0 || target.position.y >= Number(this.sys.game.config.height)) {
+        target.direction.y *= -1;
+      }
+    });
   }
 }
 
@@ -119,7 +114,7 @@ const config = {
     type: Phaser.AUTO,
     width: window.innerWidth,
     height: window.innerHeight,
-    scene: Broomster,
+    scene: Game,
     physics: {
         default: 'arcade',
         arcade: {

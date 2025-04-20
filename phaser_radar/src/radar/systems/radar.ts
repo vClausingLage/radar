@@ -1,13 +1,8 @@
 import { Math as PM } from 'phaser'
 
-import { Target } from './target'
-import { Track } from './track'
-import { renderTrack } from './radarRenderHelper'
-
-type ReturnSignal = {
-    point: Phaser.Math.Vector2
-    time: number
-}
+import { Target } from '../entities/target'
+import { renderTrack } from '../radarRenderHelper'
+import { ReturnSignal } from '../../types/index'
 
 export class Radar {
     private targets: Target[]
@@ -16,7 +11,6 @@ export class Radar {
     private returnSignals: {point: Phaser.Math.Vector2, time: number}[] = []
     private lastReturnSignal: ReturnSignal | null = null
     private radarTrackSensitivity: number = 5
-    // private tracks: Track[] = []
 
     constructor(scene: Phaser.Scene, time: Phaser.Time.Clock, t: Target[], private pos?: PM.Vector2, private range?: number, private pulseDir?: PM.Vector2) {
         this.scene = scene
@@ -50,8 +44,9 @@ export class Radar {
         for (const t of this.targets) {
             // const angleToTarget = Phaser.Math.Angle.Between(this.pos!.x, this.pos!.y, t.x, t.y)
             // const dist = Phaser.Math.Distance.BetweenPoints(d.getPointA(), t)
-            if (Phaser.Geom.Intersects.LineToCircle(d, t)) {
-                const result = Phaser.Geom.Intersects.GetLineToCircle(d, t);
+            const circle = new Phaser.Geom.Circle(t.position.x, t.position.y, t.size)
+            if (Phaser.Geom.Intersects.LineToCircle(d, circle)) {
+                const result = Phaser.Geom.Intersects.GetLineToCircle(d, circle);
                 if (result) {
                     tgts.push({point: result[0], time: new Date().getTime()})
                     const graphics = this.scene.add.graphics();
@@ -99,20 +94,35 @@ export class Radar {
         if (!startDirection && !endDirection) {
             let repetitions = 360
             let step = 0
+            const radarBeam = new Phaser.Geom.Line(
+                this.pos?.x,
+                this.pos?.y,
+                this.pos?.x! + this.pulseDir?.x! * this.range!,
+                this.pos?.y! + this.pulseDir?.y! * this.range!
+            )
+            const graphics = this.scene.add.graphics({
+                lineStyle: { width: 0.3, color: 0x00ff00, alpha: 0.5 }
+            });
             this.time.addEvent({
                 delay: 3,
                 callback: () => {
-                    // begin new serach circle when 360 degrees are reached
-                    if (step >= 360) {
-                        step = 0
-                    }
-                    step += .5
-                    const radarBeam = new Phaser.Geom.Line(
+                    // const radarBeam = new Phaser.Geom.Line(
+                    //     this.pos?.x,
+                    //     this.pos?.y,
+                    //     this.pos?.x! + this.pulseDir?.x! * this.range!,
+                    //     this.pos?.y! + this.pulseDir?.y! * this.range!
+                    // )
+                    radarBeam.setTo(
                         this.pos?.x,
                         this.pos?.y,
                         this.pos?.x! + this.pulseDir?.x! * this.range!,
                         this.pos?.y! + this.pulseDir?.y! * this.range!
                     )
+                    // begin new serach circle when 360 degrees are reached
+                    if (step >= 360) {
+                        step = 0
+                    }
+                    step += .5
                     Phaser.Geom.Line.RotateAroundXY(radarBeam, this.pos?.x!, this.pos?.y!, Phaser.Math.DegToRad(step))
                     // watch for targets
                     const rs = this.transceive(radarBeam)
@@ -160,26 +170,9 @@ export class Radar {
                         this.lastReturnSignal = null
                     }
                     // draw radar beam
-                    const graphics = this.scene.add.graphics({
-                        lineStyle: { width: .3, color: 0x00ff00, alpha: 0.5 }
-                    });
+                    graphics.clear();
                     graphics.strokeLineShape(radarBeam)
-                    // manipulate radar beam
-                    this.time.addEvent({
-                        delay: 300,
-                        callback: () => {
-                            this.scene.tweens.add({
-                                targets: graphics,
-                                alpha: 0,
-                                duration: 1000,
-                                onComplete: () => {
-                                    graphics.clear();
-                                }
-                            });
-                        },
-                        callbackScope: this
-                    });
-                    graphics.strokeLineShape(radarBeam);
+                    graphics.fillStyle(0x00ff00, 0.5);
                 },
                 repeat: repetitions,
                 callbackScope: this,
