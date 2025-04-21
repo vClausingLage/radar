@@ -1,8 +1,7 @@
-import { Math } from 'phaser'
-
+import { Vector2 } from "../../types";
 export interface Target {
-    position: Math.Vector2;
-    direction: Math.Vector2;
+    position: Vector2;
+    direction: Vector2;
     speed: number;
     size: number;
 }

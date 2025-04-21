@@ -1,5 +1,4 @@
-import { Math as PM } from 'phaser'
-
+import { Vector2 } from "../../types";
 export class Track {
-    constructor(public position: PM.Vector2, public direction: PM.Vector2, public speed: number) {}
+    constructor(public position: Vector2, public direction: Vector2, public speed: number) {}
 }

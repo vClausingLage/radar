@@ -1,6 +1,6 @@
-import Phaser, { Math } from "phaser"
+import Phaser from "phaser"
 import { Radar } from "./radar/systems/radar"
-import { Target } from "./radar/entities/target"
+import { RadarScanController } from "./controller/radarScanController"
 import { radarSettings } from "./constants/index"
 
 class Game extends Phaser.Scene
@@ -9,11 +9,8 @@ class Game extends Phaser.Scene
     height: window.innerHeight,
     width: window.innerWidth
   }
-  private canvas: HTMLCanvasElement | null = null
-  private targets: Target[] = []
-  private radar: Radar | null = null
-
-  constructor (private cursorKeys?: Phaser.Types.Input.Keyboard.CursorKeys, private ship?: Phaser.Physics.Arcade.Image)
+  
+  constructor (private canvas?: HTMLCanvasElement, private cursorKeys?: Phaser.Types.Input.Keyboard.CursorKeys,  private ship?: Phaser.Physics.Arcade.Image, private radar?: Radar, private radarCtrl?: RadarScanController)
   {
     super()
   }
@@ -31,25 +28,39 @@ class Game extends Phaser.Scene
 
   create ()
   {
+    // KEYS
     this.cursorKeys = this.input.keyboard?.createCursorKeys()
+    // SHIP
     this.ship = this.physics.add.image(this.window.width / 2, this.window.height, 'ship')
     this.ship.setVelocity(0, 0)
     this.ship.setBounce(.5, .5)
     this.ship.setCollideWorldBounds(true)
-    console.log(`Ship rotation: ${this.ship?.rotation}`)
+    // RADAR
+    this.radar = new Radar(this, this.time)
+    this.radar.setPosition({ x: 0, y: 0 })
+    this.radar.setDirection({ x: 0, y: -1 })
+    this.radar.setRange(radarSettings?.range)
+    this.radar.setSensitivity(5)
+    this.radarCtrl = new RadarScanController(this, this.radar)
+    this.radarCtrl
+    // RWR
     this.add.image(60, 80, 'rwr')
     this.add.text(75 , 135, 'RWR', { font: '18px Courier', color: '#00ff00' })
 
     // create targets and asteroids and push them to radar
-    this.targets.push({ position: new Math.Vector2(300, 300), direction: new Math.Vector2(1, 0), speed: 2, size: 10 })
-    this.targets.push({ position: new Math.Vector2(400, 300), direction: new Math.Vector2(-1, 0), speed: 2, size: 10 })
-
-    this.radar = new Radar(this, this.time, [...this.targets])
-    this.radar.setPosition(new Math.Vector2(0, 0))
-    this.radar.setDirection(new Math.Vector2(0, -1))
-    this.radar.setRange(radarSettings?.range || 0)
-    this.radar.setSensitivity(5)
-    this.radar.search()
+    this.radar.addTarget({ 
+      position: { x: 300, y: 300 }, 
+      direction: { x: 1, y: 0}, 
+      speed: 2, 
+      size: 10 
+    })
+    this.radar.addTarget({ 
+      position: {x: 400, y: 300 }, 
+      direction: {x: -1, y: 0}, 
+      speed: 2, 
+      size: 10 
+    })
+    this.radar.start()
   }
 
   update ()
@@ -86,27 +97,24 @@ class Game extends Phaser.Scene
     }
     // make ship position radar position
     if (this.ship) {
-      this.radar?.setPosition(this.ship.getWorldPoint())
+      const worldPoint = this.ship.getWorldPoint()
+      this.radar?.setPosition({ x: worldPoint.x, y: worldPoint.y })
     }
-    // show targets for development
-    // this.targets.forEach(target => {
-    //   const circle = this.add.circle(target.x, target.y, target.size, 0xffffff)
-    //   this.time.delayedCall(500, () => {
-    //     circle.destroy()
-    //   })
-    // })
+    
     // move targets
-    const delta = this.game.loop.delta / 1000; // Convert delta time to seconds
-    this.targets.forEach(target => {
-      target.position.x += target.direction.x * target.speed * delta;
-      target.position.y += target.direction.y * target.speed * delta;
-      if (target.position.x <= 0 || target.position.x >= Number(this?.canvas?.width)) {
-        target.direction.x *= -1;
+    const delta = this.game.loop.delta / 1000
+    this.radar?.getTargets().forEach(target => {
+      target.position.x! += target.direction.x! * target.speed * delta;
+      target.position.y! += target.direction.y! * target.speed * delta;
+      if (target.position.x! <= 0 || target.position.x! >= Number(this?.canvas?.width)) {
+        target.direction.x! *= -1;
       }
-      if (target.position.y <= 0 || target.position.y >= Number(this.sys.game.config.height)) {
-        target.direction.y *= -1;
+      if (target.position.y! <= 0 || target.position.y! >= Number(this.sys.game.config.height)) {
+        target.direction.y! *= -1;
       }
     });
+    // radar scan
+    this.radar?.update(delta)
   }
 }
 
