@@ -35,14 +35,22 @@ class Game extends Phaser.Scene
     this.ship.setVelocity(0, 0)
     this.ship.setBounce(.5, .5)
     this.ship.setCollideWorldBounds(true)
+    console.log(this.ship.getWorldPoint())
     // RADAR
-    this.radar = new Radar(this, this.time)
-    this.radar.setPosition({ x: 0, y: 0 })
-    this.radar.setDirection({ x: 0, y: -1 })
-    this.radar.setRange(radarSettings?.range)
-    this.radar.setSensitivity(5)
-    this.radarCtrl = new RadarScanController(this, this.radar)
-    this.radarCtrl
+    const radarOptions = {
+      range: radarSettings?.range,
+      sensitivity: radarSettings?.sensitivity,
+      pulseDir: radarSettings?.pulseDir,
+      pos: radarSettings?.pos,
+      isScanning: radarSettings?.isScanning,
+      aperture: radarSettings?.aperture,
+    }
+    this.radar = new Radar(this, this.time, radarOptions, [], new Phaser.Geom.Line())
+        // make ship position radar position
+    if (this.ship) {
+      const worldPoint = this.ship.getWorldPoint()
+      this.radar?.setPosition({ x: worldPoint.x, y: worldPoint.y - 50 })
+    }
     // RWR
     this.add.image(60, 80, 'rwr')
     this.add.text(75 , 135, 'RWR', { font: '18px Courier', color: '#00ff00' })
@@ -95,11 +103,6 @@ class Game extends Phaser.Scene
         this.scene.pause()
       }
     }
-    // make ship position radar position
-    if (this.ship) {
-      const worldPoint = this.ship.getWorldPoint()
-      this.radar?.setPosition({ x: worldPoint.x, y: worldPoint.y })
-    }
     
     // move targets
     const delta = this.game.loop.delta / 1000
@@ -114,7 +117,11 @@ class Game extends Phaser.Scene
       }
     });
     // radar scan
-    this.radar?.update(delta)
+
+    if (this.time.now % 1 < delta * 1000) {
+      this.radar?.update(delta, this.radar.getSearchAperture());
+    }
+    
   }
 }
 
