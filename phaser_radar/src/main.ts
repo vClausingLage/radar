@@ -35,7 +35,7 @@ class Game extends Phaser.Scene
     this.ship.setVelocity(0, 0)
     this.ship.setBounce(.5, .5)
     this.ship.setCollideWorldBounds(true)
-    console.log(this.ship.getWorldPoint())
+    console.log('position of ship',this.ship.getWorldPoint())
     // RADAR
     const radarOptions = {
       range: radarSettings?.range,
@@ -117,11 +117,7 @@ class Game extends Phaser.Scene
       }
     });
     // radar scan
-
-    if (this.time.now % 1 < delta * 1000) {
-      this.radar?.update(delta, this.radar.getSearchAperture());
-    }
-    
+    this.radar?.update(delta, this.radar.getSearchAperture())
   }
 }
 

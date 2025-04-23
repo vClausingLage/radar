@@ -70,51 +70,11 @@ export class Radar {
         return this.findTargetByCircle(d)
     }
 
-    generateTracks(tgts: any) {
-        // if (tgts.length > 0) {
-        //     if (!this.lastReturnSignal) {
-        //         this.lastReturnSignal = tgts[0]
-        //     }
-        //     if (this.lastReturnSignal) {
-        //         const distance = Phaser.Math.Distance.Between(
-        //             this.lastReturnSignal.point.x!,
-        //             this.lastReturnSignal.point.y!,
-        //             tgts[0].point.x!,
-        //             tgts[0].point.y!
-        //         );
-        //         // feed track with new data
-        //         if (distance > this.radarTrackSensitivity) {
-        //             console.log('problem')
-        //             this.returnSignals = []
-        //         }
-        //         if (distance < this.radarTrackSensitivity) {
-        //             this.returnSignals.push(tgts[0])
-        //         }
-
-        //         this.lastReturnSignal = tgts;
-        //     }
-        // }
-        // if (!tgts) {
-        //     if (this.lastReturnSignal) {
-        //         // now is the time to calculate the track
-        //         const averagePoint = this.returnSignals.reduce(
-        //             (acc, signal) => {
-        //                 acc.x += signal.point.x!;
-        //                 acc.y += signal.point.y!;
-        //                 return acc;
-        //             },
-        //             { x: 0, y: 0 }
-        //         );
-
-        //         averagePoint.x /= this.returnSignals.length;
-        //         averagePoint.y /= this.returnSignals.length;
-
-        //         renderTrack(this.scene, averagePoint)
-        //         this.returnSignals = []
-        //     }
-        //     this.lastReturnSignal = null
-        // }
-        // return []
+    generateTracks(rs: ReturnSignal) {
+        // if d is under sensitivity
+        // d = sqrt(((x2 - x1) ** 2) + ((y2 - y1) ** 2))
+        // if no previous signal
+        // if yes previous signal
     }
 
 
@@ -159,10 +119,6 @@ export class Radar {
         }
         const graphics = this.scene.add.graphics({ lineStyle: { width: 2, color: 0x00ff00, alpha: 1 } });
         graphics.clear();
-        
-        console.log('radar beam', this.radarOptions.pos?.x!, this.radarOptions.pos?.y!);
-
-        console.log('radar beam', this.radarBeam.x1, this.radarBeam.y1, this.radarBeam.x2, this.radarBeam.y2);
 
         if (this.radarOptions.aperture === this.step) {
             this.step = 0
@@ -187,25 +143,18 @@ export class Radar {
                 startX,
                 startY
             )
+            const rs = this.transceive(this.radarBeam)
+            if (rs) {
+                this.generateTracks(rs)
+                graphics.fillStyle(0xff0000, 1);
+                graphics.fillPoint(rs.point.x!, rs.point.y!, 2);
+            } else {
+                graphics.fillStyle(0x00ff00, 0.5);
+            }
             graphics.fillStyle(0x00ff00, 0.5);
             graphics.fillPoint(startX, startY, 2);
             graphics.fillPoint(endX, endY, 2);
         }
-
-        // const rotationSpeed = 1; // Adjust this value to control the rotation speed
-        // const rotationAngle = rotationSpeed * delta;
-        // Phaser.Geom.Line.RotateAroundXY(this.radarBeam, this.radarOptions.pos.x!, this.radarOptions.pos.y!, rotationAngle);
-        // console.log('radar beam', this.radarOptions.pos?.x!, this.radarOptions.pos?.y!);
-        // console.log('radar beam', this.radarBeam.x1, this.radarBeam.y1, this.radarBeam.x2, this.radarBeam.y2);
-        
-        // this.radarBeam.setTo(
-        //     this.radarOptions.pos?.x,
-        //     this.radarOptions.pos?.y,
-        //     this.radarOptions.pos?.x! + this.radarOptions.pulseDir?.x! * this.radarOptions.range!,
-        //     this.radarOptions.pos?.y! + this.radarOptions.pulseDir?.y! * this.radarOptions.range!
-        // )
-
-        // graphics.strokeLineShape(this.radarBeam);
     }
 
     /*
