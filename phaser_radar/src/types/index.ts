@@ -1,11 +1,12 @@
 export type ReturnSignal = {
     point: Vector2
     time: number
+    step: number
 }
 
 export type Vector2 = {
-    x?: number
-    y?: number
+    x: number
+    y: number
 
     setTo?(): (x: number, y: number) => Vector2
 }

@@ -1,6 +1,8 @@
 import { RadarSettings, Vector2 } from '../../types/index'
 import { Target } from '../entities/target'
 import { ReturnSignal } from '../../types/index'
+import { distanceBetweenPoints } from '../../math'
+import { Memory } from './memory'
 
 export class Radar {
 
@@ -11,6 +13,7 @@ export class Radar {
         private targets: Target[],
         private radarBeam: Phaser.Geom.Line,
         private step: number = 0,
+        private memory: Memory = {} as Memory,
     ) {}
 
     setDirection(direction: Vector2) {
@@ -42,14 +45,14 @@ export class Radar {
     }
 
     findTargetByCircle(d: Phaser.Geom.Line): ReturnSignal {
-        let tgts: { point: Vector2; time: number }[] = []
+        let tgts: ReturnSignal[] = []
         
         for (const t of this.targets) {
             const circle = new Phaser.Geom.Circle(t.position.x, t.position.y, t.size)
             if (Phaser.Geom.Intersects.LineToCircle(d, circle)) {
                 const result = Phaser.Geom.Intersects.GetLineToCircle(d, circle);
                 if (result) {
-                    tgts.push({point: result[0], time: this.clock.now})
+                    tgts.push({point: result[0], time: this.clock.now, step: this.step})
                     const graphics = this.scene.add.graphics();
                     graphics.fillStyle(0xff0000, 1);
                     graphics.fillPoint(result[0].x, result[0].y, 2);
@@ -71,10 +74,31 @@ export class Radar {
     }
 
     generateTracks(rs: ReturnSignal) {
+        // if (!this.lastReturnSignal) {
+        //     this.lastReturnSignal = rs
+        //     return
+        // }
+        // const d = distanceBetweenPoints(rs.point, this.lastReturnSignal.point)
+        // if (d < this.radarOptions.sensitivity) {
+            
+        // }
+            // if d is under sensitivity
+            // d = sqrt(((x2 - x1) ** 2) + ((y2 - y1) ** 2))
+            // if no previous signal
+            // if yes previous signal
+        
+
         // if d is under sensitivity
         // d = sqrt(((x2 - x1) ** 2) + ((y2 - y1) ** 2))
         // if no previous signal
         // if yes previous signal
+
+
+        if (!rs) {
+            this.memory[this.step] = null
+            return
+        }
+
     }
 
 
@@ -101,7 +125,7 @@ export class Radar {
 
     }
 
-    update(delta: number, aperture: number) {
+    update() {
         if (!this.radarOptions.isScanning) {
             return
         }
@@ -154,101 +178,6 @@ export class Radar {
             graphics.fillStyle(0x00ff00, 0.5);
             graphics.fillPoint(startX, startY, 2);
             graphics.fillPoint(endX, endY, 2);
-        }
-    }
-
-    /*
-    * a full circle search is performed if no start and end direction is provided
-    * @param startDirection: Vector2
-    * @param endDirection: Vector2
-    */
-    async search(startDirection?: Vector2, endDirection?: Vector2): Promise<void> {
-        if (!this.radarOptions.pos) {
-            console.error('Radar position not set')
-        }
-        if (!this.radarOptions.range) {
-            console.error('Radar range not set')
-        }
-        if (startDirection && endDirection) {
-            console.log('searchging from', startDirection, 'to', endDirection)
-        }
-        if (startDirection && !endDirection) {
-            console.log('searching from', startDirection)
-        }
-        if (!startDirection && endDirection) {
-            console.log('searching to', endDirection)
-        }
-        if (!startDirection && !endDirection) {
-            
-            // this.clock.addEvent({
-            //     delay: 3,
-            //     callback: () => {
-            //         radarBeam.setTo(
-            //             this.pos?.x,
-            //             this.pos?.y,
-            //             this.pos?.x! + this.pulseDir?.x! * this.range!,
-            //             this.pos?.y! + this.pulseDir?.y! * this.range!
-            //         )
-            //         // begin new serach circle when 360 degrees are reached
-            //         if (step >= 360) {
-            //             step = 0
-            //         }
-            //         step += .5
-            //         Phaser.Geom.Line.RotateAroundXY(radarBeam, this.pos?.x!, this.pos?.y!, Phaser.Math.DegToRad(step))
-            //         // watch for targets
-            //         const rs = this.transceive(radarBeam)
-            //         if (rs) {
-            //             if (!this.lastReturnSignal) {
-            //                 this.lastReturnSignal = rs
-            //             }
-            //             if (this.lastReturnSignal) {
-            //                 const distance = Phaser.Math.Distance.Between(
-            //                     this.lastReturnSignal.point.x!,
-            //                     this.lastReturnSignal.point.y!,
-            //                     rs.point.x!,
-            //                     rs.point.y!
-            //                 );
-            //                 // feed track with new data
-            //                 if (distance > this.radarTrackSensitivity) {
-            //                     console.log('problem')
-            //                     this.returnSignals = []
-            //                 }
-            //                 if (distance < this.radarTrackSensitivity) {
-            //                     this.returnSignals.push(rs)
-            //                 }
-
-            //                 this.lastReturnSignal = rs;
-            //             }
-            //         }
-            //         if (!rs) {
-            //             if (this.lastReturnSignal) {
-            //                 // now is the time to calculate the track
-            //                 const averagePoint = this.returnSignals.reduce(
-            //                     (acc, signal) => {
-            //                         acc.x += signal.point.x!;
-            //                         acc.y += signal.point.y!;
-            //                         return acc;
-            //                     },
-            //                     { x: 0, y: 0 }
-            //                 );
-
-            //                 averagePoint.x /= this.returnSignals.length;
-            //                 averagePoint.y /= this.returnSignals.length;
-
-            //                 renderTrack(this.scene, averagePoint)
-            //                 this.returnSignals = []
-            //             }
-            //             this.lastReturnSignal = null
-            //         }
-            //         // draw radar beam
-            //         graphics.clear();
-            //         graphics.strokeLineShape(radarBeam)
-            //         graphics.fillStyle(0x00ff00, 0.5);
-            //     },
-            //     repeat: repetitions,
-            //     callbackScope: this,
-            //     loop: true
-            // })
         }
     }
 }

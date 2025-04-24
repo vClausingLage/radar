@@ -1,6 +1,5 @@
 import Phaser from "phaser"
 import { Radar } from "./radar/systems/radar"
-import { RadarScanController } from "./controller/radarScanController"
 import { radarSettings } from "./constants/index"
 
 class Game extends Phaser.Scene
@@ -10,7 +9,7 @@ class Game extends Phaser.Scene
     width: window.innerWidth
   }
   
-  constructor (private canvas?: HTMLCanvasElement, private cursorKeys?: Phaser.Types.Input.Keyboard.CursorKeys,  private ship?: Phaser.Physics.Arcade.Image, private radar?: Radar, private radarCtrl?: RadarScanController)
+  constructor (private canvas?: HTMLCanvasElement, private cursorKeys?: Phaser.Types.Input.Keyboard.CursorKeys,  private ship?: Phaser.Physics.Arcade.Image, private radar?: Radar)
   {
     super()
   }
@@ -117,7 +116,7 @@ class Game extends Phaser.Scene
       }
     });
     // radar scan
-    this.radar?.update(delta, this.radar.getSearchAperture())
+    this.radar?.update()
   }
 }
 
