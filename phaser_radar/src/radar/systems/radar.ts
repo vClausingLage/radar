@@ -12,7 +12,7 @@ export class Radar {
         private targets: Target[],
         private radarBeam: Phaser.Geom.Line,
         private step: number = 0,
-        private memory: Vector2 | null [] = Array.from({ length: 360 }, () => null)
+        private memory: (Vector2 | null)[] = Array.from({ length: 360 }, () => null)
     ) {}
 
     setDirection(direction: Vector2) {
@@ -77,18 +77,8 @@ export class Radar {
     }
 
     generateTracks(rs: ReturnSignal) {
-        if (!rs) {
-            this.memory[this.step] = null
-        } else {
-            this.memory[this.step] = rs.point
-            console.log('radar memory', this.memory)
-            console.log('radar step', this.memory[this.step], this.memory[this.step -1])
-        }
-        
-
-
-        if (this.memory[this.step] === null && this.memory[this.step - 1] !== null) {
-            console.log('hi')
+        if (rs) {
+            
         }
     }
 
