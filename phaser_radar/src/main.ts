@@ -61,12 +61,12 @@ class Game extends Phaser.Scene
       speed: 2, 
       size: 10 
     })
-    this.radar.addTarget({ 
-      position: {x: 400, y: 300 }, 
-      direction: {x: -1, y: 0}, 
-      speed: 2, 
-      size: 10 
-    })
+    // this.radar.addTarget({ 
+    //   position: {x: 400, y: 300 }, 
+    //   direction: {x: -1, y: 0}, 
+    //   speed: 2, 
+    //   size: 10 
+    // })
     this.radar.start()
   }
 
@@ -117,6 +117,9 @@ class Game extends Phaser.Scene
     });
     // radar scan
     this.radar?.update()
+
+    // console log radar.getMemory() every second
+    
   }
 }
 

@@ -2,7 +2,6 @@ import { RadarSettings, Vector2 } from '../../types/index'
 import { Target } from '../entities/target'
 import { ReturnSignal } from '../../types/index'
 import { distanceBetweenPoints } from '../../math'
-import { Memory } from './memory'
 
 export class Radar {
 
@@ -13,7 +12,7 @@ export class Radar {
         private targets: Target[],
         private radarBeam: Phaser.Geom.Line,
         private step: number = 0,
-        private memory: Memory = {} as Memory,
+        private memory: Vector2 | null [] = Array.from({ length: 360 }, () => null)
     ) {}
 
     setDirection(direction: Vector2) {
@@ -42,6 +41,10 @@ export class Radar {
 
     getSearchAperture() {
         return this.radarOptions.aperture
+    }
+
+    getMemory() {
+        return this.memory
     }
 
     findTargetByCircle(d: Phaser.Geom.Line): ReturnSignal {
@@ -74,31 +77,19 @@ export class Radar {
     }
 
     generateTracks(rs: ReturnSignal) {
-        // if (!this.lastReturnSignal) {
-        //     this.lastReturnSignal = rs
-        //     return
-        // }
-        // const d = distanceBetweenPoints(rs.point, this.lastReturnSignal.point)
-        // if (d < this.radarOptions.sensitivity) {
-            
-        // }
-            // if d is under sensitivity
-            // d = sqrt(((x2 - x1) ** 2) + ((y2 - y1) ** 2))
-            // if no previous signal
-            // if yes previous signal
-        
-
-        // if d is under sensitivity
-        // d = sqrt(((x2 - x1) ** 2) + ((y2 - y1) ** 2))
-        // if no previous signal
-        // if yes previous signal
-
-
         if (!rs) {
             this.memory[this.step] = null
-            return
+        } else {
+            this.memory[this.step] = rs.point
+            console.log('radar memory', this.memory)
+            console.log('radar step', this.memory[this.step], this.memory[this.step -1])
         }
+        
 
+
+        if (this.memory[this.step] === null && this.memory[this.step - 1] !== null) {
+            console.log('hi')
+        }
     }
 
 
