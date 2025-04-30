@@ -6,5 +6,6 @@ export const radarSettings: RadarSettings = {
     sensitivity: 5,
     pos: { x: 0, y: 0 },
     isScanning: false,
-    aperture: 360,
+    azimuth: 360,
+    radarAzimuthStartAngle: - 180
   }

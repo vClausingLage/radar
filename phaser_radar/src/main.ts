@@ -34,7 +34,6 @@ class Game extends Phaser.Scene
     this.ship.setVelocity(0, 0)
     this.ship.setBounce(.5, .5)
     this.ship.setCollideWorldBounds(true)
-    console.log('position of ship',this.ship.getWorldPoint())
     // RADAR
     const radarOptions = {
       range: radarSettings?.range,
@@ -42,7 +41,8 @@ class Game extends Phaser.Scene
       pulseDir: radarSettings?.pulseDir,
       pos: radarSettings?.pos,
       isScanning: radarSettings?.isScanning,
-      aperture: radarSettings?.aperture,
+      azimuth: radarSettings?.azimuth,
+      radarAzimuthStartAngle: radarSettings?.radarAzimuthStartAngle,
     }
     this.radar = new Radar(this, this.time, radarOptions, [], new Phaser.Geom.Line())
         // make ship position radar position
@@ -61,12 +61,12 @@ class Game extends Phaser.Scene
       speed: 2, 
       size: 10 
     })
-    // this.radar.addTarget({ 
-    //   position: {x: 400, y: 300 }, 
-    //   direction: {x: -1, y: 0}, 
-    //   speed: 2, 
-    //   size: 10 
-    // })
+    this.radar.addTarget({ 
+      position: {x: 400, y: 300 }, 
+      direction: {x: -1, y: 1}, 
+      speed: 2, 
+      size: 10 
+    })
     this.radar.start()
   }
 
@@ -117,8 +117,7 @@ class Game extends Phaser.Scene
     });
     // radar scan
     this.radar?.update()
-
-    // console log radar.getMemory() every second
+    this.radar?.update() // Call the update method twice per frame
     
   }
 }

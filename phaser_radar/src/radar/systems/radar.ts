@@ -1,7 +1,7 @@
 import { RadarSettings, Vector2 } from '../../types/index'
 import { Target } from '../entities/target'
 import { ReturnSignal } from '../../types/index'
-import { distanceBetweenPoints } from '../../math'
+import { fitTrack } from '../../math/index'
 
 export class Radar {
 
@@ -12,7 +12,8 @@ export class Radar {
         private targets: Target[],
         private radarBeam: Phaser.Geom.Line,
         private step: number = 0,
-        private memory: (Vector2 | null)[] = Array.from({ length: 360 }, () => null)
+        private memory: (ReturnSignal | null)[] = [],
+        private tracks: (Vector2)[] = [],
     ) {}
 
     setDirection(direction: Vector2) {
@@ -39,49 +40,91 @@ export class Radar {
         return this.targets
     }
 
-    getSearchAperture() {
-        return this.radarOptions.aperture
+    getSearchazimuth() {
+        return this.radarOptions.azimuth
     }
 
     getMemory() {
         return this.memory
     }
 
-    findTargetByCircle(d: Phaser.Geom.Line): ReturnSignal {
-        let tgts: ReturnSignal[] = []
-        
+    findTargetByCircle(d: Phaser.Geom.Line): ReturnSignal | null {
+        const origin = this.radarOptions.pos!;          // we already validated it exists
+        let closest: ReturnSignal | null = null;
+        let closestDist2 = Infinity;                    // squared distance – no sqrt in loop
+      
         for (const t of this.targets) {
-            const circle = new Phaser.Geom.Circle(t.position.x, t.position.y, t.size)
-            if (Phaser.Geom.Intersects.LineToCircle(d, circle)) {
-                const result = Phaser.Geom.Intersects.GetLineToCircle(d, circle);
-                if (result) {
-                    tgts.push({point: result[0], time: this.clock.now, step: this.step})
-                    const graphics = this.scene.add.graphics();
-                    graphics.fillStyle(0xff0000, 1);
-                    graphics.fillPoint(result[0].x, result[0].y, 2);
-                    this.scene.time.addEvent({
-                        delay: 9000,
-                        callback: () => {
-                            graphics.clear();
-                        },
-                        callbackScope: this
-                    });
-                }
+          const circle = new Phaser.Geom.Circle(t.position.x, t.position.y, t.size);
+      
+          // This gives you **up to two** intersection points
+          const hits = Phaser.Geom.Intersects.GetLineToCircle(d, circle);
+      
+          if (hits) {
+            for (const hit of hits) {
+              const dist2 = Phaser.Math.Distance.Squared(origin.x, origin.y, hit.x, hit.y);
+      
+              if (dist2 < closestDist2) {
+                closestDist2 = dist2;
+                closest = {
+                  point: hit,
+                  time: this.clock.now,
+                  step: this.step,
+                };
+              }
             }
+          }
         }
-        return tgts[0] || null
-    }
+        return closest;   // null if nothing was intersected
+      }
+      
 
-    transceive(d: Phaser.Geom.Line): ReturnSignal {
+    transceive(d: Phaser.Geom.Line): ReturnSignal | null {
         return this.findTargetByCircle(d)
     }
 
-    generateTracks(rs: ReturnSignal) {
+    processReturnSignal(rs: ReturnSignal | null) {
+        // collect returns and remove old ones
         if (rs) {
-            
+            this.memory[this.step] = rs
+        }
+        if (!rs) {
+            this.memory[this.step] = null
+            //! handle if step = 0 || 1
+            //! must be azimuth
+            if (this.memory[this.step - 1] !== null) {
+                const recentMemory = [];
+                for (let i = this.step - 1; i >= 0; i--) {
+                    if (this.memory[i] !== null) {
+                        recentMemory.push(this.memory[i]);
+                    } else {
+                        this.saveTrack(recentMemory);
+                        break;
+                    }
+                }
+            }
         }
     }
 
+    saveTrack(recentSignals: (ReturnSignal | null)[]) {
+        const clean = recentSignals.filter(Boolean) as ReturnSignal[];
+        const track = fitTrack(clean);
+        if (!track) return;
+      
+        const marker = this.scene.add.image(track.pos.x, track.pos.y, 'track');
+        marker.setOrigin(0.5);
+        this.scene.tweens.add({
+          targets: marker,
+          alpha: 0,
+          duration: 10000,
+          onComplete: () => marker.destroy()
+        });
+      
+        // (Optional) keep a data structure of active tracks
+        this.tracks.push(track.pos);                   // or store full Track object
+    
+        console.log(this.tracks)
+    }
+      
 
     start() {
         this.radarOptions.isScanning = true
@@ -91,20 +134,13 @@ export class Radar {
             this.radarOptions.pos?.x! + this.radarOptions.pulseDir?.x! * this.radarOptions.range!,
             this.radarOptions.pos?.y! + this.radarOptions.pulseDir?.y! * this.radarOptions.range!
         )
-        console.log('radar started', this.radarBeam)
     }
 
     stop() {
         this.radarOptions.isScanning = false
     }
 
-    rotate() {
-
-    }
-
-    render() {
-
-    }
+    render() {}
 
     update() {
         if (!this.radarOptions.isScanning) {
@@ -122,26 +158,16 @@ export class Radar {
         if (!this.radarOptions.pulseDir) {
             console.error('Radar direction not set')
         }
-        const graphics = this.scene.add.graphics({ lineStyle: { width: 2, color: 0x00ff00, alpha: 1 } });
-        graphics.clear();
 
-        if (this.radarOptions.aperture === this.step) {
+        if (this.radarOptions.azimuth === this.step) {
             this.step = 0
-            this.scene.children.each((child) => {
-                if (child.type === 'Graphics') {
-                    child.destroy();
-                }
-            });
         }
 
-        if (this.radarOptions.aperture) {
+        if (this.radarOptions.azimuth) {
             this.step++
-            const startAngle = Phaser.Math.DegToRad(this.step);
-            const endAngle = Phaser.Math.DegToRad(this.step + 1);
+            const startAngle = Phaser.Math.DegToRad(this.step - this.radarOptions.radarAzimuthStartAngle);
             const startX = this.radarOptions.pos?.x! + Math.cos(startAngle) * this.radarOptions.range!;
             const startY = this.radarOptions.pos?.y! + Math.sin(startAngle) * this.radarOptions.range!;
-            const endX = this.radarOptions.pos?.x! + Math.cos(endAngle) * this.radarOptions.range!;
-            const endY = this.radarOptions.pos?.y! + Math.sin(endAngle) * this.radarOptions.range!; 
             this.radarBeam.setTo(
                 this.radarOptions.pos?.x,
                 this.radarOptions.pos?.y,
@@ -149,16 +175,7 @@ export class Radar {
                 startY
             )
             const rs = this.transceive(this.radarBeam)
-            if (rs) {
-                this.generateTracks(rs)
-                graphics.fillStyle(0xff0000, 1);
-                graphics.fillPoint(rs.point.x!, rs.point.y!, 2);
-            } else {
-                graphics.fillStyle(0x00ff00, 0.5);
-            }
-            graphics.fillStyle(0x00ff00, 0.5);
-            graphics.fillPoint(startX, startY, 2);
-            graphics.fillPoint(endX, endY, 2);
-        }
+            this.processReturnSignal(rs)
+        }        
     }
 }

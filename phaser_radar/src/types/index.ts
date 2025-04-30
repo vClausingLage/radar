@@ -17,5 +17,6 @@ export type RadarSettings = {
     sensitivity: number
     pos: Vector2
     isScanning: boolean
-    aperture: 360 | 90 | 45 | 30
+    azimuth: 360 | 90 | 45 | 30
+    radarAzimuthStartAngle: number
   }
