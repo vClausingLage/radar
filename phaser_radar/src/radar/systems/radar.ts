@@ -13,7 +13,8 @@ export class Radar {
         private radarBeam: Phaser.Geom.Line,
         private step: number = 0,
         private memory: (ReturnSignal | null)[] = [],
-        private tracks: (Vector2)[] = [],
+        private tracksBuffer: Vector2[] = [],
+        private tracks: Vector2[] = [],
     ) {}
 
     setDirection(direction: Vector2) {
@@ -89,40 +90,37 @@ export class Radar {
         }
         if (!rs) {
             this.memory[this.step] = null
-            //! handle if step = 0 || 1
-            //! must be azimuth
-            if (this.memory[this.step - 1] !== null) {
-                const recentMemory = [];
-                for (let i = this.step - 1; i >= 0; i--) {
-                    if (this.memory[i] !== null) {
-                        recentMemory.push(this.memory[i]);
-                    } else {
-                        this.saveTrack(recentMemory);
-                        break;
-                    }
-                }
-            }
         }
     }
 
-    saveTrack(recentSignals: (ReturnSignal | null)[]) {
-        const clean = recentSignals.filter(Boolean) as ReturnSignal[];
-        const track = fitTrack(clean);
-        if (!track) return;
-      
-        const marker = this.scene.add.image(track.pos.x, track.pos.y, 'track');
-        marker.setOrigin(0.5);
-        this.scene.tweens.add({
-          targets: marker,
-          alpha: 0,
-          duration: 10000,
-          onComplete: () => marker.destroy()
-        });
-      
-        // (Optional) keep a data structure of active tracks
-        this.tracks.push(track.pos);                   // or store full Track object
-    
-        console.log(this.tracks)
+    generateTracks() {
+
+        // loop all return signals and cludter them
+
+        const buffer = []
+
+        for (let i = 0; i < this.memory.length; i++) {
+            if (!this.memory[i]) continue
+            const rs = this.memory[i]
+            const rsMinusOne = this.memory[i - 1]
+            console.log(this.memory[i]?.step)
+            const distanceToLastIndex = Phaser.Math.Distance.Squared(rs?.point?.x!, rs?.point.y!, rsMinusOne?.point.x!, rsMinusOne?.point.y!)
+
+        }
+
+        // create tracks and save them to buffer
+
+        // loop all buffered tracks and compare them to signals
+
+        // const marker = this.scene.add.image(track.pos.x, track.pos.y, 'track');
+        // marker.setOrigin(0.5);
+        // this.scene.tweens.add({
+        //   targets: marker,
+        //   alpha: 0,
+        //   duration: 10000,
+        //   onComplete: () => marker.destroy()
+        // }); 
+
     }
       
 

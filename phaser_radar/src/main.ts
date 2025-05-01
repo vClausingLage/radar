@@ -68,9 +68,19 @@ class Game extends Phaser.Scene
       size: 10 
     })
     this.radar.start()
+
+    // the generate tracks logic every second
+    //! find alternative calling
+    this.time.addEvent({
+      delay: 1000,
+      callback: () => {
+        this.radar?.generateTracks()
+      },
+      loop: true
+    });
   }
 
-  update ()
+  update (time: number, delta: number)
   {
     if (this.cursorKeys?.left.isDown) {
       this.ship?.setAngularVelocity(-50)
@@ -104,10 +114,9 @@ class Game extends Phaser.Scene
     }
     
     // move targets
-    const delta = this.game.loop.delta / 1000
     this.radar?.getTargets().forEach(target => {
-      target.position.x! += target.direction.x! * target.speed * delta;
-      target.position.y! += target.direction.y! * target.speed * delta;
+      target.position.x! += target.direction.x! * target.speed * delta / 1000;
+      target.position.y! += target.direction.y! * target.speed * delta / 1000;
       if (target.position.x! <= 0 || target.position.x! >= Number(this?.canvas?.width)) {
         target.direction.x! *= -1;
       }
@@ -118,6 +127,7 @@ class Game extends Phaser.Scene
     // radar scan
     this.radar?.update()
     this.radar?.update() // Call the update method twice per frame
+
     
   }
 }

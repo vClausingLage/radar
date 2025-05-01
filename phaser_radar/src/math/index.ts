@@ -38,11 +38,11 @@ export function fitTrack(history: ReturnSignal[]): Track | null {
   const vx = numX / den;               // px per ms
   const vy = numY / den;
   const speed = Math.hypot(vx, vy);
-  const dir   = new Phaser.Math.Vector2(vx, vy).normalize();
-  const bla = {
+  const dir = new Phaser.Math.Vector2(vx, vy).normalize();
+  const direction = {
     x: dir.x,
     y: dir.y,
   } as Vector2;
 
-  return { pos: { x: meanX, y: meanY }, dir: bla, speed };
+  return { pos: { x: meanX, y: meanY }, dir: direction, speed };
 }
