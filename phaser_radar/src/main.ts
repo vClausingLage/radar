@@ -8,6 +8,8 @@ class Game extends Phaser.Scene
     height: window.innerHeight,
     width: window.innerWidth
   }
+  private turn = 0
+  private direction = { x: 0, y: 0 }
   
   constructor (private canvas?: HTMLCanvasElement, private cursorKeys?: Phaser.Types.Input.Keyboard.CursorKeys,  private ship?: Phaser.Physics.Arcade.Image, private radar?: Radar)
   {
@@ -29,6 +31,26 @@ class Game extends Phaser.Scene
   {
     // KEYS
     this.cursorKeys = this.input.keyboard?.createCursorKeys()
+    this.input.keyboard?.on('keydown-LEFT', () => this.turn = -1);
+    this.input.keyboard?.on('keyup-LEFT',   () => this.turn = 0);
+    this.input.keyboard?.on('keydown-RIGHT', () => this.turn = 1);
+    this.input.keyboard?.on('keyup-RIGHT',   () => this.turn = 0);
+    this.input.keyboard?.on('keydown-UP', () => {
+      this.ship?.setVelocityY(-3)
+      this.ship?.setVelocityX(0)
+    });
+    this.input.keyboard?.on('keyup-UP', () => {
+      this.ship?.setVelocityY(0)
+      this.ship?.setVelocityX(0)
+    });
+    this.input.keyboard?.on('keydown-DOWN', () => {
+      this.ship?.setVelocityY(3)
+      this.ship?.setVelocityX(0)
+    });
+    this.input.keyboard?.on('keyup-DOWN', () => {
+      this.ship?.setVelocityY(0)
+      this.ship?.setVelocityX(0)
+    });
     // SHIP
     this.ship = this.physics.add.image(this.window.width / 2, this.window.height, 'ship')
     this.ship.setVelocity(0, 0)
@@ -72,7 +94,7 @@ class Game extends Phaser.Scene
     // the generate tracks logic every second
     //! find alternative calling
     this.time.addEvent({
-      delay: 1000,
+      delay: 750,
       callback: () => {
         this.radar?.generateTracks()
       },
@@ -82,36 +104,38 @@ class Game extends Phaser.Scene
 
   update (time: number, delta: number)
   {
-    if (this.cursorKeys?.left.isDown) {
-      this.ship?.setAngularVelocity(-50)
-    }
-    if (this.cursorKeys?.left.isUp) {
-      this.ship?.setAngularVelocity(0)
-    }
-    if (this.cursorKeys?.right.isDown) {
-      this.ship?.setAngularVelocity(50)
-    }
-    if (this.cursorKeys?.right.isUp) {
-      this.ship?.setAngularVelocity(0)
-    }
-    if (this.cursorKeys?.up.isUp && this.cursorKeys?.down.isUp) {
-      this.ship?.setVelocity(0)
-    }
-    if (this.cursorKeys?.up.isDown) {
-      this.ship?.setVelocity(-3)
-    }
-    if (this.cursorKeys?.down.isDown) {
-      this.ship?.setVelocity(3)
-    }
-    if (this.cursorKeys?.space.isDown) {
-      if (this.physics.world.isPaused) {
-        this.physics.world.resume()
-        this.scene.resume()
-      } else {
-        this.physics.world.pause()
-        this.scene.pause()
-      }
-    }
+    // if (this.cursorKeys?.left.isDown) {
+    //   this.ship?.setAngularVelocity(-50)
+    // }
+    // if (this.cursorKeys?.left.isUp) {
+    //   this.ship?.setAngularVelocity(0)
+    // }
+    // if (this.cursorKeys?.right.isDown) {
+    //   this.ship?.setAngularVelocity(50)
+    // }
+    // if (this.cursorKeys?.right.isUp) {
+    //   this.ship?.setAngularVelocity(0)
+    // }
+    // if (this.cursorKeys?.up.isUp && this.cursorKeys?.down.isUp) {
+    //   this.ship?.setVelocity(0)
+    // }
+    // if (this.cursorKeys?.up.isDown) {
+    //   this.ship?.setVelocity(-3)
+    // }
+    // if (this.cursorKeys?.down.isDown) {
+    //   this.ship?.setVelocity(3)
+    // }
+    // if (this.cursorKeys?.space.isDown) {
+    //   if (this.physics.world.isPaused) {
+    //     this.physics.world.resume()
+    //     this.scene.resume()
+    //   } else {
+    //     this.physics.world.pause()
+    //     this.scene.pause()
+    //   }
+    // }
+    this.ship?.setAngularVelocity(this.turn * 50);
+
     
     // move targets
     this.radar?.getTargets().forEach(target => {

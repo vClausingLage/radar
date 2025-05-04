@@ -1,7 +1,6 @@
 import { RadarSettings, Vector2 } from '../../types/index'
 import { Target } from '../entities/target'
 import { ReturnSignal } from '../../types/index'
-import { fitTrack } from '../../math/index'
 
 export class Radar {
 
@@ -50,9 +49,9 @@ export class Radar {
     }
 
     findTargetByCircle(d: Phaser.Geom.Line): ReturnSignal | null {
-        const origin = this.radarOptions.pos!;          // we already validated it exists
+        const origin = this.radarOptions.pos;
         let closest: ReturnSignal | null = null;
-        let closestDist2 = Infinity;                    // squared distance – no sqrt in loop
+        let closestDist2 = Infinity;
       
         for (const t of this.targets) {
           const circle = new Phaser.Geom.Circle(t.position.x, t.position.y, t.size);
@@ -75,7 +74,19 @@ export class Radar {
             }
           }
         }
-        return closest;   // null if nothing was intersected
+
+        // if (closest) {
+        //     const marker = this.scene.add.circle(closest.point.x, closest.point.y, 2, 0xff0000);
+        //     marker.setOrigin(0.5);
+        //     this.scene.tweens.add({
+        //         targets: marker,
+        //         alpha: 0,
+        //         duration: 3500,
+        //         onComplete: () => marker.destroy()
+        //     });
+        // }
+
+        return closest;
       }
       
 
@@ -95,16 +106,55 @@ export class Radar {
 
     generateTracks() {
 
-        // loop all return signals and cludter them
+        // loop all return signals and cluster them
 
-        const buffer = []
+        let buffer = []
+
+        let tracksBuffer = []
 
         for (let i = 0; i < this.memory.length; i++) {
-            if (!this.memory[i]) continue
             const rs = this.memory[i]
             const rsMinusOne = this.memory[i - 1]
-            console.log(this.memory[i]?.step)
+            if (!rs && !rsMinusOne) continue
             const distanceToLastIndex = Phaser.Math.Distance.Squared(rs?.point?.x!, rs?.point.y!, rsMinusOne?.point.x!, rsMinusOne?.point.y!)
+            
+            if (!rsMinusOne && rs) {
+                buffer.push(rs)
+            }
+            if (rs && rsMinusOne) {
+                if (distanceToLastIndex < this.radarOptions.sensitivity) {
+                    buffer.push(rs)
+                } else {
+                    const b = buffer.reduce((acc, curr) => {
+                        acc.x += curr.point.x
+                        acc.y += curr.point.y
+                        return acc
+                    }, {x: 0, y: 0})
+                    tracksBuffer.push([b.x / buffer.length, b.y / buffer.length])
+                    buffer = []
+                }
+            }
+            if (!rs && rsMinusOne) {
+                const b = buffer.reduce((acc, curr) => {
+                    acc.x += curr.point.x
+                    acc.y += curr.point.y
+                    return acc
+                }, {x: 0, y: 0})
+                tracksBuffer.push([b.x / buffer.length, b.y / buffer.length])
+                buffer = []
+            }
+
+            for (const tb of tracksBuffer) {
+                const marker = this.scene.add.circle(tb[0], tb[1], 4, 0x00ff00);
+                marker.setOrigin(0.5);
+                this.scene.tweens.add({
+                targets: marker,
+                alpha: 0,
+                duration: 5000,
+                onComplete: () => marker.destroy()
+                });
+            }
+
 
         }
 
@@ -119,7 +169,7 @@ export class Radar {
         //   alpha: 0,
         //   duration: 10000,
         //   onComplete: () => marker.destroy()
-        // }); 
+        // });
 
     }
       
