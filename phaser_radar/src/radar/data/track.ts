@@ -1,4 +1,7 @@
 import { Vector2 } from "../../types";
-export class Track {
-    constructor(public pos: Vector2, public dir: Vector2, public speed: number) {}
+export interface Track {
+    pos: Vector2
+    dist: number
+    dir: Vector2
+    speed: number
 }

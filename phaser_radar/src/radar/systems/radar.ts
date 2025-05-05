@@ -1,5 +1,6 @@
 import { RadarSettings, Vector2 } from '../../types/index'
 import { Target } from '../entities/target'
+import { Track } from '../data/track'
 import { ReturnSignal } from '../../types/index'
 
 export class Radar {
@@ -12,8 +13,7 @@ export class Radar {
         private radarBeam: Phaser.Geom.Line,
         private step: number = 0,
         private memory: (ReturnSignal | null)[] = [],
-        private tracksBuffer: Vector2[] = [],
-        private tracks: Vector2[] = [],
+        private tracks: Track[] = [],
     ) {}
 
     setDirection(direction: Vector2) {
@@ -69,6 +69,9 @@ export class Radar {
                   point: hit,
                   time: this.clock.now,
                   step: this.step,
+                  direction: t.direction,
+                  speed: t.speed,
+                  distance: dist2,
                 };
               }
             }
@@ -110,7 +113,7 @@ export class Radar {
 
         let buffer = []
 
-        let tracksBuffer = []
+        let tracksBuffer: Track[] = []
 
         for (let i = 0; i < this.memory.length; i++) {
             const rs = this.memory[i]
@@ -130,7 +133,12 @@ export class Radar {
                         acc.y += curr.point.y
                         return acc
                     }, {x: 0, y: 0})
-                    tracksBuffer.push([b.x / buffer.length, b.y / buffer.length])
+                    tracksBuffer.push({ 
+                        pos: { x: b.x / buffer.length, y: b.y / buffer.length}, 
+                        dist: rs.distance , 
+                        dir: rs.direction, 
+                        speed: rs.speed
+                    })
                     buffer = []
                 }
             }
@@ -140,37 +148,45 @@ export class Radar {
                     acc.y += curr.point.y
                     return acc
                 }, {x: 0, y: 0})
-                tracksBuffer.push([b.x / buffer.length, b.y / buffer.length])
+                tracksBuffer.push({ 
+                    pos: { x: b.x / buffer.length, y: b.y / buffer.length}, 
+                    dist: rsMinusOne.distance, 
+                    dir: rsMinusOne.direction,
+                    speed: rsMinusOne.speed
+                })
                 buffer = []
             }
-
-            for (const tb of tracksBuffer) {
-                const marker = this.scene.add.circle(tb[0], tb[1], 4, 0x00ff00);
-                marker.setOrigin(0.5);
-                this.scene.tweens.add({
-                targets: marker,
-                alpha: 0,
-                duration: 5000,
-                onComplete: () => marker.destroy()
-                });
-            }
-
-
         }
 
-        // create tracks and save them to buffer
+        // calculate tracks
 
-        // loop all buffered tracks and compare them to signals
+        this.tracks = tracksBuffer
 
-        // const marker = this.scene.add.image(track.pos.x, track.pos.y, 'track');
-        // marker.setOrigin(0.5);
-        // this.scene.tweens.add({
-        //   targets: marker,
-        //   alpha: 0,
-        //   duration: 10000,
-        //   onComplete: () => marker.destroy()
-        // });
+        this.tracks.sort((a, b) => {
+            if (a.dist < b.dist) {
+                return -1
+            }
+            if (a.dist > b.dist) {
+                return 1
+            }
+            return 0
+        })
 
+        for (const tb of this.tracks) {
+            const marker = this.scene.add.circle(tb.pos.x, tb.pos.y, 3, 0x00ff00);
+            const indexText = this.scene.add.text(tb.pos.x, tb.pos.y + 15, `${this.tracks.indexOf(tb) === 0 ? '*' : this.tracks.indexOf(tb) + 1}`, {
+                fontSize: '15px',
+                color: '#00ff00',
+            });
+            indexText.setOrigin(0.5);
+            marker.setOrigin(0.5);
+            this.scene.tweens.add({
+            targets: [marker, indexText],
+            alpha: 0,
+            duration: 1500,
+            onComplete: () => marker.destroy()
+            });
+        }
     }
       
 
@@ -207,8 +223,13 @@ export class Radar {
             console.error('Radar direction not set')
         }
 
+        if (this.step === this.radarOptions.azimuth / 2) {
+            this.generateTracks()
+        }
+
         if (this.radarOptions.azimuth === this.step) {
             this.step = 0
+            this.generateTracks()
         }
 
         if (this.radarOptions.azimuth) {

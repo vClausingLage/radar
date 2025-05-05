@@ -2,6 +2,9 @@ export type ReturnSignal = {
     point: Vector2
     time: number
     step: number
+    direction: Vector2
+    speed: number
+    distance: number
 }
 
 export type Vector2 = {
