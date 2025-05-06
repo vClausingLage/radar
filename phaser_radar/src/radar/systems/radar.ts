@@ -1,14 +1,13 @@
 import { RadarSettings, Vector2 } from '../../types/index'
 import { Target } from '../entities/target'
 import { Track } from '../data/track'
-import { ReturnSignal } from '../../types/index'
-
+import { ReturnSignal, Mode } from '../../types/index'
 export class Radar {
-
     constructor(
         private scene: Phaser.Scene,
         private clock: Phaser.Time.Clock, 
         private radarOptions: RadarSettings,
+        private mode: Mode = 'sweep',
         private targets: Target[],
         private radarBeam: Phaser.Geom.Line,
         private step: number = 0,
@@ -46,6 +45,10 @@ export class Radar {
 
     getMemory() {
         return this.memory
+    }
+
+    setMode(mode: Mode) {
+        this.mode = mode
     }
 
     findTargetByCircle(d: Phaser.Geom.Line): ReturnSignal | null {
@@ -108,9 +111,7 @@ export class Radar {
     }
 
     generateTracks() {
-
         // loop all return signals and cluster them
-
         let buffer = []
 
         let tracksBuffer: Track[] = []
@@ -245,6 +246,6 @@ export class Radar {
             )
             const rs = this.transceive(this.radarBeam)
             this.processReturnSignal(rs)
-        }        
+        }
     }
 }

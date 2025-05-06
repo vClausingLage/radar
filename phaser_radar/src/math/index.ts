@@ -1,5 +1,4 @@
-import { Vector2, ReturnSignal } from "../types";
-import { Track } from "../radar/data/track";
+import { Vector2 } from "../types";
 
 export function distanceBetweenPoints(
   v1: Vector2,

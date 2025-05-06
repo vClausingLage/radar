@@ -64,7 +64,7 @@ class Game extends Phaser.Scene
       azimuth: radarSettings?.azimuth,
       radarAzimuthStartAngle: radarSettings?.radarAzimuthStartAngle,
     }
-    this.radar = new Radar(this, this.time, radarOptions, [], new Phaser.Geom.Line())
+    this.radar = new Radar(this, this.time, radarOptions, 'sweep', [], new Phaser.Geom.Line())
     // make ship position radar position
     if (this.ship) {
       const worldPoint = this.ship.getWorldPoint()
@@ -73,6 +73,22 @@ class Game extends Phaser.Scene
     // RWR
     this.add.image(60, 80, 'rwr')
     this.add.text(75 , 135, 'RWR', { font: '18px Courier', color: '#00ff00' })
+
+    // INTERFACE
+    this.add.text(20, this.window.height - 50, 'STT', { 
+      font: '22px Courier', 
+      color: '#000', 
+      backgroundColor: '#00ff00', 
+      padding: { x: 10, y: 5 } 
+    })
+    .setInteractive()
+    .setOrigin(0)
+    .on('pointerdown', () => {
+      this.radar?.setMode('stt')
+    });
+
+
+
 
     // create targets and asteroids and push them to radar
     this.radar.addTarget({ 
