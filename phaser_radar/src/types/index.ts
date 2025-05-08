@@ -20,8 +20,8 @@ export type RadarSettings = {
     sensitivity: number
     pos: Vector2
     isScanning: boolean
-    azimuth: 360 | 90 | 45 | 30 | 4
+    azimuth: number
     radarAzimuthStartAngle: number
 }
 
-export type Mode = 'stt' | 'sweep'
+export type Mode = 'stt' | 'rws' | 'tws' | 'emcon'

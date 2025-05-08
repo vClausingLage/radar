@@ -14,3 +14,8 @@ export function degreesToRadians(degrees: number): number {
 export function radiansToDegrees(radians: number): number {
   return (radians * 180) / Math.PI;
 }
+
+export function getMiddleAngle(angle1: number, angle2: number): number {
+  const diff = Phaser.Math.Angle.Wrap(angle2 - angle1);
+  return Phaser.Math.Angle.Wrap(angle1 + diff / 2);
+}

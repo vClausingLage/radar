@@ -64,7 +64,7 @@ class Game extends Phaser.Scene
       azimuth: radarSettings?.azimuth,
       radarAzimuthStartAngle: radarSettings?.radarAzimuthStartAngle,
     }
-    this.radar = new Radar(this, this.time, radarOptions, 'sweep', [], new Phaser.Geom.Line())
+    this.radar = new Radar(this, this.time, radarOptions, 'rws', [], new Phaser.Geom.Line())
     // make ship position radar position
     if (this.ship) {
       const worldPoint = this.ship.getWorldPoint()
@@ -78,32 +78,65 @@ class Game extends Phaser.Scene
     this.add.text(20, this.window.height - 50, 'STT', { 
       font: '22px Courier', 
       color: '#000', 
-      backgroundColor: '#00ff00', 
+      backgroundColor: this.radar?.getMode() === 'stt' ? '#00ff00' : '#ffdb4d',
       padding: { x: 10, y: 5 } 
     })
     .setInteractive()
     .setOrigin(0)
     .on('pointerdown', () => {
+      if (this.radar?.getTracks().length === 0) return
       this.radar?.setMode('stt')
     });
-
-
-
+    this.add.text(100, this.window.height - 50, 'RWS', { 
+      font: '22px Courier', 
+      color: '#000', 
+      backgroundColor: this.radar?.getMode() === 'rws' ? '#00ff00' : '#ffdb4d',
+      padding: { x: 10, y: 5 } 
+    })
+    .setInteractive()
+    .setOrigin(0)
+    .on('pointerdown', () => {
+      this.radar?.setMode('rws')
+    });
+    this.add.text(200, this.window.height - 50, 'TWS', { 
+      font: '22px Courier', 
+      color: '#000', 
+      backgroundColor: this.radar?.getMode() === 'tws' ? '#00ff00' : '#ffdb4d', 
+      padding: { x: 10, y: 5 }
+    })
+    .setInteractive()
+    .setOrigin(0)
+    .on('pointerdown', () => {
+      this.radar?.setMode('tws')
+    });
+    this.add.text(300, this.window.height - 50, 'EMCON', {
+      font: '22px Courier',
+      color: '#000',
+      backgroundColor: this.radar?.getMode() === 'emcon' ? '#00ff00' : '#ffdb4d',
+      padding: { x: 10, y: 5 }
+    })
+    .setInteractive()
+    .setOrigin(0)
+    .on('pointerdown', () => {
+      this.radar?.setMode('emcon')
+    });
 
     // create targets and asteroids and push them to radar
     this.radar.addTarget({ 
-      position: { x: 300, y: 300 }, 
-      direction: { x: 1, y: 0}, 
-      speed: 2, 
-      size: 10 
+      position: { x: 300, y: 300 },
+      direction: { x: 1, y: 0},
+      speed: 2,
+      size: 10
     })
     this.radar.addTarget({ 
-      position: {x: 400, y: 300 }, 
-      direction: {x: -1, y: 1}, 
+      position: {x: 400, y: 300 },
+      direction: {x: -1, y: 1},
       speed: 2,
       size: 15
     })
     this.radar.start()
+
+    
   }
 
   update (_: number, delta: number)
@@ -123,9 +156,6 @@ class Game extends Phaser.Scene
     });
     // radar scan
     this.radar?.update()
-    this.radar?.update() // Call the update method twice per frame
-
-    
   }
 }
 
