@@ -1,5 +1,5 @@
 import Phaser from "phaser"
-import { Radar } from "./radar/systems/radar"
+import { LightRadar } from "./radar/systems/lightRadar"
 import { radarSettings } from "./constants/index"
 
 class Game extends Phaser.Scene
@@ -10,12 +10,12 @@ class Game extends Phaser.Scene
   }
   private turn = 0
   
-  constructor (private canvas?: HTMLCanvasElement, private ship?: Phaser.Physics.Arcade.Image, private radar?: Radar)
+  constructor (private canvas?: HTMLCanvasElement, private ship?: Phaser.Physics.Arcade.Image, private radar?: LightRadar)
   {
     super()
   }
   
-  preload ()
+  preload()
   {
     this.canvas = this.sys.game.canvas
     this.load.image('ship', 'ship.png')
@@ -26,7 +26,7 @@ class Game extends Phaser.Scene
     this.load.image('missile', 'missile.png')
   }
 
-  create ()
+  create()
   {
     // KEYS
     this.input.keyboard?.on('keydown-LEFT', () => this.turn = -1);
@@ -64,7 +64,8 @@ class Game extends Phaser.Scene
       azimuth: radarSettings?.azimuth,
       radarAzimuthStartAngle: radarSettings?.radarAzimuthStartAngle,
     }
-    this.radar = new Radar(this, this.time, radarOptions, 'rws', [], new Phaser.Geom.Line())
+    // this.radar = new LightRadar(this, this.time, radarOptions, 'rws', [], new Phaser.Geom.Line())
+    this.radar = new LightRadar(radarOptions)
     // make ship position radar position
     if (this.ship) {
       const worldPoint = this.ship.getWorldPoint()
@@ -96,6 +97,7 @@ class Game extends Phaser.Scene
     .setInteractive()
     .setOrigin(0)
     .on('pointerdown', () => {
+      this.radar?.setTracks([])
       this.radar?.setMode('rws')
     });
     this.add.text(200, this.window.height - 50, 'TWS', { 
@@ -129,7 +131,7 @@ class Game extends Phaser.Scene
       size: 10
     })
     this.radar.addTarget({ 
-      position: {x: 400, y: 300 },
+      position: {x: 400, y: 400 },
       direction: {x: -1, y: 1},
       speed: 2,
       size: 15
@@ -139,7 +141,8 @@ class Game extends Phaser.Scene
     
   }
 
-  update (_: number, delta: number)
+  // update time , delta
+  update(_: number, delta: number)
   {
     this.ship?.setAngularVelocity(this.turn * 50);
     
@@ -153,6 +156,9 @@ class Game extends Phaser.Scene
       if (target.position.y! <= 0 || target.position.y! >= Number(this.sys.game.config.height)) {
         target.direction.y! *= -1;
       }
+      // const graphics = this.add.graphics({ fillStyle: { color: 0xffffff } });
+      // graphics.fillCircle(target.position.x!, target.position.y!, 2);
+      // this.time.delayedCall(1500, () => graphics.destroy());
     });
     // radar scan
     this.radar?.update()

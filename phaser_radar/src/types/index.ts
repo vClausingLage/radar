@@ -14,7 +14,7 @@ export type Vector2 = {
     setTo?(): (x: number, y: number) => Vector2
 }
 
-export type RadarSettings = {
+export type RadarOptions = {
     range: number
     pulseDir: Vector2
     sensitivity: number

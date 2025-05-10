@@ -1,4 +1,4 @@
-import { RadarSettings, Vector2 } from '../../types/index'
+import { RadarOptions, Vector2 } from '../../types/index'
 import { Target } from '../entities/target'
 import { Track } from '../data/track'
 import { ReturnSignal, Mode } from '../../types/index'
@@ -13,7 +13,7 @@ export class Radar {
     constructor(
         private scene: Phaser.Scene,
         private clock: Phaser.Time.Clock, 
-        private radarOptions: RadarSettings,
+        private radarOptions: RadarOptions,
         private mode: Mode = 'rws',
         private targets: Target[],
         private radarBeam: Phaser.Geom.Line,
@@ -48,6 +48,10 @@ export class Radar {
 
     getTracks() {
         return this.tracks
+    }
+
+    setTracks(tracks: Track[]) {
+        this.tracks = tracks
     }
 
     getMemory() {
@@ -271,7 +275,7 @@ export class Radar {
             this.scene.tweens.add({
                 targets: [marker, indexText],
                 alpha: 0,
-                duration: 1500,
+                duration: 8000,
                 onComplete: () => {
                     marker.destroy();
                     indexText.destroy();                
