@@ -22,6 +22,24 @@ export class LightRadar {
     }
     setMode(mode: string) {
         this.mode = mode
+        switch (mode) {
+            case 'rws':
+                this.radarOptions.azimuth = 120
+                 break
+            case 'stt':
+                this.radarOptions.azimuth = 5
+                break
+            case 'tws':
+                this.radarOptions.azimuth = 60
+                break
+            case 'emcon':
+                this.radarOptions.isScanning = false
+                break
+   
+            default:
+                this.radarOptions.isScanning = false
+                break
+        }
     }
     getTracks() {
         return this.tracks
@@ -41,8 +59,15 @@ export class LightRadar {
         this.asteroids = [...this.asteroids, a]
     }
 
-    start() {}
+    start() {
+        this.radarOptions.isScanning = true
+    }
 
-    update() {}
+    update() {
+        if (!this.radarOptions.isScanning) return
+
+        if (this.mode === 'rws') {
+        }
+    }
 
 }
