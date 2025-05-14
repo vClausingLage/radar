@@ -1,11 +1,11 @@
-import { RadarSettings } from '../types/index'
+import { RadarOptions } from '../types/index'
 
-export const radarSettings: RadarSettings = {
+export const radarSettings: RadarOptions = {
     range: 450,
     pulseDir: { x: 0, y: -1 },
     sensitivity: 150,
     pos: { x: 0, y: 0 },
     isScanning: false,
-    azimuth: 360,
-    radarAzimuthStartAngle: - 180
+    azimuth: 0,
+    radarAzimuthStartAngle: 0
   }

@@ -19,3 +19,7 @@ export function getMiddleAngle(angle1: number, angle2: number): number {
   const diff = Phaser.Math.Angle.Wrap(angle2 - angle1);
   return Phaser.Math.Angle.Wrap(angle1 + diff / 2);
 }
+
+export function getDistance(pos: Vector2, t: Vector2): number {
+  return Math.sqrt(Math.pow(t.x - pos.x, 2) + Math.pow(t.y - pos.y, 2));
+}

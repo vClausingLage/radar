@@ -65,7 +65,9 @@ class Game extends Phaser.Scene
       radarAzimuthStartAngle: radarSettings?.radarAzimuthStartAngle,
     }
     // this.radar = new LightRadar(this, this.time, radarOptions, 'rws', [], new Phaser.Geom.Line())
+    // RADAR & DEFAULT SETTINGS
     this.radar = new LightRadar(radarOptions)
+    this.radar?.setMode('rws')
     // make ship position radar position
     if (this.ship) {
       const worldPoint = this.ship.getWorldPoint()
