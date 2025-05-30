@@ -24,8 +24,8 @@ export class LightRadar {
     ) {}
 
     setPosition({x, y}: {x: number, y: number}) {
-        this.radarOptions.pos.x = x
-        this.radarOptions.pos.y = y
+        this.radarOptions.position.x = x
+        this.radarOptions.position.y = y
     }
 
     getMode() {
@@ -42,6 +42,9 @@ export class LightRadar {
                 break
             case 'tws':
                 this.radarOptions.azimuth = 30
+                break
+            case 'tws-auto':
+                this.radarOptions.azimuth = 15
                 break
             case 'emcon':
                 this.radarOptions.isScanning = false
@@ -75,32 +78,32 @@ export class LightRadar {
         this.radarOptions.isScanning = true
     }
 
-    update() {
+    update(angle: number, graphics?: Phaser.GameObjects.Graphics) {
         if (!this.radarOptions.isScanning) return
+
+        graphics?.clear()
 
         if (this.mode === 'rws') {
 
-            this.STEP += this.SCAN_SPEED
-            if (this.STEP === this.radarOptions.azimuth) {
-                console.log('Radar scan complete')
-                for (const t of this.targets) {
-                    const dist = getDistance(this.radarOptions.pos, t.position)
-                    if (dist <= this.radarOptions.range) {
-                        this.tracks = [...this.tracks, {
-                            pos: t.position,
-                            dir: t.direction,
-                            speed: t.speed,
-                            dist: dist,
-                            age: 0,
-                            lastUpdate: 0
-                        }]
-                    }
+            if (angle !== undefined) {
+                const middleAngle: number = angle;
+                const azimuthHalfAngle: number = this.radarOptions.azimuth;
+
+                // Calculate the start and end angles of the scan sector
+                const startAngle: number = middleAngle - azimuthHalfAngle;
+                const endAngle: number = middleAngle + azimuthHalfAngle;
+
+                if (graphics) {
+                    graphics.lineStyle(1, 0x00ff00, 0.5);
+                    const startX = this.radarOptions.position.x + this.radarOptions.range * Math.cos(Phaser.Math.DegToRad(startAngle - 90));
+                    const startY = this.radarOptions.position.y + this.radarOptions.range * Math.sin(Phaser.Math.DegToRad(startAngle - 90));
+                    graphics.lineBetween(this.radarOptions.position.x, this.radarOptions.position.y, startX, startY);
+
+                    const endX = this.radarOptions.position.x + this.radarOptions.range * Math.cos(Phaser.Math.DegToRad(endAngle - 90));
+                    const endY = this.radarOptions.position.y + this.radarOptions.range * Math.sin(Phaser.Math.DegToRad(endAngle - 90));
+                    graphics.lineBetween(this.radarOptions.position.x, this.radarOptions.position.y, endX, endY);
                 }
-                // calculate target return
-                // noise < return energy
-                // radar cross section
-                // 
-                this.STEP = 0
+
             }
         }
 

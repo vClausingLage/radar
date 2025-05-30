@@ -9,6 +9,7 @@ class Game extends Phaser.Scene
     width: window.innerWidth
   }
   private turn = 0
+  private graphics?: Phaser.GameObjects.Graphics
   
   constructor (private canvas?: HTMLCanvasElement, private ship?: Phaser.Physics.Arcade.Image, private radar?: LightRadar)
   {
@@ -28,6 +29,8 @@ class Game extends Phaser.Scene
 
   create()
   {
+    // GRAPHICS
+    this.graphics = this.add.graphics();
     // KEYS
     this.input.keyboard?.on('keydown-LEFT', () => this.turn = -1);
     this.input.keyboard?.on('keyup-LEFT',   () => this.turn = 0);
@@ -52,6 +55,7 @@ class Game extends Phaser.Scene
     // SHIP
     this.ship = this.physics.add.image(this.window.width / 2, this.window.height, 'ship')
     this.ship.setVelocity(0, 0)
+    this.ship.setAngle(0)
     this.ship.setBounce(.5, .5)
     this.ship.setCollideWorldBounds(true)
     // RADAR
@@ -59,19 +63,18 @@ class Game extends Phaser.Scene
       range: radarSettings?.range,
       sensitivity: radarSettings?.sensitivity,
       pulseDir: radarSettings?.pulseDir,
-      pos: radarSettings?.pos,
+      position: radarSettings?.position,
       isScanning: radarSettings?.isScanning,
       azimuth: radarSettings?.azimuth,
       radarAzimuthStartAngle: radarSettings?.radarAzimuthStartAngle,
     }
-    // this.radar = new LightRadar(this, this.time, radarOptions, 'rws', [], new Phaser.Geom.Line())
     // RADAR & DEFAULT SETTINGS
     this.radar = new LightRadar(radarOptions)
     this.radar?.setMode('rws')
     // make ship position radar position
     if (this.ship) {
-      const worldPoint = this.ship.getWorldPoint()
-      this.radar?.setPosition({ x: worldPoint.x, y: worldPoint.y - 50 })
+      const shipPosition = this.ship.getWorldPoint()
+      this.radar?.setPosition({ x: shipPosition.x, y: shipPosition.y - 50 })
     }
     // RWR
     this.add.image(60, 80, 'rwr')
@@ -139,8 +142,6 @@ class Game extends Phaser.Scene
       size: 15
     })
     this.radar.start()
-
-    
   }
 
   // update time , delta
@@ -163,7 +164,7 @@ class Game extends Phaser.Scene
       // this.time.delayedCall(1500, () => graphics.destroy());
     });
     // radar scan
-    this.radar?.update()
+    this.radar?.update(this.ship?.angle || 0, this.graphics) //! Phaser has no angle of 0
   }
 }
 

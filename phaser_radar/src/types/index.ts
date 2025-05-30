@@ -18,7 +18,7 @@ export type RadarOptions = {
     range: number
     pulseDir: Vector2
     sensitivity: number
-    pos: Vector2
+    position: Vector2
     isScanning: boolean
     azimuth: number
     radarAzimuthStartAngle: number

@@ -27,7 +27,7 @@ export class Radar {
     }
 
     setPosition(pos: Vector2) {
-        this.radarOptions.pos = pos
+        this.radarOptions.position = pos
     }
 
     setRange(r: number) {
@@ -67,7 +67,7 @@ export class Radar {
     }
 
     findTargetByCircle(d: Phaser.Geom.Line): ReturnSignal | null {
-        const origin = this.radarOptions.pos;
+        const origin = this.radarOptions.position;
         let closest: ReturnSignal | null = null;
         let closestDist2 = Infinity;
       
@@ -287,10 +287,10 @@ export class Radar {
     start() {
         this.radarOptions.isScanning = true
         this.radarBeam.setTo(
-            this.radarOptions.pos?.x,
-            this.radarOptions.pos?.y,
-            this.radarOptions.pos?.x! + this.radarOptions.pulseDir?.x! * this.radarOptions.range!,
-            this.radarOptions.pos?.y! + this.radarOptions.pulseDir?.y! * this.radarOptions.range!
+            this.radarOptions.position?.x,
+            this.radarOptions.position?.y,
+            this.radarOptions.position?.x! + this.radarOptions.pulseDir?.x! * this.radarOptions.range!,
+            this.radarOptions.position?.y! + this.radarOptions.pulseDir?.y! * this.radarOptions.range!
         )
     }
 
@@ -329,7 +329,7 @@ export class Radar {
             console.error('Radar beam not set')
             return
         }
-        if (!this.radarOptions.pos) {
+        if (!this.radarOptions.position) {
             console.error('Radar position not set')
             return
         }
@@ -347,13 +347,13 @@ export class Radar {
             const angle = Phaser.Math.DegToRad(this.step);
             
             // Calculate the end point of the beam using trigonometry
-            const endX = this.radarOptions.pos.x + Math.cos(angle) * this.radarOptions.range;
-            const endY = this.radarOptions.pos.y + Math.sin(angle) * this.radarOptions.range;
+            const endX = this.radarOptions.position.x + Math.cos(angle) * this.radarOptions.range;
+            const endY = this.radarOptions.position.y + Math.sin(angle) * this.radarOptions.range;
             
             // Update the radar beam position
             this.radarBeam.setTo(
-                this.radarOptions.pos.x,
-                this.radarOptions.pos.y,
+                this.radarOptions.position.x,
+                this.radarOptions.position.y,
                 endX,
                 endY
             );
@@ -383,8 +383,8 @@ export class Radar {
             const predictedPos = this.predictTargetPosition(targetTrack);
 
             // Calculate angle to predicted target position
-            const dx = predictedPos.x - this.radarOptions.pos.x;
-            const dy = predictedPos.y - this.radarOptions.pos.y;
+            const dx = predictedPos.x - this.radarOptions.position.x;
+            const dy = predictedPos.y - this.radarOptions.position.y;
             const targetAngle = Math.atan2(dy, dx);
 
             // Calculate beam width angles
@@ -393,16 +393,16 @@ export class Radar {
             const rightAngle = targetAngle + beamWidthRad;
 
             // Update radar beam to cover the beam width
-            const leftX = this.radarOptions.pos.x + Math.cos(leftAngle) * this.radarOptions.range;
-            const leftY = this.radarOptions.pos.y + Math.sin(leftAngle) * this.radarOptions.range;
-            const rightX = this.radarOptions.pos.x + Math.cos(rightAngle) * this.radarOptions.range;
-            const rightY = this.radarOptions.pos.y + Math.sin(rightAngle) * this.radarOptions.range;
+            const leftX = this.radarOptions.position.x + Math.cos(leftAngle) * this.radarOptions.range;
+            const leftY = this.radarOptions.position.y + Math.sin(leftAngle) * this.radarOptions.range;
+            const rightX = this.radarOptions.position.x + Math.cos(rightAngle) * this.radarOptions.range;
+            const rightY = this.radarOptions.position.y + Math.sin(rightAngle) * this.radarOptions.range;
 
             // Draw the beam width visualization
             const beamGraphics = this.scene.add.graphics();
             beamGraphics.lineStyle(1, 0xff0000, 0.3);
             beamGraphics.beginPath();
-            beamGraphics.moveTo(this.radarOptions.pos.x, this.radarOptions.pos.y);
+            beamGraphics.moveTo(this.radarOptions.position.x, this.radarOptions.position.y);
             beamGraphics.lineTo(leftX, leftY);
             beamGraphics.lineTo(rightX, rightY);
             beamGraphics.closePath();
@@ -418,12 +418,12 @@ export class Radar {
             });
 
             // Update radar beam to point at predicted target
-            const endX = this.radarOptions.pos.x + Math.cos(targetAngle) * this.radarOptions.range;
-            const endY = this.radarOptions.pos.y + Math.sin(targetAngle) * this.radarOptions.range;
+            const endX = this.radarOptions.position.x + Math.cos(targetAngle) * this.radarOptions.range;
+            const endY = this.radarOptions.position.y + Math.sin(targetAngle) * this.radarOptions.range;
             
             this.radarBeam.setTo(
-                this.radarOptions.pos.x,
-                this.radarOptions.pos.y,
+                this.radarOptions.position.x,
+                this.radarOptions.position.y,
                 endX,
                 endY
             );
