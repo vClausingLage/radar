@@ -1,4 +1,3 @@
-import { getDistance } from '../../math';
 import { RadarOptions } from '../../types';
 import { Track } from '../data/track';
 import { Asteroid } from '../entities/asteroid';
@@ -6,8 +5,8 @@ import { Target } from '../entities/target';
 
 export class LightRadar {
 
-    private SCAN_SPEED = 0.5 //!
-    private STEP = 0 //!
+    private SCAN_SPEED = .02 //!
+    private lastScanTime = 0
 
     constructor(
         private radarOptions: RadarOptions,
@@ -78,7 +77,7 @@ export class LightRadar {
         this.radarOptions.isScanning = true
     }
 
-    update(angle: number, graphics?: Phaser.GameObjects.Graphics) {
+    update(delta: number, angle: number, graphics?: Phaser.GameObjects.Graphics) {
         if (!this.radarOptions.isScanning) return
 
         graphics?.clear()
@@ -87,11 +86,10 @@ export class LightRadar {
 
             if (angle !== undefined) {
                 const middleAngle: number = angle;
-                const azimuthHalfAngle: number = this.radarOptions.azimuth;
 
                 // Calculate the start and end angles of the scan sector
-                const startAngle: number = middleAngle - azimuthHalfAngle;
-                const endAngle: number = middleAngle + azimuthHalfAngle;
+                const startAngle: number = middleAngle - this.radarOptions.azimuth;
+                const endAngle: number = middleAngle + this.radarOptions.azimuth;
 
                 if (graphics) {
                     graphics.lineStyle(1, 0x00ff00, 0.5);
@@ -102,6 +100,75 @@ export class LightRadar {
                     const endX = this.radarOptions.position.x + this.radarOptions.range * Math.cos(Phaser.Math.DegToRad(endAngle - 90));
                     const endY = this.radarOptions.position.y + this.radarOptions.range * Math.sin(Phaser.Math.DegToRad(endAngle - 90));
                     graphics.lineBetween(this.radarOptions.position.x, this.radarOptions.position.y, endX, endY);
+                }
+
+                const scanDuration = this.radarOptions.range * this.SCAN_SPEED * (endAngle - startAngle);
+                
+
+                this.lastScanTime += delta;
+                if (this.lastScanTime >= scanDuration) {
+                    
+                    const targetsInRange = this.targets.filter(target => {
+                        const dx = target.position.x - this.radarOptions.position.x;
+                        const dy = target.position.y - this.radarOptions.position.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        const angleToTarget = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90; // Adjust for radar orientation
+
+                        return distance <= this.radarOptions.range &&
+                            angleToTarget >= startAngle && angleToTarget <= endAngle;
+                    })
+
+                    const asteroidsInRange = this.asteroids.filter(asteroid => {
+                        const dx = asteroid.position.x - this.radarOptions.position.x;
+                        const dy = asteroid.position.y - this.radarOptions.position.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        const angleToAsteroid = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90; // Adjust for radar orientation
+
+                        return distance <= this.radarOptions.range &&
+                            angleToAsteroid >= startAngle && angleToAsteroid <= endAngle;
+                    })
+
+                    // create 4 points for every t and a
+                    // ray cast from them to ship
+                    // check collision
+                    // if all four arrive its a track
+
+                    for (const t of targetsInRange) {
+                        const r = t.size / 2
+                        const points = [
+                            { x: t.position.x + r, y: t.position.y },
+                            { x: t.position.x - r, y: t.position.y },
+                            { x: t.position.x, y: t.position.y + r },
+                            { x: t.position.x, y: t.position.y - r }
+                        ];
+
+                        for (const p of points) {
+                            const ray = new Phaser.Geom.Line(this.radarOptions.position.x, this.radarOptions.position.y, p.x, p.y);
+                            
+                            let rayBlocked = false;
+                            for (const obstacle of [...this.targets, ...this.asteroids]) {
+                                if (obstacle === t) continue; // Skip the target we're checking
+                                
+                                const obstacleRadius = obstacle.size / 2;
+                                const obstacleCircle = new Phaser.Geom.Circle(obstacle.position.x, obstacle.position.y, obstacleRadius);
+                                
+                                if (Phaser.Geom.Intersects.LineToCircle(ray, obstacleCircle)) {
+                                    rayBlocked = true;
+                                    break;
+                                }
+                            }
+
+                            if (!rayBlocked) {
+                                // Ray reaches this point of the target without obstruction
+                                // Add logic here for successful detection
+                            }
+                        }
+                    }
+
+
+                    console.log('Targets in range:', targetsInRange);
+
+                    this.lastScanTime = 0;
                 }
 
             }

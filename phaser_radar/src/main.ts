@@ -159,12 +159,12 @@ class Game extends Phaser.Scene
       if (target.position.y! <= 0 || target.position.y! >= Number(this.sys.game.config.height)) {
         target.direction.y! *= -1;
       }
-      // const graphics = this.add.graphics({ fillStyle: { color: 0xffffff } });
-      // graphics.fillCircle(target.position.x!, target.position.y!, 2);
-      // this.time.delayedCall(1500, () => graphics.destroy());
+      const graphics = this.add.graphics({ fillStyle: { color: 0xffffff } });
+      graphics.fillCircle(target.position.x!, target.position.y!, 2);
+      this.time.delayedCall(1500, () => graphics.destroy());
     });
     // radar scan
-    this.radar?.update(this.ship?.angle || 0, this.graphics) //! Phaser has no angle of 0
+    this.radar?.update(delta, this.ship?.angle || 0, this.graphics) //! Phaser has no angle of 0
   }
 }
 
