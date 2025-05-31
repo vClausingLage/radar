@@ -103,7 +103,6 @@ export class LightRadar {
                 }
 
                 const scanDuration = this.radarOptions.range * this.SCAN_SPEED * (endAngle - startAngle);
-                
 
                 this.lastScanTime += delta;
                 if (this.lastScanTime >= scanDuration) {
@@ -133,36 +132,14 @@ export class LightRadar {
                     // check collision
                     // if all four arrive its a track
 
-                    for (const t of targetsInRange) {
-                        const r = t.size / 2
-                        const points = [
-                            { x: t.position.x + r, y: t.position.y },
-                            { x: t.position.x - r, y: t.position.y },
-                            { x: t.position.x, y: t.position.y + r },
-                            { x: t.position.x, y: t.position.y - r }
-                        ];
+                    const circles = [...targetsInRange, ...asteroidsInRange].map(t => {
+                        const r = t.size / 2;
+                        return new Phaser.Geom.Circle(t.position.x, t.position.y, r);
+                    });
 
-                        for (const p of points) {
-                            const ray = new Phaser.Geom.Line(this.radarOptions.position.x, this.radarOptions.position.y, p.x, p.y);
-                            
-                            let rayBlocked = false;
-                            for (const obstacle of [...this.targets, ...this.asteroids]) {
-                                if (obstacle === t) continue; // Skip the target we're checking
-                                
-                                const obstacleRadius = obstacle.size / 2;
-                                const obstacleCircle = new Phaser.Geom.Circle(obstacle.position.x, obstacle.position.y, obstacleRadius);
-                                
-                                if (Phaser.Geom.Intersects.LineToCircle(ray, obstacleCircle)) {
-                                    rayBlocked = true;
-                                    break;
-                                }
-                            }
-
-                            if (!rayBlocked) {
-                                // Ray reaches this point of the target without obstruction
-                                // Add logic here for successful detection
-                            }
-                        }
+                    for (const t of circles) {
+                        // raycast 
+                        // check if raycast isBlocked
                     }
 
 

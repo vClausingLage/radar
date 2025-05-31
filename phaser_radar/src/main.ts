@@ -141,6 +141,12 @@ class Game extends Phaser.Scene
       speed: 2,
       size: 15
     })
+    this.radar.addAsteroid({
+      position: { x: 500, y: 500 },
+      direction: { x: 1, y: -1 },
+      speed: 1,
+      size: 20
+    })
     this.radar.start()
   }
 
