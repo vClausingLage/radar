@@ -80,7 +80,7 @@ export class LightRadar {
     update(delta: number, angle: number, graphics?: Phaser.GameObjects.Graphics) {
         if (!this.radarOptions.isScanning) return
 
-        graphics?.clear()
+        // graphics?.clear()
 
         if (this.mode === 'rws') {
 
@@ -137,10 +137,7 @@ export class LightRadar {
                         return new Phaser.Geom.Circle(t.position.x, t.position.y, r);
                     });
 
-                    for (const t of circles) {
-                        // raycast 
-                        // check if raycast isBlocked
-                    }
+                    
 
 
                     console.log('Targets in range:', targetsInRange);

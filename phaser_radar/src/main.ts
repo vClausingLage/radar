@@ -153,8 +153,9 @@ class Game extends Phaser.Scene
   // update time , delta
   update(_: number, delta: number)
   {
+    this.graphics?.clear();
     this.ship?.setAngularVelocity(this.turn * 50);
-    
+    this.radar?.setPosition(this.ship?.getWorldPoint() || { x: 0, y: 0 });
     // move targets
     this.radar?.getTargets().forEach(target => {
       target.position.x! += target.direction.x! * target.speed * delta / 1000;
@@ -165,12 +166,18 @@ class Game extends Phaser.Scene
       if (target.position.y! <= 0 || target.position.y! >= Number(this.sys.game.config.height)) {
         target.direction.y! *= -1;
       }
-      const graphics = this.add.graphics({ fillStyle: { color: 0xffffff } });
-      graphics.fillCircle(target.position.x!, target.position.y!, 2);
-      this.time.delayedCall(1500, () => graphics.destroy());
+      // const graphics = this.add.graphics({ fillStyle: { color: 0xffffff } });
+      // graphics.fillCircle(target.position.x!, target.position.y!, 2);
+      // this.time.delayedCall(1500, () => graphics.destroy());
+
+      if (this.graphics) {
+        this.graphics.fillStyle(0xff0000);
+        this.graphics.fillCircle(target.position.x!, target.position.y!, 3);
+      }
     });
     // radar scan
     this.radar?.update(delta, this.ship?.angle || 0, this.graphics) //! Phaser has no angle of 0
+
   }
 }
 
