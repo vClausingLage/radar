@@ -166,14 +166,27 @@ class Game extends Phaser.Scene
       if (target.position.y! <= 0 || target.position.y! >= Number(this.sys.game.config.height)) {
         target.direction.y! *= -1;
       }
-      // const graphics = this.add.graphics({ fillStyle: { color: 0xffffff } });
-      // graphics.fillCircle(target.position.x!, target.position.y!, 2);
-      // this.time.delayedCall(1500, () => graphics.destroy());
+      // move asteroids
+      this.radar?.getAsteroids().forEach(asteroid => {
+        asteroid.position.x! += asteroid.direction.x! * asteroid.speed * delta / 1000;
+        asteroid.position.y! += asteroid.direction.y! * asteroid.speed * delta / 1000;
+        if (asteroid.position.x! <= 0 || asteroid.position.x! >= Number(this?.canvas?.width)) {
+          asteroid.direction.x! *= -1;
+        }
+        if (asteroid.position.y! <= 0 || asteroid.position.y! >= Number(this.sys.game.config.height)) {
+          asteroid.direction.y! *= -1;
+        }
 
-      if (this.graphics) {
-        this.graphics.fillStyle(0xff0000);
-        this.graphics.fillCircle(target.position.x!, target.position.y!, 3);
-      }
+        // if (this.graphics) {
+        //   this.graphics.fillStyle(0x888888);
+        //   this.graphics.fillCircle(asteroid.position.x!, asteroid.position.y!, asteroid.size!);
+        // }
+      });
+
+      // if (this.graphics) {
+      //   this.graphics.fillStyle(0xff0000);
+      //   this.graphics.fillCircle(target.position.x!, target.position.y!, target.size!);
+      // }
     });
     // radar scan
     this.radar?.update(delta, this.ship?.angle || 0, this.graphics) //! Phaser has no angle of 0

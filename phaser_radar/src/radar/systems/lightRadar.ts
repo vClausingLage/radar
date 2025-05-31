@@ -69,6 +69,9 @@ export class LightRadar {
         this.targets = [...this.targets, t]
     }
 
+    getAsteroids() {
+        return this.asteroids
+    }
     addAsteroid(a: Asteroid) {
         this.asteroids = [...this.asteroids, a]
     }
@@ -138,7 +141,63 @@ export class LightRadar {
                     });
 
                     
-
+                    for (const t of targetsInRange) {
+                        if (graphics) {
+                            // Draw green rectangle at target position on separate graphics object
+                            const rectGraphics = graphics.scene?.add.graphics();
+                            if (rectGraphics) {
+                                rectGraphics.fillStyle(0x00ff00, 0.7);
+                                rectGraphics.fillRect(t.position.x - 5, t.position.y - 5, 10, 10);
+                                graphics.scene?.tweens.add({
+                                    targets: rectGraphics,
+                                    alpha: 0,
+                                    duration: 3000,
+                                    onComplete: () => rectGraphics.destroy()
+                                });
+                            }
+                            
+                            // Calculate distance
+                            const dx = t.position.x - this.radarOptions.position.x;
+                            const dy = t.position.y - this.radarOptions.position.y;
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+                            
+                            // Display distance as text with fade out
+                            const distanceText = graphics.scene?.add.text(t.position.x + 10, t.position.y - 10, 
+                                distance.toFixed(0), 
+                                { fontSize: '12px', color: '#00ff00' }
+                            );
+                            if (distanceText) {
+                                graphics.scene?.tweens.add({
+                                    targets: distanceText,
+                                    alpha: 0,
+                                    duration: 3000,
+                                    onComplete: () => distanceText.destroy()
+                                });
+                            }
+                            
+                            // Draw short line in direction of target with fade out
+                            const lineLength = 20;
+                            const angle = Math.atan2(t.direction.x, t.direction.y);
+                            const endX = t.position.x + lineLength * Math.cos(angle);
+                            const endY = t.position.y + lineLength * Math.sin(angle);
+                            
+                            graphics.lineStyle(2, 0x00ff00, 1);
+                            graphics.lineBetween(t.position.x, t.position.y, endX, endY);
+                            
+                            // Create a separate graphics object for the line to fade it
+                            const lineGraphics = graphics.scene?.add.graphics();
+                            if (lineGraphics) {
+                                lineGraphics.lineStyle(2, 0x00ff00, 1);
+                                lineGraphics.lineBetween(t.position.x, t.position.y, endX, endY);
+                                graphics.scene?.tweens.add({
+                                    targets: lineGraphics,
+                                    alpha: 0,
+                                    duration: 3000,
+                                    onComplete: () => lineGraphics.destroy()
+                                });
+                            }
+                        }
+                    }
 
                     console.log('Targets in range:', targetsInRange);
 
