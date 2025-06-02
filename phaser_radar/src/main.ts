@@ -1,6 +1,7 @@
 import Phaser from "phaser"
 import { LightRadar } from "./radar/systems/lightRadar"
 import { radarSettings } from "./constants/index"
+import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer"
 
 class Game extends Phaser.Scene
 {
@@ -10,6 +11,7 @@ class Game extends Phaser.Scene
   }
   private turn = 0
   private graphics?: Phaser.GameObjects.Graphics
+  private sttBtn?: Phaser.GameObjects.Text
   
   constructor (private canvas?: HTMLCanvasElement, private ship?: Phaser.Physics.Arcade.Image, private radar?: LightRadar)
   {
@@ -61,22 +63,14 @@ class Game extends Phaser.Scene
     // RADAR
     const radarOptions = {
       range: radarSettings?.range,
-      sensitivity: radarSettings?.sensitivity,
-      pulseDir: radarSettings?.pulseDir,
       position: radarSettings?.position,
       isScanning: radarSettings?.isScanning,
       azimuth: radarSettings?.azimuth,
-      radarAzimuthStartAngle: radarSettings?.radarAzimuthStartAngle,
     }
     // RADAR & DEFAULT SETTINGS
     this.radar = new LightRadar(
         radarOptions,
         'rws',
-        0, // radiatedPower
-        0, // gain
-        0, // apertureSize
-        0, // sensitivity
-        0, // noiseFiltering
         this.time
     )
     this.radar?.setMode('rws')
@@ -90,10 +84,10 @@ class Game extends Phaser.Scene
     this.add.text(75 , 135, 'RWR', { font: '18px Courier', color: '#00ff00' })
 
     // INTERFACE
-    this.add.text(20, this.window.height - 50, 'STT', { 
+    this.sttBtn = this.add.text(20, this.window.height - 50, 'STT', { 
       font: '22px Courier', 
       color: '#000', 
-      backgroundColor: this.radar?.getMode() === 'stt' ? '#00ff00' : '#ffdb4d',
+      backgroundColor: '#ffdb4d',
       padding: { x: 10, y: 5 } 
     })
     .setInteractive()
@@ -136,6 +130,17 @@ class Game extends Phaser.Scene
     .on('pointerdown', () => {
       this.radar?.setMode('emcon')
     });
+    this.add.text(400, this.window.height - 50, 'SARH', {
+      font: '22px Courier',
+      color: '#000',
+      backgroundColor: '#ffdb4d',
+      padding: { x: 10, y: 5 }
+    })
+    .setInteractive()
+    .setOrigin(0)
+    .on('pointerdown', () => {
+      this.radar?.shootSARH(this.graphics!)
+    });
 
     // create targets and asteroids and push them to radar
     this.radar.addTarget({ 
@@ -165,7 +170,7 @@ class Game extends Phaser.Scene
     this.graphics?.clear();
     this.ship?.setAngularVelocity(this.turn * 50);
     this.radar?.setPosition(this.ship?.getWorldPoint() || { x: 0, y: 0 });
-    // move targets
+    // move targets & asteroids
     this.radar?.getTargets().forEach(target => {
       target.position.x! += target.direction.x! * target.speed * delta / 1000;
       target.position.y! += target.direction.y! * target.speed * delta / 1000;
@@ -175,31 +180,27 @@ class Game extends Phaser.Scene
       if (target.position.y! <= 0 || target.position.y! >= Number(this.sys.game.config.height)) {
         target.direction.y! *= -1;
       }
-      // move asteroids
-      this.radar?.getAsteroids().forEach(asteroid => {
-        asteroid.position.x! += asteroid.direction.x! * asteroid.speed * delta / 1000;
-        asteroid.position.y! += asteroid.direction.y! * asteroid.speed * delta / 1000;
-        if (asteroid.position.x! <= 0 || asteroid.position.x! >= Number(this?.canvas?.width)) {
-          asteroid.direction.x! *= -1;
-        }
-        if (asteroid.position.y! <= 0 || asteroid.position.y! >= Number(this.sys.game.config.height)) {
-          asteroid.direction.y! *= -1;
-        }
-
-        // if (this.graphics) {
-        //   this.graphics.fillStyle(0x888888);
-        //   this.graphics.fillCircle(asteroid.position.x!, asteroid.position.y!, asteroid.size!);
-        // }
-      });
-
       // if (this.graphics) {
       //   this.graphics.fillStyle(0xff0000);
       //   this.graphics.fillCircle(target.position.x!, target.position.y!, target.size!);
       // }
-    });
+    })
+    this.radar?.getAsteroids().forEach(asteroid => {
+      asteroid.position.x! += asteroid.direction.x! * asteroid.speed * delta / 1000;
+      asteroid.position.y! += asteroid.direction.y! * asteroid.speed * delta / 1000;
+      if (asteroid.position.x! <= 0 || asteroid.position.x! >= Number(this?.canvas?.width)) {
+        asteroid.direction.x! *= -1;
+      }
+      if (asteroid.position.y! <= 0 || asteroid.position.y! >= Number(this.sys.game.config.height)) {
+        asteroid.direction.y! *= -1;
+      }
+      // if (this.graphics) {
+      //   this.graphics.fillStyle(0x888888);
+      //   this.graphics.fillCircle(asteroid.position.x!, asteroid.position.y!, asteroid.size!);
+      // }
+    })
     // radar scan
-    this.radar?.update(delta, this.ship?.angle || 0, this.graphics) //! Phaser has no angle of 0
-
+    this.radar?.update(delta, this.ship?.angle || 0, this.graphics!) //! Phaser has no angle of 0
   }
 }
 

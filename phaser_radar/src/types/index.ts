@@ -16,12 +16,9 @@ export type Vector2 = {
 
 export type RadarOptions = {
     range: number
-    pulseDir: Vector2
-    sensitivity: number
     position: Vector2
     isScanning: boolean
     azimuth: number
-    radarAzimuthStartAngle: number
 }
 
 export type Mode = 'stt' | 'rws' | 'tws' | 'emcon'
