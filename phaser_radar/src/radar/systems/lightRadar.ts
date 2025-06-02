@@ -2,6 +2,7 @@ import { RadarOptions } from '../../types'
 import { Track } from '../data/track'
 import { Asteroid } from '../entities/asteroid'
 import { Target } from '../entities/target'
+import { Missile, SARHMissile } from '../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
 
 export class LightRadar {
@@ -9,12 +10,11 @@ export class LightRadar {
     private SCAN_SPEED = .02
     private MISSILE_SPEED = 40
     private lastScanTime = 0
-    private activeMissiles: Phaser.GameObjects.Graphics[] = [] // Added to manage active missiles
+    private activeMissiles: Missile[] = []
 
     constructor(
         private radarOptions: RadarOptions,
         private mode: string = 'rws',
-        private clock: Phaser.Time.Clock,
         private tracks: Track[] = [],
         private sttTrack: Track | null = null,
         private targets: Target[] = [],
@@ -212,54 +212,8 @@ export class LightRadar {
                 }
             }
         }
-
         // Update active missiles
-        // Iterate backwards because we might remove elements from the array
-        for (let i = this.activeMissiles.length - 1; i >= 0; i--) {
-            const missileGraphics = this.activeMissiles[i]
-            const missileData = missileGraphics.getData('missileData') as {
-                startX: number
-                startY: number
-                targetX: number
-                targetY: number
-                speed: number
-                totalDistance: number
-                dxTotal: number
-                dyTotal: number
-                elapsedTime: number
-            }
-
-            missileData.elapsedTime += delta // delta is in milliseconds
-
-            const timeToTargetMs = (missileData.totalDistance / missileData.speed) * 1000
-
-            if (missileData.elapsedTime >= timeToTargetMs) {
-                // Missile reached target (or exceeded its flight time)
-                missileGraphics.x = missileData.targetX
-                missileGraphics.y = missileData.targetY
-                console.log('Missile impact!')
-
-                // Optional: Add an impact effect (e.g., short fade out)
-                if (graphics && graphics.scene) {
-                    graphics.scene.tweens.add({
-                        targets: missileGraphics,
-                        alpha: 0,
-                        duration: 200,
-                        onComplete: () => {
-                            missileGraphics.destroy()
-                        }
-                    })
-                } else {
-                    missileGraphics.destroy()
-                }
-                this.activeMissiles.splice(i, 1) // Remove missile from active list
-            } else {
-                // Move missile by interpolating its position
-                const fractionOfJourney = missileData.elapsedTime / timeToTargetMs
-                missileGraphics.x = missileData.startX + missileData.dxTotal * fractionOfJourney
-                missileGraphics.y = missileData.startY + missileData.dyTotal * fractionOfJourney
-            }
-        }
+        
     }
 
     getScanArea(angle: number): { startAngle: number, endAngle: number } | null {
@@ -276,7 +230,7 @@ export class LightRadar {
         }
     }
 
-    shootSARH(graphics: Phaser.GameObjects.Graphics): void {
+    shootSARH(): void {
         if (this.mode !== 'stt' || !this.sttTrack) {
             console.error('Cannot shoot SARH, not in STT mode or no track selected')
             return
@@ -301,36 +255,19 @@ export class LightRadar {
             return 
         }
 
-        const timeToTargetSeconds = distance / missileSpeed
-
-        console.log('distance to target:', distance)
-        console.log(`Missile launched! Estimated time to target: ${timeToTargetSeconds.toFixed(1)}s`)
-
-        // Create missile visual representation
-        if (graphics && graphics.scene) {
-            const missileGraphics = graphics.scene.add.graphics()
-            missileGraphics.fillStyle(0xff0000, 1)
-            // Draw the circle at the graphic's local (0,0)
-            missileGraphics.fillCircle(0, 0, 3) 
-            // Set the graphic's initial position
-            missileGraphics.x = missileStartX
-            missileGraphics.y = missileStartY
-
-            // Store missile data on the graphics object for retrieval in the update loop
-            missileGraphics.setData('missileData', {
-                startX: missileStartX,
-                startY: missileStartY,
-                targetX: missileTargetX,
-                targetY: missileTargetY,
-                speed: missileSpeed,
-                totalDistance: distance,
-                dxTotal: dxTotal, // Store total displacement
-                dyTotal: dyTotal, // Store total displacement
-                elapsedTime: 0 // Time elapsed in ms
-            })
-
-            this.activeMissiles.push(missileGraphics)
+        const missile: SARHMissile = {
+            type: 'AIM-177',
+            range: this.radarOptions.range,
+            speed: missileSpeed,
+            guidance: 'semi-active',
+            warhead: 'high-explosive',
+            position: {
+                x: missileStartX,
+                y: missileStartY
+            }
         }
+
+        this.activeMissiles.push(missile)
     }
 
 }
