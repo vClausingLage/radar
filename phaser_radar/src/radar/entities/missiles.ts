@@ -1,25 +1,25 @@
-export interface SARHMissile {
-    type: 'AIM-177'
-    range: number
-    speed: number
-    guidance: 'semi-active'
-    warhead: 'high-explosive' | 'fragmentation'
+export interface BaseMissile {
+    range: number;
+    speed: number;
+    warhead: 'high-explosive' | 'fragmentation';
     position: {
-        x: number
-        y: number
-    }
+        x: number;
+        y: number;
+    };
+    direction: {
+        x: number;
+        y: number;
+    };
 }
 
-export interface ActiveRadarMissile {
-    type: 'AIM-220'
-    range: number
-    speed: number
-    guidance: 'active'
-    warhead: 'high-explosive' | 'fragmentation'
-    position: {
-        x: number
-        y: number
-    }
+export interface SARHMissile extends BaseMissile {
+    type: 'AIM-177';
+    guidance: 'semi-active';
+}
+
+export interface ActiveRadarMissile extends BaseMissile {
+    type: 'AIM-220';
+    guidance: 'active';
 }
 
 export type Missile = SARHMissile | ActiveRadarMissile

@@ -1,7 +1,6 @@
 import Phaser from "phaser"
 import { LightRadar } from "./radar/systems/lightRadar"
 import { radarSettings } from "./constants/index"
-import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer"
 
 class Game extends Phaser.Scene
 {
@@ -12,6 +11,10 @@ class Game extends Phaser.Scene
   private turn = 0
   private graphics?: Phaser.GameObjects.Graphics
   private sttBtn?: Phaser.GameObjects.Text
+  private rwsBtn?: Phaser.GameObjects.Text
+  private twsBtn?: Phaser.GameObjects.Text
+  private emconBtn?: Phaser.GameObjects.Text
+  private SARHBtn?: Phaser.GameObjects.Text
   
   constructor (private canvas?: HTMLCanvasElement, private ship?: Phaser.Physics.Arcade.Image, private radar?: LightRadar)
   {
@@ -71,7 +74,6 @@ class Game extends Phaser.Scene
     this.radar = new LightRadar(
         radarOptions,
         'rws',
-        this.time
     )
     this.radar?.setMode('rws')
     // make ship position radar position
@@ -96,7 +98,7 @@ class Game extends Phaser.Scene
       if (this.radar?.getTracks().length === 0) return
       this.radar?.setMode('stt')
     });
-    this.add.text(100, this.window.height - 50, 'RWS', { 
+    this.rwsBtn = this.add.text(100, this.window.height - 50, 'RWS', { 
       font: '22px Courier', 
       color: '#000', 
       backgroundColor: this.radar?.getMode() === 'rws' ? '#00ff00' : '#ffdb4d',
@@ -108,29 +110,29 @@ class Game extends Phaser.Scene
       this.radar?.setTracks([])
       this.radar?.setMode('rws')
     });
-    this.add.text(200, this.window.height - 50, 'TWS', { 
-      font: '22px Courier', 
-      color: '#000', 
-      backgroundColor: this.radar?.getMode() === 'tws' ? '#00ff00' : '#ffdb4d', 
-      padding: { x: 10, y: 5 }
-    })
-    .setInteractive()
-    .setOrigin(0)
-    .on('pointerdown', () => {
-      this.radar?.setMode('tws')
-    });
-    this.add.text(300, this.window.height - 50, 'EMCON', {
-      font: '22px Courier',
-      color: '#000',
-      backgroundColor: this.radar?.getMode() === 'emcon' ? '#00ff00' : '#ffdb4d',
-      padding: { x: 10, y: 5 }
-    })
-    .setInteractive()
-    .setOrigin(0)
-    .on('pointerdown', () => {
-      this.radar?.setMode('emcon')
-    });
-    this.add.text(400, this.window.height - 50, 'SARH', {
+    // this.twsBtn = this.add.text(200, this.window.height - 50, 'TWS', { 
+    //   font: '22px Courier', 
+    //   color: '#000', 
+    //   backgroundColor: this.radar?.getMode() === 'tws' ? '#00ff00' : '#ffdb4d', 
+    //   padding: { x: 10, y: 5 }
+    // })
+    // .setInteractive()
+    // .setOrigin(0)
+    // .on('pointerdown', () => {
+    //   this.radar?.setMode('tws')
+    // });
+    // this. emconBtn = this.add.text(300, this.window.height - 50, 'EMCON', {
+    //   font: '22px Courier',
+    //   color: '#000',
+    //   backgroundColor: this.radar?.getMode() === 'emcon' ? '#00ff00' : '#ffdb4d',
+    //   padding: { x: 10, y: 5 }
+    // })
+    // .setInteractive()
+    // .setOrigin(0)
+    // .on('pointerdown', () => {
+    //   this.radar?.setMode('emcon')
+    // });
+    this.SARHBtn = this.add.text(400, this.window.height - 50, 'SARH', {
       font: '22px Courier',
       color: '#000',
       backgroundColor: '#ffdb4d',
@@ -139,8 +141,9 @@ class Game extends Phaser.Scene
     .setInteractive()
     .setOrigin(0)
     .on('pointerdown', () => {
-      this.radar?.shootSARH(this.graphics!)
+      this.radar?.shootSARH()
     });
+    
 
     // create targets and asteroids and push them to radar
     this.radar.addTarget({ 
@@ -201,6 +204,23 @@ class Game extends Phaser.Scene
     })
     // radar scan
     this.radar?.update(delta, this.ship?.angle || 0, this.graphics!) //! Phaser has no angle of 0
+
+    switch (this.radar?.getMode()) {
+      case 'stt':
+        this.sttBtn?.setBackgroundColor('#ff0000')
+        this.rwsBtn?.setBackgroundColor('#ffdb4d')
+        this.twsBtn?.setBackgroundColor('#ffdb4d')
+        this.emconBtn?.setBackgroundColor('#ffdb4d')
+        this.SARHBtn?.setBackgroundColor('#ffdb4d')
+        break;
+      case 'rws':
+        this.sttBtn?.setBackgroundColor('#ffdb4d')
+        this.rwsBtn?.setBackgroundColor('#00ff00')
+        this.twsBtn?.setBackgroundColor('#ffdb4d')
+        this.emconBtn?.setBackgroundColor('#ffdb4d')
+        this.SARHBtn?.setBackgroundColor('#ffdb4d')
+        break;
+    }
   }
 }
 

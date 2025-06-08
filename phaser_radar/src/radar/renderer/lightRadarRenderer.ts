@@ -63,7 +63,7 @@ export class LightRadarRenderer {
                 duration: 3000,
                 onComplete: () => lineGraphics.destroy()
             });
-    }
+        }
     }
 
     renderStt(track: Track, graphics: Phaser.GameObjects.Graphics) {

@@ -91,7 +91,6 @@ export class LightRadar {
             // Still update missiles even if radar is not scanning
         } else {
             if (this.mode === 'rws') {
-
                 if (angle !== undefined) {
                     // calculations
                     this.lastScanTime += delta
@@ -186,10 +185,6 @@ export class LightRadar {
             }
 
             if (this.mode === 'stt') {
-                //! TODO
-                //! if track outside of range or anzimuth 
-                //! set tracks to null
-                //! set mode to rws
                 const middleAngle: number = angle
                 const startAngle: number = middleAngle - this.radarOptions.azimuth
                 const endAngle: number = middleAngle + this.radarOptions.azimuth
@@ -205,6 +200,17 @@ export class LightRadar {
                     this.sttTrack = this.tracks[0]
                 }
 
+                const dx = this.sttTrack.pos.x - this.radarOptions.position.x
+                const dy = this.sttTrack.pos.y - this.radarOptions.position.y
+                const distanceToTrack = Math.sqrt(dx * dx + dy * dy)
+                const angleToTrack = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
+
+                if (distanceToTrack > this.radarOptions.range || angleToTrack < startAngle || angleToTrack > endAngle) {
+                    this.sttTrack = null
+                    this.setMode('rws')
+                    return
+                }
+
                 this.lastScanTime += delta
                 if (this.lastScanTime >= 1000) {
                     this.renderer.renderStt(this.sttTrack, graphics)
@@ -212,6 +218,11 @@ export class LightRadar {
                 }
             }
         }
+        for (const m of this.activeMissiles) {
+            m.position.x += m.direction.x * m.speed * delta / 1000
+            m.position.y += m.direction.y * m.speed * delta / 1000
+
+        }  
         // Update active missiles
         
     }
@@ -264,7 +275,11 @@ export class LightRadar {
             position: {
                 x: missileStartX,
                 y: missileStartY
-            }
+            },
+            direction: {
+                x: dxTotal / distance,
+                y: dyTotal / distance
+            },
         }
 
         this.activeMissiles.push(missile)
