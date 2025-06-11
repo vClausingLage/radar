@@ -5,16 +5,24 @@ import { Target } from '../entities/target'
 import { Missile, SARHMissile } from '../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
 
+type Missiles = "AIM-177" | "AIM-220"
+
+type Loadout = {
+    [key in Missiles]?: number
+}
+
 export class LightRadar {
 
     private SCAN_SPEED = .02
     private MISSILE_SPEED = 40
+    private SARH_MISSILE_RANGE = 300
     private lastScanTime = 0
     private activeMissiles: Missile[] = []
 
     constructor(
         private radarOptions: RadarOptions,
         private mode: string = 'rws',
+        private loadout: Loadout,
         private tracks: Track[] = [],
         private sttTrack: Track | null = null,
         private targets: Target[] = [],
@@ -221,9 +229,21 @@ export class LightRadar {
         for (const m of this.activeMissiles) {
             m.position.x += m.direction.x * m.speed * delta / 1000
             m.position.y += m.direction.y * m.speed * delta / 1000
-
-        }  
-        // Update active missiles
+        }
+        // Filter out SARH missiles if not in STT mode
+        if (this.mode !== 'stt') {
+            this.activeMissiles = this.activeMissiles.filter(missile => 
+                !(missile as SARHMissile).guidance || (missile as SARHMissile).guidance !== 'semi-active'
+            );
+        }
+        // Filter out missiles that have gone beyond their range
+        this.activeMissiles = this.activeMissiles.filter(missile => {
+            const dx = missile.position.x - this.radarOptions.position.x;
+            const dy = missile.position.y - this.radarOptions.position.y;
+            const distanceFromRadar = Math.sqrt(dx * dx + dy * dy);
+            return distanceFromRadar <= missile.range;
+        });
+        this.renderer.renderMissiles(this.activeMissiles, graphics)
         
     }
 
@@ -244,6 +264,11 @@ export class LightRadar {
     shootSARH(): void {
         if (this.mode !== 'stt' || !this.sttTrack) {
             console.error('Cannot shoot SARH, not in STT mode or no track selected')
+            return
+        }
+        this.loadout['AIM-177'] = (this.loadout['AIM-177'] || 0) - 1
+        if (this.loadout['AIM-177'] < 0) {
+            console.error('No AIM-177 missiles left in loadout')
             return
         }
 
@@ -268,7 +293,7 @@ export class LightRadar {
 
         const missile: SARHMissile = {
             type: 'AIM-177',
-            range: this.radarOptions.range,
+            range: this.SARH_MISSILE_RANGE,
             speed: missileSpeed,
             guidance: 'semi-active',
             warhead: 'high-explosive',

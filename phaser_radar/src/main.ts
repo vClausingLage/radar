@@ -74,6 +74,9 @@ class Game extends Phaser.Scene
     this.radar = new LightRadar(
         radarOptions,
         'rws',
+        {
+          'AIM-177': 4
+        }
     )
     this.radar?.setMode('rws')
     // make ship position radar position
@@ -203,24 +206,30 @@ class Game extends Phaser.Scene
       // }
     })
     // radar scan
-    this.radar?.update(delta, this.ship?.angle || 0, this.graphics!) //! Phaser has no angle of 0
+    this.radar?.update(delta, this.ship?.angle || 0, this.graphics!);
 
-    switch (this.radar?.getMode()) {
-      case 'stt':
-        this.sttBtn?.setBackgroundColor('#ff0000')
-        this.rwsBtn?.setBackgroundColor('#ffdb4d')
-        this.twsBtn?.setBackgroundColor('#ffdb4d')
-        this.emconBtn?.setBackgroundColor('#ffdb4d')
-        this.SARHBtn?.setBackgroundColor('#ffdb4d')
-        break;
-      case 'rws':
-        this.sttBtn?.setBackgroundColor('#ffdb4d')
-        this.rwsBtn?.setBackgroundColor('#00ff00')
-        this.twsBtn?.setBackgroundColor('#ffdb4d')
-        this.emconBtn?.setBackgroundColor('#ffdb4d')
-        this.SARHBtn?.setBackgroundColor('#ffdb4d')
-        break;
-    }
+    this.updateButtonColors();
+  }
+
+  private updateButtonColors() {
+    const mode = this.radar?.getMode();
+    const defaultColor = '#ffdb4d';
+    const buttonConfigs = [
+      { btn: this.sttBtn, mode: 'stt', active: '#ff0000' },
+      { btn: this.rwsBtn, mode: 'rws', active: '#00ff00' },
+      { btn: this.twsBtn, mode: 'tws', active: '#00ff00' },
+      { btn: this.emconBtn, mode: 'emcon', active: '#00ff00' },
+      { btn: this.SARHBtn, mode: 'stt', active: '#ffdb4d', onlyActive: true }, // SARH only active in STT
+    ];
+
+    buttonConfigs.forEach(cfg => {
+      if (!cfg.btn) return;
+      if (cfg.onlyActive) {
+        cfg.btn.setBackgroundColor(mode === cfg.mode ? cfg.active : defaultColor);
+      } else {
+        cfg.btn.setBackgroundColor(mode === cfg.mode ? cfg.active : defaultColor);
+      }
+    });
   }
 }
 

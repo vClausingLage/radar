@@ -1,5 +1,6 @@
 import { Vector2 } from "../../types";
 import { Track } from "../data/track";
+import { Missile } from "../entities/missiles";
 
 export class LightRadarRenderer {
 
@@ -115,5 +116,21 @@ export class LightRadarRenderer {
                 });
             }
         }
+    }
+
+    renderMissiles(missiles: Missile[], graphics: Phaser.GameObjects.Graphics) {
+        missiles.forEach(missile => {
+            const rectGraphics = graphics.scene?.add.graphics();
+            if (rectGraphics) {
+                rectGraphics.fillStyle(0xff0000, 0.7);
+                rectGraphics.fillRect(missile.position.x - 5, missile.position.y - 5, 10, 10);
+                graphics.scene?.tweens.add({
+                    targets: rectGraphics,
+                    alpha: 0,
+                    duration: 3000,
+                    onComplete: () => rectGraphics.destroy()
+                });
+            }
+        });
     }
 }
