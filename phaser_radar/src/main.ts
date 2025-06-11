@@ -15,6 +15,8 @@ class Game extends Phaser.Scene
   private twsBtn?: Phaser.GameObjects.Text
   private emconBtn?: Phaser.GameObjects.Text
   private SARHBtn?: Phaser.GameObjects.Text
+  private SHIP_SPEED = 5
+  private missile?: Phaser.GameObjects.Image
   
   constructor (private canvas?: HTMLCanvasElement, private ship?: Phaser.Physics.Arcade.Image, private radar?: LightRadar)
   {
@@ -41,22 +43,7 @@ class Game extends Phaser.Scene
     this.input.keyboard?.on('keyup-LEFT',   () => this.turn = 0);
     this.input.keyboard?.on('keydown-RIGHT', () => this.turn = 1);
     this.input.keyboard?.on('keyup-RIGHT',   () => this.turn = 0);
-    this.input.keyboard?.on('keydown-UP', () => {
-      this.ship?.setVelocityY(-3)
-      this.ship?.setVelocityX(0)
-    });
-    this.input.keyboard?.on('keyup-UP', () => {
-      this.ship?.setVelocityY(0)
-      this.ship?.setVelocityX(0)
-    });
-    this.input.keyboard?.on('keydown-DOWN', () => {
-      this.ship?.setVelocityY(3)
-      this.ship?.setVelocityX(0)
-    });
-    this.input.keyboard?.on('keyup-DOWN', () => {
-      this.ship?.setVelocityY(0)
-      this.ship?.setVelocityX(0)
-    });
+    this.missile = this.add.image(0, 0, 'missile')
     // SHIP
     this.ship = this.physics.add.image(this.window.width / 2, this.window.height, 'ship')
     this.ship.setVelocity(0, 0)
@@ -75,8 +62,10 @@ class Game extends Phaser.Scene
         radarOptions,
         'rws',
         {
-          'AIM-177': 4
-        }
+          'AIM-177': 4,
+          'AIM-220': 0,
+        },
+        this.missile
     )
     this.radar?.setMode('rws')
     // make ship position radar position
@@ -175,6 +164,13 @@ class Game extends Phaser.Scene
   {
     this.graphics?.clear();
     this.ship?.setAngularVelocity(this.turn * 50);
+    // Move ship in the direction it's facing with speed 100a
+    if (this.ship) {
+      const angleRad = Phaser.Math.DegToRad(this.ship.angle - 90);
+      const velocityX = Math.cos(angleRad) * this.SHIP_SPEED;
+      const velocityY = Math.sin(angleRad) * this.SHIP_SPEED;
+      this.ship.setVelocity(velocityX, velocityY);
+    }
     this.radar?.setPosition(this.ship?.getWorldPoint() || { x: 0, y: 0 });
     // move targets & asteroids
     this.radar?.getTargets().forEach(target => {

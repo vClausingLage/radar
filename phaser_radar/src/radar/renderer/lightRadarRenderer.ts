@@ -4,6 +4,12 @@ import { Missile } from "../entities/missiles";
 
 export class LightRadarRenderer {
 
+    private missileImage: Phaser.GameObjects.Image;
+
+    constructor(missileImage: Phaser.GameObjects.Image) {
+        this.missileImage = missileImage;
+    }
+
     renderScanAzimuth(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number) {
         graphics.lineStyle(1, 0x00ff00, 0.5);
         const startX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(startAngle - 90));
@@ -120,15 +126,15 @@ export class LightRadarRenderer {
 
     renderMissiles(missiles: Missile[], graphics: Phaser.GameObjects.Graphics) {
         missiles.forEach(missile => {
-            const rectGraphics = graphics.scene?.add.graphics();
-            if (rectGraphics) {
-                rectGraphics.fillStyle(0xff0000, 0.7);
-                rectGraphics.fillRect(missile.position.x - 5, missile.position.y - 5, 10, 10);
-                graphics.scene?.tweens.add({
-                    targets: rectGraphics,
+            if (graphics.scene) {
+                const missileSprite = graphics.scene.add.sprite(missile.position.x, missile.position.y, this.missileImage.texture.key);
+                missileSprite.setScale(0.5); // Adjust scale as needed
+                missileSprite.setAngle(Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x)) + 90);
+                graphics.scene.tweens.add({
+                    targets: missileSprite,
                     alpha: 0,
                     duration: 3000,
-                    onComplete: () => rectGraphics.destroy()
+                    onComplete: () => missileSprite.destroy()
                 });
             }
         });

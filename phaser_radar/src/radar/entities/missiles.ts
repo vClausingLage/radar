@@ -23,3 +23,5 @@ export interface ActiveRadarMissile extends BaseMissile {
 }
 
 export type Missile = SARHMissile | ActiveRadarMissile
+
+export type Missiles = 'AIM-177' | 'AIM-220'

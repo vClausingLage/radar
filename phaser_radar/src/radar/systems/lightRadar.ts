@@ -2,19 +2,17 @@ import { RadarOptions } from '../../types'
 import { Track } from '../data/track'
 import { Asteroid } from '../entities/asteroid'
 import { Target } from '../entities/target'
-import { Missile, SARHMissile } from '../entities/missiles'
+import { Missile, SARHMissile, Missiles } from '../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
 
-type Missiles = "AIM-177" | "AIM-220"
-
 type Loadout = {
-    [key in Missiles]?: number
+    [key in Missiles]: number
 }
 
 export class LightRadar {
 
     private SCAN_SPEED = .02
-    private MISSILE_SPEED = 40
+    private MISSILE_SPEED = 30
     private SARH_MISSILE_RANGE = 300
     private lastScanTime = 0
     private activeMissiles: Missile[] = []
@@ -23,11 +21,12 @@ export class LightRadar {
         private radarOptions: RadarOptions,
         private mode: string = 'rws',
         private loadout: Loadout,
+        private missile: Phaser.GameObjects.Image,
         private tracks: Track[] = [],
         private sttTrack: Track | null = null,
         private targets: Target[] = [],
         private asteroids: Asteroid[] = [],
-        private renderer: LightRadarRenderer = new LightRadarRenderer()
+        private renderer: LightRadarRenderer = new LightRadarRenderer(missile)
     ) {}
 
     getPosition() {
