@@ -29,8 +29,6 @@ class Game extends Phaser.Scene
     this.load.image('ship', 'ship.png')
     this.load.image('rwr', 'screen.png')
     this.load.image('radar', 'screen.png')
-    this.load.image('track', 'track.png')
-    this.load.image('target', 'target.png')
     this.load.image('missile', 'missile.png')
   }
 
@@ -50,6 +48,7 @@ class Game extends Phaser.Scene
     this.ship.setAngle(0)
     this.ship.setBounce(.5, .5)
     this.ship.setCollideWorldBounds(true)
+    this.ship.scale = 0.7
     // RADAR
     const radarOptions = {
       range: radarSettings?.range,
@@ -153,7 +152,7 @@ class Game extends Phaser.Scene
     this.radar.addAsteroid({
       position: { x: 500, y: 500 },
       direction: { x: 1, y: -1 },
-      speed: 1,
+      speed: .2,
       size: 20
     })
     this.radar.start()
@@ -182,10 +181,10 @@ class Game extends Phaser.Scene
       if (target.position.y! <= 0 || target.position.y! >= Number(this.sys.game.config.height)) {
         target.direction.y! *= -1;
       }
-      // if (this.graphics) {
-      //   this.graphics.fillStyle(0xff0000);
-      //   this.graphics.fillCircle(target.position.x!, target.position.y!, target.size!);
-      // }
+      if (this.graphics) {
+        this.graphics.fillStyle(0xff0000);
+        this.graphics.fillCircle(target.position.x!, target.position.y!, target.size!/10);
+      }
     })
     this.radar?.getAsteroids().forEach(asteroid => {
       asteroid.position.x! += asteroid.direction.x! * asteroid.speed * delta / 1000;
@@ -196,10 +195,29 @@ class Game extends Phaser.Scene
       if (asteroid.position.y! <= 0 || asteroid.position.y! >= Number(this.sys.game.config.height)) {
         asteroid.direction.y! *= -1;
       }
-      // if (this.graphics) {
-      //   this.graphics.fillStyle(0x888888);
-      //   this.graphics.fillCircle(asteroid.position.x!, asteroid.position.y!, asteroid.size!);
-      // }
+      if (this.graphics) {
+        this.graphics.fillStyle(0x888888);
+        this.graphics.fillCircle(asteroid.position.x!, asteroid.position.y!, asteroid.size!);
+      }
+      // Check for collision between the ship and this asteroid
+      if (this.ship && Phaser.Geom.Intersects.CircleToRectangle(
+        new Phaser.Geom.Circle(asteroid.position.x!, asteroid.position.y!, asteroid.size!),
+        new Phaser.Geom.Rectangle(this.ship.x - this.ship.displayWidth/2, this.ship.y - this.ship.displayHeight/2,
+        this.ship.displayWidth * .7, this.ship.displayHeight * .7)
+      )) {
+        // Destroy the ship
+        this.ship.setVisible(false);
+        this.ship.setActive(false);
+        this.ship.disableBody(true, true);
+        // When ship is destroyed, also stop the radar
+        this.radar?.stop()
+        
+        // Optional: display explosion effect or game over text
+        this.add.text(this.window.width/2, this.window.height/2, 'SHIP DESTROYED', {
+          font: '32px Courier',
+          color: '#ff0000'
+        }).setOrigin(0.5);
+      }
     })
     // radar scan
     this.radar?.update(delta, this.ship?.angle || 0, this.graphics!);

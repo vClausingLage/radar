@@ -92,10 +92,13 @@ export class LightRadar {
     start() {
         this.radarOptions.isScanning = true
     }
+    stop() {
+        this.radarOptions.isScanning = false
+    }
 
     update(delta: number, angle: number, graphics: Phaser.GameObjects.Graphics): void {
         if (!this.radarOptions.isScanning) {
-            // Still update missiles even if radar is not scanning
+            // do nothing
         } else {
             if (this.mode === 'rws') {
                 if (angle !== undefined) {
@@ -134,6 +137,8 @@ export class LightRadar {
                             const r = t.size / 2
                             return new Phaser.Geom.Circle(t.position.x, t.position.y, r)
                         })
+
+                        this.renderer.renderAsteroids(asteroidsInRange, graphics)
                         
                         // clear tracks
                         this.tracks = []
@@ -225,9 +230,79 @@ export class LightRadar {
                 }
             }
         }
+        // Update missile positions
         for (const m of this.activeMissiles) {
-            m.position.x += m.direction.x * m.speed * delta / 1000
-            m.position.y += m.direction.y * m.speed * delta / 1000
+            // For SARH missiles in STT mode, update direction to follow the target
+            if (this.mode === 'stt' && this.sttTrack && 
+            (m as SARHMissile).guidance === 'semi-active') {
+            // Calculate new direction vector to target
+            const dxToTarget = this.sttTrack.pos.x - m.position.x;
+            const dyToTarget = this.sttTrack.pos.y - m.position.y;
+            const distToTarget = Math.sqrt(dxToTarget * dxToTarget + dyToTarget * dyToTarget);
+            
+            if (distToTarget > 0) {
+                // Update missile direction to home in on target
+                m.direction.x = dxToTarget / distToTarget;
+                m.direction.y = dyToTarget / distToTarget;
+            }
+            }
+            
+            // Move missile according to its direction and speed
+            m.position.x += m.direction.x * m.speed * delta / 1000;
+            m.position.y += m.direction.y * m.speed * delta / 1000;
+
+            // Check for missile collisions with asteroids
+            for (const asteroid of this.asteroids) {
+                const dxAsteroid = m.position.x - asteroid.position.x;
+                const dyAsteroid = m.position.y - asteroid.position.y;
+                const distanceToAsteroid = Math.sqrt(dxAsteroid * dxAsteroid + dyAsteroid * dyAsteroid);
+                
+                // Define proximity threshold based on asteroid size
+                const asteroidProximityThreshold = 3 + (asteroid.size / 2);
+                
+                if (distanceToAsteroid <= asteroidProximityThreshold) {
+                    console.log(`Missile hit asteroid at position: ${asteroid.position.x}, ${asteroid.position.y}`);
+                    
+                    // Remove the missile
+                    this.activeMissiles = this.activeMissiles.filter(missile => missile !== m);
+                    
+                    // Stop checking other objects since this missile is already destroyed
+                    break;
+                }
+            }
+
+            // Check for missile collisions with targets
+            for (const target of this.targets) {
+                const dxTarget = m.position.x - target.position.x;
+                const dyTarget = m.position.y - target.position.y;
+                const distanceToTarget = Math.sqrt(dxTarget * dxTarget + dyTarget * dyTarget);
+                
+                // Define proximity detection radius (missile + target size for more realistic collision)
+                const proximityThreshold = 3 + (target.size / 2);
+                
+                if (distanceToTarget <= proximityThreshold) {
+                    console.log(`Missile hit target at position: ${target.position.x}, ${target.position.y}`);
+                    
+                    // Remove the missile and target
+                    this.activeMissiles = this.activeMissiles.filter(missile => missile !== m);
+                    this.targets = this.targets.filter(t => t !== target);
+                    
+                    // Also remove corresponding track if it exists
+                    if (this.sttTrack && this.sttTrack.pos.x === target.position.x && this.sttTrack.pos.y === target.position.y) {
+                        this.sttTrack = null;
+                        if (this.mode === 'stt') {
+                            this.setMode('rws');
+                        }
+                    }
+                    
+                    this.tracks = this.tracks.filter(track => 
+                        !(track.pos.x === target.position.x && track.pos.y === target.position.y)
+                    );
+                    
+                    // Stop checking other targets since this missile is already destroyed
+                    break;
+                }
+            }
         }
         // Filter out SARH missiles if not in STT mode
         if (this.mode !== 'stt') {
