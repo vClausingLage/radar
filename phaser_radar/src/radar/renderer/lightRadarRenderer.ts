@@ -4,11 +4,8 @@ import { Missile } from "../entities/missiles";
 
 export class LightRadarRenderer {
 
-
     constructor(private missileImage: Phaser.GameObjects.Image, public scene: Phaser.Scene) {
-        // Initialize the missile image
         this.missileImage.setOrigin(0.5, 0.5);
-        
     }
 
     renderScanAzimuth(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number) {

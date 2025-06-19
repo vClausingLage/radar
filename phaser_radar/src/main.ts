@@ -1,6 +1,7 @@
 import Phaser from "phaser"
 import { LightRadar } from "./radar/systems/lightRadar"
 import { radarSettings } from "./constants/index"
+import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer"
 
 class Game extends Phaser.Scene
 {
@@ -15,7 +16,8 @@ class Game extends Phaser.Scene
   private twsBtn?: Phaser.GameObjects.Text
   private emconBtn?: Phaser.GameObjects.Text
   private SARHBtn?: Phaser.GameObjects.Text
-  private SHIP_SPEED = 5
+  private SHIP_SPEED = 3
+  private SHIP_RATATION_SPEED = 8
   private missile?: Phaser.GameObjects.Image
   
   constructor (private canvas?: HTMLCanvasElement, private ship?: Phaser.Physics.Arcade.Image, private radar?: LightRadar)
@@ -31,6 +33,9 @@ class Game extends Phaser.Scene
     this.load.image('radar', 'screen.png')
     this.load.image('missile', 'missile.png')
     this.load.image('explosion', 'explosion.png')
+
+    this.load.setBaseURL('https://cdn.phaserfiles.com/v385');
+    this.load.atlas('flares', 'assets/particles/flares.png', 'assets/particles/flares.json');
   }
 
   create()
@@ -49,6 +54,21 @@ class Game extends Phaser.Scene
     this.ship.setBounce(.5, .5)
     this.ship.setCollideWorldBounds(true)
     this.ship.scale = 0.7
+
+
+    const wisp = this.add.particles(400, 550, 'flares',
+    {
+        frame: 'white',
+        color: [ 0x96e0da, 0x937ef3 ],
+        colorEase: 'quart.out',
+        lifespan: 1500,
+        angle: { min: -100, max: -80 },
+        scale: { start: 1, end: 0, ease: 'sine.in' },
+        speed: { min: 250, max: 350 },
+        advance: 2000,
+        blendMode: 'ADD'
+    });
+
     // MISSILE
     this.missile = this.add.image(0, 0, 'missile').setVisible(false)
     // RADAR
@@ -61,9 +81,8 @@ class Game extends Phaser.Scene
     // RADAR & DEFAULT SETTINGS
     this.radar = new LightRadar(
         radarOptions,
-        this,
+        new LightRadarRenderer(this.missile!, this),
         'rws',
-        this.missile,
         {
           'AIM-177': 4,
           'AIM-220': 0,
@@ -165,7 +184,7 @@ class Game extends Phaser.Scene
   update(_: number, delta: number)
   {
     this.graphics?.clear();
-    this.ship?.setAngularVelocity(this.turn * 50);
+    this.ship?.setAngularVelocity(this.turn * this.SHIP_RATATION_SPEED);
     // Move ship in the direction it's facing with speed 100a
     if (this.ship) {
       const angleRad = Phaser.Math.DegToRad(this.ship.angle - 90);

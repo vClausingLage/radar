@@ -19,15 +19,13 @@ export class LightRadar {
 
     constructor(
         private radarOptions: RadarOptions,
-        private scene: Phaser.Scene,
+        private renderer: LightRadarRenderer,
         private mode: string = 'rws',
-        private missile: Phaser.GameObjects.Image,
         private loadout: Loadout,
         private tracks: Track[] = [],
         private sttTrack: Track | null = null,
         private targets: Target[] = [],
         private asteroids: Asteroid[] = [],
-        private renderer: LightRadarRenderer = new LightRadarRenderer(missile, scene)
     ) {}
 
     getPosition() {
@@ -211,6 +209,8 @@ export class LightRadar {
 
                 if (!this.sttTrack) {
                     this.sttTrack = this.tracks[0]
+                    //! change the direction opposite to radar direction
+                    //! change it over time
                 }
 
                 const dx = this.sttTrack.pos.x - this.radarOptions.position.x
@@ -291,7 +291,7 @@ export class LightRadar {
                             target.position.y,
                             'explosion'
                         );
-                                
+
                         explosion.setScale(.05);
                         
                         explosion.alpha = 1;
