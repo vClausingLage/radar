@@ -30,6 +30,7 @@ class Game extends Phaser.Scene
     this.load.image('rwr', 'screen.png')
     this.load.image('radar', 'screen.png')
     this.load.image('missile', 'missile.png')
+    this.load.image('explosion', 'explosion.png')
   }
 
   create()
@@ -41,7 +42,6 @@ class Game extends Phaser.Scene
     this.input.keyboard?.on('keyup-LEFT',   () => this.turn = 0);
     this.input.keyboard?.on('keydown-RIGHT', () => this.turn = 1);
     this.input.keyboard?.on('keyup-RIGHT',   () => this.turn = 0);
-    this.missile = this.add.image(0, 0, 'missile')
     // SHIP
     this.ship = this.physics.add.image(this.window.width / 2, this.window.height, 'ship')
     this.ship.setVelocity(0, 0)
@@ -49,6 +49,8 @@ class Game extends Phaser.Scene
     this.ship.setBounce(.5, .5)
     this.ship.setCollideWorldBounds(true)
     this.ship.scale = 0.7
+    // MISSILE
+    this.missile = this.add.image(0, 0, 'missile').setVisible(false)
     // RADAR
     const radarOptions = {
       range: radarSettings?.range,
@@ -59,12 +61,13 @@ class Game extends Phaser.Scene
     // RADAR & DEFAULT SETTINGS
     this.radar = new LightRadar(
         radarOptions,
+        this,
         'rws',
+        this.missile,
         {
           'AIM-177': 4,
           'AIM-220': 0,
         },
-        this.missile
     )
     this.radar?.setMode('rws')
     // make ship position radar position
@@ -150,7 +153,7 @@ class Game extends Phaser.Scene
       size: 15
     })
     this.radar.addAsteroid({
-      position: { x: 500, y: 500 },
+      position: { x: 200, y: 300 },
       direction: { x: 1, y: -1 },
       speed: .2,
       size: 20

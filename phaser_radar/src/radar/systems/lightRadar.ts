@@ -19,14 +19,15 @@ export class LightRadar {
 
     constructor(
         private radarOptions: RadarOptions,
+        private scene: Phaser.Scene,
         private mode: string = 'rws',
-        private loadout: Loadout,
         private missile: Phaser.GameObjects.Image,
+        private loadout: Loadout,
         private tracks: Track[] = [],
         private sttTrack: Track | null = null,
         private targets: Target[] = [],
         private asteroids: Asteroid[] = [],
-        private renderer: LightRadarRenderer = new LightRadarRenderer(missile)
+        private renderer: LightRadarRenderer = new LightRadarRenderer(missile, scene)
     ) {}
 
     getPosition() {
@@ -235,16 +236,16 @@ export class LightRadar {
             // For SARH missiles in STT mode, update direction to follow the target
             if (this.mode === 'stt' && this.sttTrack && 
             (m as SARHMissile).guidance === 'semi-active') {
-            // Calculate new direction vector to target
-            const dxToTarget = this.sttTrack.pos.x - m.position.x;
-            const dyToTarget = this.sttTrack.pos.y - m.position.y;
-            const distToTarget = Math.sqrt(dxToTarget * dxToTarget + dyToTarget * dyToTarget);
-            
-            if (distToTarget > 0) {
-                // Update missile direction to home in on target
-                m.direction.x = dxToTarget / distToTarget;
-                m.direction.y = dyToTarget / distToTarget;
-            }
+                // Calculate new direction vector to target
+                const dxToTarget = this.sttTrack.pos.x - m.position.x;
+                const dyToTarget = this.sttTrack.pos.y - m.position.y;
+                const distToTarget = Math.sqrt(dxToTarget * dxToTarget + dyToTarget * dyToTarget);
+                
+                if (distToTarget > 0) {
+                    // Update missile direction to home in on target
+                    m.direction.x = dxToTarget / distToTarget;
+                    m.direction.y = dyToTarget / distToTarget;
+                }
             }
             
             // Move missile according to its direction and speed
@@ -282,6 +283,28 @@ export class LightRadar {
                 
                 if (distanceToTarget <= proximityThreshold) {
                     console.log(`Missile hit target at position: ${target.position.x}, ${target.position.y}`);
+
+                    // Create an explosion sprite at the target's position
+                    if (this.renderer.scene) {
+                        const explosion = this.renderer.scene.add.sprite(
+                            target.position.x,
+                            target.position.y,
+                            'explosion'
+                        );
+                                
+                        explosion.setScale(.05);
+                        
+                        explosion.alpha = 1;
+                        this.renderer.scene.tweens.add({
+                            targets: explosion,
+                            alpha: 0,
+                            duration: 1900,
+                            ease: 'Power1',
+                            onComplete: () => {
+                                explosion.destroy();
+                            }
+                        });
+                    }
                     
                     // Remove the missile and target
                     this.activeMissiles = this.activeMissiles.filter(missile => missile !== m);
@@ -318,7 +341,6 @@ export class LightRadar {
             return distanceFromRadar <= missile.range;
         });
         this.renderer.renderMissiles(this.activeMissiles, graphics)
-        
     }
 
     getScanArea(angle: number): { startAngle: number, endAngle: number } | null {
