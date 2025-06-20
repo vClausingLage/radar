@@ -11,9 +11,6 @@ type Loadout = {
 
 export class LightRadar {
 
-    private SCAN_SPEED = .02
-    private MISSILE_SPEED = 30
-    private SARH_MISSILE_RANGE = 300
     private lastScanTime = 0
     private activeMissiles: Missile[] = []
 
@@ -106,7 +103,7 @@ export class LightRadar {
                     const middleAngle: number = angle
                     const startAngle: number = middleAngle - this.radarOptions.azimuth
                     const endAngle: number = middleAngle + this.radarOptions.azimuth
-                    const scanDuration = this.radarOptions.range * this.SCAN_SPEED * (endAngle - startAngle)
+                    const scanDuration = this.radarOptions.range * this.radarOptions.scanSpeed * (endAngle - startAngle)
 
                     this.renderer.renderScanAzimuth(graphics, this.radarOptions.position, this.radarOptions.range, startAngle, endAngle)
 
@@ -141,6 +138,7 @@ export class LightRadar {
                         
                         // clear tracks
                         this.tracks = []
+                        this.sttTrack = null
 
                         for (const [index, t] of targetsInRange.entries()) {
                             // Create a line from radar position to target
@@ -239,102 +237,8 @@ export class LightRadar {
                 }
             }
         }
-        // Update missile positions
-        for (const m of this.activeMissiles) {
-            // For SARH missiles in STT mode, update direction to follow the target
-            if (this.mode === 'stt' && this.sttTrack && 
-            (m as SARHMissile).guidance === 'semi-active') {
-                // Calculate new direction vector to target
-                const dxToTarget = this.sttTrack.pos.x - m.position.x;
-                const dyToTarget = this.sttTrack.pos.y - m.position.y;
-                const distToTarget = Math.sqrt(dxToTarget * dxToTarget + dyToTarget * dyToTarget);
-                
-                if (distToTarget > 0) {
-                    // Update missile direction to home in on target
-                    m.direction.x = dxToTarget / distToTarget;
-                    m.direction.y = dyToTarget / distToTarget;
-                }
-            }
-            
-            // Move missile according to its direction and speed
-            m.position.x += m.direction.x * m.speed * delta / 1000;
-            m.position.y += m.direction.y * m.speed * delta / 1000;
-
-            // Check for missile collisions with asteroids
-            for (const asteroid of this.asteroids) {
-                const dxAsteroid = m.position.x - asteroid.position.x;
-                const dyAsteroid = m.position.y - asteroid.position.y;
-                const distanceToAsteroid = Math.sqrt(dxAsteroid * dxAsteroid + dyAsteroid * dyAsteroid);
-                
-                // Define proximity threshold based on asteroid size
-                const asteroidProximityThreshold = 3 + (asteroid.size / 2);
-                
-                if (distanceToAsteroid <= asteroidProximityThreshold) {
-                    console.log(`Missile hit asteroid at position: ${asteroid.position.x}, ${asteroid.position.y}`);
-                    
-                    // Remove the missile
-                    this.activeMissiles = this.activeMissiles.filter(missile => missile !== m);
-                    
-                    // Stop checking other objects since this missile is already destroyed
-                    break;
-                }
-            }
-
-            // Check for missile collisions with targets
-            for (const target of this.targets) {
-                const dxTarget = m.position.x - target.position.x;
-                const dyTarget = m.position.y - target.position.y;
-                const distanceToTarget = Math.sqrt(dxTarget * dxTarget + dyTarget * dyTarget);
-                
-                // Define proximity detection radius (missile + target size for more realistic collision)
-                const proximityThreshold = 3 + (target.size / 2);
-                
-                if (distanceToTarget <= proximityThreshold) {
-                    console.log(`Missile hit target at position: ${target.position.x}, ${target.position.y}`);
-
-                    // Create an explosion sprite at the target's position
-                    if (this.renderer.scene) {
-                        const explosion = this.renderer.scene.add.sprite(
-                            target.position.x,
-                            target.position.y,
-                            'explosion'
-                        );
-
-                        explosion.setScale(.05);
-                        
-                        explosion.alpha = 1;
-                        this.renderer.scene.tweens.add({
-                            targets: explosion,
-                            alpha: 0,
-                            duration: 1900,
-                            ease: 'Power1',
-                            onComplete: () => {
-                                explosion.destroy();
-                            }
-                        });
-                    }
-                    
-                    // Remove the missile and target
-                    this.activeMissiles = this.activeMissiles.filter(missile => missile !== m);
-                    this.targets = this.targets.filter(t => t !== target);
-                    
-                    // Also remove corresponding track if it exists
-                    if (this.sttTrack && this.sttTrack.pos.x === target.position.x && this.sttTrack.pos.y === target.position.y) {
-                        this.sttTrack = null;
-                        if (this.mode === 'stt') {
-                            this.setMode('rws');
-                        }
-                    }
-                    
-                    this.tracks = this.tracks.filter(track => 
-                        !(track.pos.x === target.position.x && track.pos.y === target.position.y)
-                    );
-                    
-                    // Stop checking other targets since this missile is already destroyed
-                    break;
-                }
-            }
-        }
+        // update missiles
+        this.updateMissiles(delta)
         // Filter out SARH missiles if not in STT mode
         //! do not filter out
         // if (this.mode !== 'stt') {
@@ -384,7 +288,6 @@ export class LightRadar {
         const missileStartY = this.radarOptions.position.y
         const missileTargetX = this.sttTrack.pos.x
         const missileTargetY = this.sttTrack.pos.y
-        const missileSpeed = this.MISSILE_SPEED
 
         // Calculate direction vector and distance to target
         const dxTotal = missileTargetX - missileStartX
@@ -398,8 +301,9 @@ export class LightRadar {
 
         const missile: SARHMissile = {
             type: 'AIM-177',
-            range: this.SARH_MISSILE_RANGE,
-            speed: missileSpeed,
+            range: 270,
+            speed: 10.0,
+            turnSpeed: .7,
             guidance: 'semi-active',
             warhead: 'high-explosive',
             position: {
@@ -413,6 +317,131 @@ export class LightRadar {
         }
 
         this.activeMissiles.push(missile)
+    }
+
+    updateMissiles(delta: number): void {
+        // Update missile positions
+        for (const m of this.activeMissiles) {
+            // Calculate current direction as a vector
+            const currentDirX = m.direction.x;
+            const currentDirY = m.direction.y;
+            
+            // Calculate target direction (either to STT target or continuing straight)
+            let targetDirX = currentDirX;
+            let targetDirY = currentDirY;
+            
+            // For SARH missiles in STT mode, calculate the target direction
+            if (this.mode === 'stt' && this.sttTrack && 
+                (m as SARHMissile).guidance === 'semi-active') {
+                const dxToTarget = this.sttTrack.pos.x - m.position.x;
+                const dyToTarget = this.sttTrack.pos.y - m.position.y;
+                const distToTarget = Math.sqrt(dxToTarget * dxToTarget + dyToTarget * dyToTarget);
+                
+                if (distToTarget > 0) {
+                    targetDirX = dxToTarget / distToTarget;
+                    targetDirY = dyToTarget / distToTarget;
+                }
+            }
+            
+            // Interpolate direction based on turn speed (0 to 1)
+            const turnFactor = Math.min(m.turnSpeed * delta / 1000, 1);
+            m.direction.x = currentDirX + (targetDirX - currentDirX) * turnFactor;
+            m.direction.y = currentDirY + (targetDirY - currentDirY) * turnFactor;
+            
+            // Normalize the direction vector
+            const dirMag = Math.sqrt(m.direction.x * m.direction.x + m.direction.y * m.direction.y);
+            if (dirMag > 0) {
+                m.direction.x /= dirMag;
+                m.direction.y /= dirMag;
+            }
+            
+            // Move missile according to its direction and speed
+            m.position.x += m.direction.x * m.speed * delta / 1000;
+            m.position.y += m.direction.y * m.speed * delta / 1000;
+
+            // Check for missile collisions with asteroids
+            this.checkCollisionWithAsteroid(m);
+
+            // Check for missile collisions with targets
+            this.checkCollisionWithTarget(m);
+        }
+    }
+
+    checkCollisionWithAsteroid(m: Missile) {
+        for (const asteroid of this.asteroids) {
+            const dxAsteroid = m.position.x - asteroid.position.x;
+            const dyAsteroid = m.position.y - asteroid.position.y;
+            const distanceToAsteroid = Math.sqrt(dxAsteroid * dxAsteroid + dyAsteroid * dyAsteroid);
+            
+            // Define proximity threshold based on asteroid size
+            const asteroidProximityThreshold = 3 + (asteroid.size / 2);
+            
+            if (distanceToAsteroid <= asteroidProximityThreshold) {
+                console.log(`Missile hit asteroid at position: ${asteroid.position.x}, ${asteroid.position.y}`);
+                
+                // Remove the missile
+                this.activeMissiles = this.activeMissiles.filter(missile => missile !== m);
+                
+                // Stop checking other objects since this missile is already destroyed
+                break;
+            }
+        }
+    }
+
+    checkCollisionWithTarget(m: Missile) {
+        for (const target of this.targets) {
+            const dxTarget = m.position.x - target.position.x;
+            const dyTarget = m.position.y - target.position.y;
+            const distanceToTarget = Math.sqrt(dxTarget * dxTarget + dyTarget * dyTarget);
+            
+            // Define proximity detection radius (missile + target size for more realistic collision)
+            const proximityThreshold = 3 + (target.size / 2);
+            
+            if (distanceToTarget <= proximityThreshold) {
+                console.log(`Missile hit target at position: ${target.position.x}, ${target.position.y}`);
+
+                // Create an explosion sprite at the target's position
+                if (this.renderer.scene) {
+                    const explosion = this.renderer.scene.add.sprite(
+                        target.position.x,
+                        target.position.y,
+                        'explosion'
+                    );
+
+                    explosion.setScale(.05);
+                    
+                    explosion.alpha = 1;
+                    this.renderer.scene.tweens.add({
+                        targets: explosion,
+                        alpha: 0,
+                        duration: 1900,
+                        ease: 'Power1',
+                        onComplete: () => {
+                            explosion.destroy();
+                        }
+                    });
+                }
+                
+                // Remove the missile and target
+                this.activeMissiles = this.activeMissiles.filter(missile => missile !== m);
+                this.targets = this.targets.filter(t => t !== target);
+                
+                // Also remove corresponding track if it exists
+                if (this.sttTrack && this.sttTrack.pos.x === target.position.x && this.sttTrack.pos.y === target.position.y) {
+                    this.sttTrack = null;
+                    if (this.mode === 'stt') {
+                        this.setMode('rws');
+                    }
+                }
+                
+                this.tracks = this.tracks.filter(track => 
+                    !(track.pos.x === target.position.x && track.pos.y === target.position.y)
+                );
+                
+                // Stop checking other targets since this missile is already destroyed
+                break;
+            }
+        }
     }
 
 }

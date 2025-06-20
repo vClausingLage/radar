@@ -19,6 +19,7 @@ export type RadarOptions = {
     position: Vector2
     isScanning: boolean
     azimuth: number
+    scanSpeed: number,
 }
 
 export type Mode = 'stt' | 'rws' | 'tws' | 'emcon'

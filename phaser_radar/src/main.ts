@@ -1,7 +1,7 @@
 import Phaser from "phaser"
 import { LightRadar } from "./radar/systems/lightRadar"
-import { radarSettings } from "./constants/index"
 import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer"
+import { Vector2 } from "./types"
 
 class Game extends Phaser.Scene
 {
@@ -18,6 +18,8 @@ class Game extends Phaser.Scene
   private SARHBtn?: Phaser.GameObjects.Text
   private SHIP_SPEED = 3
   private SHIP_RATATION_SPEED = 8
+  private RADAR_RANGE= 400
+  private SCAN_SPEED = .02
   private missile?: Phaser.GameObjects.Image
   
   constructor (private canvas?: HTMLCanvasElement, private ship?: Phaser.Physics.Arcade.Image, private radar?: LightRadar)
@@ -34,8 +36,8 @@ class Game extends Phaser.Scene
     this.load.image('missile', 'missile.png')
     this.load.image('explosion', 'explosion.png')
 
-    this.load.setBaseURL('https://cdn.phaserfiles.com/v385');
-    this.load.atlas('flares', 'assets/particles/flares.png', 'assets/particles/flares.json');
+    // this.load.setBaseURL('https://cdn.phaserfiles.com/v385');
+    // this.load.atlas('flares', 'assets/particles/flares.png', 'assets/particles/flares.json');
   }
 
   create()
@@ -56,27 +58,28 @@ class Game extends Phaser.Scene
     this.ship.scale = 0.7
 
 
-    const wisp = this.add.particles(400, 550, 'flares',
-    {
-        frame: 'white',
-        color: [ 0x96e0da, 0x937ef3 ],
-        colorEase: 'quart.out',
-        lifespan: 1500,
-        angle: { min: -100, max: -80 },
-        scale: { start: 1, end: 0, ease: 'sine.in' },
-        speed: { min: 250, max: 350 },
-        advance: 2000,
-        blendMode: 'ADD'
-    });
+    // const wisp = this.add.particles(400, 550, 'flares',
+    // {
+    //     frame: 'white',
+    //     color: [ 0x96e0da, 0x937ef3 ],
+    //     colorEase: 'quart.out',
+    //     lifespan: 1500,
+    //     angle: { min: -100, max: -80 },
+    //     scale: { start: 1, end: 0, ease: 'sine.in' },
+    //     speed: { min: 250, max: 350 },
+    //     advance: 2000,
+    //     blendMode: 'ADD'
+    // });
 
     // MISSILE
     this.missile = this.add.image(0, 0, 'missile').setVisible(false)
     // RADAR
     const radarOptions = {
-      range: radarSettings?.range,
-      position: radarSettings?.position,
-      isScanning: radarSettings?.isScanning,
-      azimuth: radarSettings?.azimuth,
+      range: this.RADAR_RANGE,
+      position: { x: 0, y: 0 } as Vector2,
+      isScanning: true,
+      azimuth: 20,
+      scanSpeed: this.SCAN_SPEED,
     }
     // RADAR & DEFAULT SETTINGS
     this.radar = new LightRadar(
@@ -156,7 +159,6 @@ class Game extends Phaser.Scene
     .on('pointerdown', () => {
       this.radar?.shootSARH()
     });
-    
 
     // create targets and asteroids and push them to radar
     this.radar.addTarget({ 
@@ -194,6 +196,15 @@ class Game extends Phaser.Scene
     }
     this.radar?.setPosition(this.ship?.getWorldPoint() || { x: 0, y: 0 });
     // move targets & asteroids
+    this.moveTargetsAndAsteroids(delta)
+
+    // radar scan
+    this.radar?.update(delta, this.ship?.angle || 0, this.graphics!);
+
+    this.updateButtonColors();
+  }
+
+  private moveTargetsAndAsteroids(delta: number) {
     this.radar?.getTargets().forEach(target => {
       target.position.x! += target.direction.x! * target.speed * delta / 1000;
       target.position.y! += target.direction.y! * target.speed * delta / 1000;
@@ -241,10 +252,6 @@ class Game extends Phaser.Scene
         }).setOrigin(0.5);
       }
     })
-    // radar scan
-    this.radar?.update(delta, this.ship?.angle || 0, this.graphics!);
-
-    this.updateButtonColors();
   }
 
   private updateButtonColors() {

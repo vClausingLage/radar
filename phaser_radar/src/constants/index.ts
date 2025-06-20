@@ -1,3 +1,5 @@
+//! delete or keep module?
+
 import { RadarOptions } from '../types/index'
 
 export const radarSettings: RadarOptions = {
