@@ -191,7 +191,15 @@ export class LightRadar {
 
                         this.lastScanTime = 0
                     }
-
+                    // Handle active missiles movement in RWS mode
+                    for (const missile of this.activeMissiles) {
+                        // Move missile according to its direction and speed
+                        missile.position.x += missile.direction.x * missile.speed * delta / 1000;
+                        missile.position.y += missile.direction.y * missile.speed * delta / 1000;
+                        
+                        // Render missiles during RWS scan
+                        this.renderer.renderMissiles([missile], graphics);
+                    }
                 }
             }
 
@@ -328,11 +336,12 @@ export class LightRadar {
             }
         }
         // Filter out SARH missiles if not in STT mode
-        if (this.mode !== 'stt') {
-            this.activeMissiles = this.activeMissiles.filter(missile => 
-                !(missile as SARHMissile).guidance || (missile as SARHMissile).guidance !== 'semi-active'
-            );
-        }
+        //! do not filter out
+        // if (this.mode !== 'stt') {
+        //     this.activeMissiles = this.activeMissiles.filter(missile => 
+        //         !(missile as SARHMissile).guidance || (missile as SARHMissile).guidance !== 'semi-active'
+        //     );
+        // }
         // Filter out missiles that have gone beyond their range
         this.activeMissiles = this.activeMissiles.filter(missile => {
             const dx = missile.position.x - this.radarOptions.position.x;
