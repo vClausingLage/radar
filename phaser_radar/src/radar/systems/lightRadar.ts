@@ -12,6 +12,7 @@ type Loadout = {
 export class LightRadar {
 
     private lastScanTime = 0
+    private missileUpdateDelta = 0
     private activeMissiles: Missile[] = []
 
     constructor(
@@ -239,20 +240,26 @@ export class LightRadar {
         }
         // update missiles
         this.updateMissiles(delta)
-        // Filter out SARH missiles if not in STT mode
-        //! do not filter out
-        // if (this.mode !== 'stt') {
-        //     this.activeMissiles = this.activeMissiles.filter(missile => 
-        //         !(missile as SARHMissile).guidance || (missile as SARHMissile).guidance !== 'semi-active'
-        //     );
-        // }
-        // Filter out missiles that have gone beyond their range
-        this.activeMissiles = this.activeMissiles.filter(missile => {
-            const dx = missile.position.x - this.radarOptions.position.x;
-            const dy = missile.position.y - this.radarOptions.position.y;
-            const distanceFromRadar = Math.sqrt(dx * dx + dy * dy);
-            return distanceFromRadar <= missile.range;
-        });
+
+        // Filter out missiles that have gone beyond their burn time
+        // Track time since last burn time check
+        this.missileUpdateDelta += delta
+
+        if (this.missileUpdateDelta >= 1000) {
+
+            this.activeMissiles.forEach(missile => {
+                console.log(`Missile ${missile.type} at position (${missile.position.x}, ${missile.position.y}) with burn time ${missile.burnTime}`);
+            })
+
+            this.activeMissiles = this.activeMissiles.filter(missile => {
+                if (missile.burnTime > 0) {
+                    missile.burnTime -= 1;
+                    return true;
+                }
+                return false;
+            });
+            this.missileUpdateDelta = 0
+        }
         this.renderer.renderMissiles(this.activeMissiles, graphics)
     }
 
@@ -301,8 +308,8 @@ export class LightRadar {
 
         const missile: SARHMissile = {
             type: 'AIM-177',
-            range: 270,
-            speed: 10.0,
+            burnTime: 14,
+            speed: 17.0,
             turnSpeed: .7,
             guidance: 'semi-active',
             warhead: 'high-explosive',
@@ -313,7 +320,7 @@ export class LightRadar {
             direction: {
                 x: dxTotal / distance,
                 y: dyTotal / distance
-            },
+            }
         }
 
         this.activeMissiles.push(missile)

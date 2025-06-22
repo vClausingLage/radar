@@ -1,5 +1,5 @@
 export interface BaseMissile {
-    range: number;
+    burnTime: number;
     speed: number;
     turnSpeed: number;
     warhead: 'high-explosive' | 'fragmentation';
@@ -16,16 +16,16 @@ export interface BaseMissile {
 export interface SARHMissile extends BaseMissile {
     type: 'AIM-177';
     guidance: 'semi-active';
-    range: 270;
-    speed: 10.0;
+    burnTime: 14;
+    speed: 17.0;
     turnSpeed: 0.7
 }
 
 export interface ActiveRadarMissile extends BaseMissile {
     type: 'AIM-220';
     guidance: 'active';
-    range: 300
-    speed: 12.5;
+    burnTime: 14;
+    speed: 21;
     turnSpeed: 0.8;
 }
 
