@@ -241,25 +241,6 @@ export class LightRadar {
         // update missiles
         this.updateMissiles(delta)
 
-        // Filter out missiles that have gone beyond their burn time
-        // Track time since last burn time check
-        this.missileUpdateDelta += delta
-
-        if (this.missileUpdateDelta >= 1000) {
-
-            this.activeMissiles.forEach(missile => {
-                console.log(`Missile ${missile.type} at position (${missile.position.x}, ${missile.position.y}) with burn time ${missile.burnTime}`);
-            })
-
-            this.activeMissiles = this.activeMissiles.filter(missile => {
-                if (missile.burnTime > 0) {
-                    missile.burnTime -= 1;
-                    return true;
-                }
-                return false;
-            });
-            this.missileUpdateDelta = 0
-        }
         this.renderer.renderMissiles(this.activeMissiles, graphics)
     }
 
@@ -327,6 +308,24 @@ export class LightRadar {
     }
 
     updateMissiles(delta: number): void {
+        // Filter out missiles that have gone beyond their burn time
+        this.missileUpdateDelta += delta
+
+        if (this.missileUpdateDelta >= 1000) {
+
+            for (const m of this.activeMissiles) {
+                console.log(`Missile ${m.type} at position (${m.position.x}, ${m.position.y}) with burn time ${m.burnTime}`);
+            }
+
+            this.activeMissiles = this.activeMissiles.filter(missile => {
+                if (missile.burnTime > 0) {
+                    missile.burnTime -= 1;
+                    return true;
+                }
+                return false;
+            });
+            this.missileUpdateDelta = 0
+        }
         // Update missile positions
         for (const m of this.activeMissiles) {
             // Calculate current direction as a vector
