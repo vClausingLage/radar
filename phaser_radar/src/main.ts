@@ -19,7 +19,7 @@ class Game extends Phaser.Scene
   private SHIP_SPEED = 3
   private SHIP_RATATION_SPEED = 8
   private RADAR_RANGE= 400
-  private SCAN_SPEED = .02
+  private SCAN_SPEED = .04
   private missile?: Phaser.GameObjects.Image
   
   constructor (private canvas?: HTMLCanvasElement, private ship?: Phaser.Physics.Arcade.Image, private radar?: LightRadar)
@@ -103,10 +103,10 @@ class Game extends Phaser.Scene
 
     // INTERFACE
     this.sttBtn = this.add.text(20, this.window.height - 50, 'STT', { 
-      font: '22px Courier', 
-      color: '#000', 
+      font: '22px Courier',
+      color: '#000',
       backgroundColor: '#ffdb4d',
-      padding: { x: 10, y: 5 } 
+      padding: { x: 10, y: 5 }
     })
     .setInteractive()
     .setOrigin(0)

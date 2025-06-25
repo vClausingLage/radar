@@ -1,13 +1,9 @@
-import { RadarOptions } from '../../types'
+import { RadarOptions, Loadout } from '../../types'
 import { Track } from '../data/track'
 import { Asteroid } from '../entities/asteroid'
 import { Target } from '../entities/target'
-import { Missile, SARHMissile, Missiles } from '../entities/missiles'
+import { Missile, SARHMissile } from '../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
-
-type Loadout = {
-    [key in Missiles]: number
-}
 
 export class LightRadar {
 
