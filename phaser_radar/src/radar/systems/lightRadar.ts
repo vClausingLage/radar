@@ -64,7 +64,7 @@ export class LightRadar {
     getTracks() {
         return this.tracks
     }
-    setTracks(tracks: any[]) {
+    setTracks(tracks: Track[]) {
         this.tracks = tracks
     }
 
@@ -104,88 +104,10 @@ export class LightRadar {
 
                     this.renderer.renderScanAzimuth(graphics, this.radarOptions.position, this.radarOptions.range, startAngle, endAngle)
 
-                    //! generalize these filter functions
                     if (this.lastScanTime >= scanDuration) {
-                        const targetsInRange = this.targets.filter(target => {
-                            const dx = target.position.x - this.radarOptions.position.x
-                            const dy = target.position.y - this.radarOptions.position.y
-                            const distance = Math.sqrt(dx * dx + dy * dy)
-                            const angleToTarget = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
-
-                            return distance <= this.radarOptions.range &&
-                                angleToTarget >= startAngle && angleToTarget <= endAngle
-                        })
-                        const asteroidsInRange = this.asteroids.filter(asteroid => {
-                            const dx = asteroid.position.x - this.radarOptions.position.x
-                            const dy = asteroid.position.y - this.radarOptions.position.y
-                            const distance = Math.sqrt(dx * dx + dy * dy)
-                            const angleToAsteroid = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
-
-                            return distance <= this.radarOptions.range &&
-                                angleToAsteroid >= startAngle && angleToAsteroid <= endAngle
-                        })
-
-
-                        const circles = [...targetsInRange, ...asteroidsInRange].map(t => {
-                            const r = t.size / 2
-                            return new Phaser.Geom.Circle(t.position.x, t.position.y, r)
-                        })
-
-                        this.renderer.renderAsteroids(asteroidsInRange, graphics)
-                        
-                        // clear tracks
-                        this.tracks = []
-                        this.sttTrack = null
-
-                        for (const [index, t] of targetsInRange.entries()) {
-                            // Create a line from radar position to target
-                            const line = new Phaser.Geom.Line(
-                                this.radarOptions.position.x,
-                                this.radarOptions.position.y,
-                                t.position.x,
-                                t.position.y
-                            )
-
-                            // Check for collisions with all other circles except the current target
-                            const otherCircles = circles.filter(circle => 
-                                circle.x !== t.position.x || circle.y !== t.position.y
-                            )
-
-                            // Check if line intersects with any other circle
-                            const hasCollision = otherCircles.some(circle => 
-                                Phaser.Geom.Intersects.LineToCircle(line, circle)
-                            )
-
-                            // Calculate distance
-                            const dx = t.position.x - this.radarOptions.position.x
-                            const dy = t.position.y - this.radarOptions.position.y
-                            const distance = Math.sqrt(dx * dx + dy * dy)
-
-                            // Only draw and process target if there's no collision
-                            if (!hasCollision) {
-
-                                this.tracks = [...this.tracks, {
-                                    id: index,
-                                    pos: t.position,
-                                    dist: distance,
-                                    dir: t.direction,
-                                    speed: t.speed,
-                                    age: 0,
-                                    lastUpdate: 0,
-                                    confidence: 0,
-                                }]
-
-                                this.renderer.renderRwsContacts(graphics, t, distance)
-                            }
-                        }
-
-                        // sort tracks by distance
-                        this.tracks.sort((a, b) => a.dist - b.dist)
-
-                        console.log('Targets in range:', this.tracks)
-
-                        this.lastScanTime = 0
+                        this.radarScan(startAngle, endAngle, graphics)
                     }
+
                     // Handle active missiles movement in RWS mode
                     for (const missile of this.activeMissiles) {
                         // Move missile according to its direction and speed
@@ -446,4 +368,98 @@ export class LightRadar {
         }
     }
 
+    filterTargetsAndAsteroidsInScanArea(startAngle: number, endAngle: number): { targetsInRange: Target[], asteroidsInRange: Asteroid[] } {
+        const targetsInRange = this.targets.filter(target => {
+            const dx = target.position.x - this.radarOptions.position.x
+            const dy = target.position.y - this.radarOptions.position.y
+            const distance = Math.sqrt(dx * dx + dy * dy)
+            const angleToTarget = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
+
+            return distance <= this.radarOptions.range 
+            && angleToTarget >= startAngle 
+            && angleToTarget <= endAngle
+        })
+        const asteroidsInRange = this.asteroids.filter(asteroid => {
+            const dx = asteroid.position.x - this.radarOptions.position.x
+            const dy = asteroid.position.y - this.radarOptions.position.y
+            const distance = Math.sqrt(dx * dx + dy * dy)
+            const angleToAsteroid = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
+
+            return distance <= this.radarOptions.range &&
+                angleToAsteroid >= startAngle && angleToAsteroid <= endAngle
+        })
+
+        return { targetsInRange, asteroidsInRange }
+    }
+
+    radarScan(startAngle: number, endAngle: number, graphics: Phaser.GameObjects.Graphics): void {
+        // clear tracks
+        this.tracks = []
+        this.sttTrack = null
+
+        const { targetsInRange, asteroidsInRange } = this.filterTargetsAndAsteroidsInScanArea(startAngle, endAngle)
+
+        const circles = [...targetsInRange, ...asteroidsInRange].map(t => {
+            const r = t.size / 2
+            return new Phaser.Geom.Circle(t.position.x, t.position.y, r)
+        })
+
+        // Log targets found and their angles for debugging
+        targetsInRange.forEach(t => {
+            const dx = t.position.x - this.radarOptions.position.x
+            const dy = t.position.y - this.radarOptions.position.y
+            const angleToTarget = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
+            console.debug(`Target at (${t.position.x}, ${t.position.y}), angle: ${angleToTarget}, in scan area: ${startAngle}-${endAngle}`)
+        });
+
+        for (const [index, t] of targetsInRange.entries()) {
+            // Create a line from radar position to target
+            const line = new Phaser.Geom.Line(
+                this.radarOptions.position.x,
+                this.radarOptions.position.y,
+                t.position.x,
+                t.position.y
+            )
+
+            // Check for collisions with all other circles except the current target
+            const otherCircles = circles.filter(circle => 
+                circle.x !== t.position.x || circle.y !== t.position.y
+            )
+
+            // Check if line intersects with any other circle
+            const hasCollision = otherCircles.some(circle => 
+                Phaser.Geom.Intersects.LineToCircle(line, circle)
+            )
+
+            // Calculate distance
+            const dx = t.position.x - this.radarOptions.position.x
+            const dy = t.position.y - this.radarOptions.position.y
+            const distance = Math.sqrt(dx * dx + dy * dy)
+
+            // Only draw and process target if there's no collision
+            if (!hasCollision) {
+                this.tracks = [...this.tracks, {
+                    id: index,
+                    pos: t.position,
+                    dist: distance,
+                    dir: t.direction,
+                    speed: t.speed,
+                    age: 0,
+                    lastUpdate: 0,
+                    confidence: 0,
+                }]
+                
+                this.renderer.renderRwsContacts(graphics, t, distance)
+            }
+        }
+        
+        // sort tracks by distance
+        this.tracks.sort((a, b) => a.dist - b.dist)
+        
+        console.log('Targets in range:', this.tracks)
+        
+        this.renderer.renderAsteroids(asteroidsInRange, graphics)
+        
+        this.lastScanTime = 0
+    }
 }

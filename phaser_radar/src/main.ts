@@ -16,7 +16,7 @@ class Game extends Phaser.Scene
   private twsBtn?: Phaser.GameObjects.Text
   private emconBtn?: Phaser.GameObjects.Text
   private SARHBtn?: Phaser.GameObjects.Text
-  private SHIP_SPEED = 3
+  private SHIP_SPEED = 0.1
   private SHIP_RATATION_SPEED = 8
   private RADAR_RANGE= 400
   private SCAN_SPEED = .04
@@ -56,7 +56,6 @@ class Game extends Phaser.Scene
     this.ship.setBounce(.5, .5)
     this.ship.setCollideWorldBounds(true)
     this.ship.scale = 0.7
-
 
     // const wisp = this.add.particles(400, 550, 'flares',
     // {
@@ -102,30 +101,30 @@ class Game extends Phaser.Scene
     this.add.text(75 , 135, 'RWR', { font: '18px Courier', color: '#00ff00' })
 
     // INTERFACE
-    this.sttBtn = this.add.text(20, this.window.height - 50, 'STT', { 
-      font: '22px Courier',
-      color: '#000',
-      backgroundColor: '#ffdb4d',
-      padding: { x: 10, y: 5 }
-    })
-    .setInteractive()
-    .setOrigin(0)
-    .on('pointerdown', () => {
-      if (this.radar?.getTracks().length === 0) return
-      this.radar?.setMode('stt')
-    });
-    this.rwsBtn = this.add.text(100, this.window.height - 50, 'RWS', { 
-      font: '22px Courier', 
-      color: '#000', 
-      backgroundColor: this.radar?.getMode() === 'rws' ? '#00ff00' : '#ffdb4d',
-      padding: { x: 10, y: 5 } 
-    })
-    .setInteractive()
-    .setOrigin(0)
-    .on('pointerdown', () => {
-      this.radar?.setTracks([])
-      this.radar?.setMode('rws')
-    });
+    // this.sttBtn = this.add.text(20, this.window.height - 50, 'STT', { 
+    //   font: '22px Courier',
+    //   color: '#000',
+    //   backgroundColor: '#ffdb4d',
+    //   padding: { x: 10, y: 5 }
+    // })
+    // .setInteractive()
+    // .setOrigin(0)
+    // .on('pointerdown', () => {
+    //   if (this.radar?.getTracks().length === 0) return
+    //   this.radar?.setMode('stt')
+    // });
+    // this.rwsBtn = this.add.text(100, this.window.height - 50, 'RWS', { 
+    //   font: '22px Courier', 
+    //   color: '#000', 
+    //   backgroundColor: this.radar?.getMode() === 'rws' ? '#00ff00' : '#ffdb4d',
+    //   padding: { x: 10, y: 5 } 
+    // })
+    // .setInteractive()
+    // .setOrigin(0)
+    // .on('pointerdown', () => {
+    //   this.radar?.setTracks([])
+    //   this.radar?.setMode('rws')
+    // });
     // this.twsBtn = this.add.text(200, this.window.height - 50, 'TWS', { 
     //   font: '22px Courier', 
     //   color: '#000', 
@@ -148,17 +147,17 @@ class Game extends Phaser.Scene
     // .on('pointerdown', () => {
     //   this.radar?.setMode('emcon')
     // });
-    this.SARHBtn = this.add.text(400, this.window.height - 50, 'SARH', {
-      font: '22px Courier',
-      color: '#000',
-      backgroundColor: '#ffdb4d',
-      padding: { x: 10, y: 5 }
-    })
-    .setInteractive()
-    .setOrigin(0)
-    .on('pointerdown', () => {
-      this.radar?.shootSARH()
-    });
+    // this.SARHBtn = this.add.text(400, this.window.height - 50, 'SARH', {
+    //   font: '22px Courier',
+    //   color: '#000',
+    //   backgroundColor: '#ffdb4d',
+    //   padding: { x: 10, y: 5 }
+    // })
+    // .setInteractive()
+    // .setOrigin(0)
+    // .on('pointerdown', () => {
+    //   this.radar?.shootSARH()
+    // });
 
     // create targets and asteroids and push them to radar
     this.radar.addTarget({ 
