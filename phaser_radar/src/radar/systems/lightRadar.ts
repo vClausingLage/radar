@@ -18,7 +18,7 @@ export class LightRadar {
         private loadout: Loadout,
         private tracks: Track[] = [],
         private sttTrack: Track | null = null,
-        private targets: Target[] = [],
+        private destroyedTarget: Target | null = null,
         private asteroids: Asteroid[] = [],
     ) {}
 
@@ -68,13 +68,6 @@ export class LightRadar {
         this.tracks = tracks
     }
 
-    getTargets() {
-        return this.targets
-    }
-    addTarget(t: Target) {
-        this.targets = [...this.targets, t]
-    }
-
     getAsteroids() {
         return this.asteroids
     }
@@ -89,7 +82,7 @@ export class LightRadar {
         this.radarOptions.isScanning = false
     }
 
-    update(delta: number, angle: number, graphics: Phaser.GameObjects.Graphics): void {
+    update(delta: number, angle: number, targets: Target[], graphics: Phaser.GameObjects.Graphics): void {
         if (!this.radarOptions.isScanning) {
             // do nothing
         } else {
@@ -105,7 +98,7 @@ export class LightRadar {
                     this.renderer.renderScanAzimuth(graphics, this.radarOptions.position, this.radarOptions.range, startAngle, endAngle)
 
                     if (this.lastScanTime >= scanDuration) {
-                        this.radarScan(startAngle, endAngle, graphics)
+                        this.radarScan(startAngle, endAngle, targets, graphics)
                     }
 
                     // Handle active missiles movement in RWS mode
@@ -157,7 +150,7 @@ export class LightRadar {
             }
         }
         // update missiles
-        this.updateMissiles(delta)
+        this.updateMissiles(delta, targets)
 
         this.renderer.renderMissiles(this.activeMissiles, graphics)
     }
@@ -225,7 +218,7 @@ export class LightRadar {
         this.activeMissiles.push(missile)
     }
 
-    updateMissiles(delta: number): void {
+    updateMissiles(delta: number, targets: Target[]): void {
         // Filter out missiles that have gone beyond their burn time
         this.missileUpdateDelta += delta
 
@@ -287,7 +280,7 @@ export class LightRadar {
             this.checkCollisionWithAsteroid(m);
 
             // Check for missile collisions with targets
-            this.checkCollisionWithTarget(m);
+            this.checkCollisionWithTarget(m, targets);
         }
     }
 
@@ -312,8 +305,8 @@ export class LightRadar {
         }
     }
 
-    checkCollisionWithTarget(m: Missile) {
-        for (const target of this.targets) {
+    checkCollisionWithTarget(m: Missile, targets: Target[]) {
+        for (const target of targets) {
             const dxTarget = m.position.x - target.position.x;
             const dyTarget = m.position.y - target.position.y;
             const distanceToTarget = Math.sqrt(dxTarget * dxTarget + dyTarget * dyTarget);
@@ -348,8 +341,9 @@ export class LightRadar {
                 
                 // Remove the missile and target
                 this.activeMissiles = this.activeMissiles.filter(missile => missile !== m);
-                this.targets = this.targets.filter(t => t !== target);
-                
+                // targets = targets.filter(t => t !== target);
+                this.destroyedTarget = target;
+
                 // Also remove corresponding track if it exists
                 if (this.sttTrack && this.sttTrack.pos.x === target.position.x && this.sttTrack.pos.y === target.position.y) {
                     this.sttTrack = null;
@@ -368,8 +362,8 @@ export class LightRadar {
         }
     }
 
-    filterTargetsAndAsteroidsInScanArea(startAngle: number, endAngle: number): { targetsInRange: Target[], asteroidsInRange: Asteroid[] } {
-        const targetsInRange = this.targets.filter(target => {
+    filterTargetsAndAsteroidsInScanArea(startAngle: number, endAngle: number, targets: Target[]): { targetsInRange: Target[], asteroidsInRange: Asteroid[] } {
+        const targetsInRange = targets.filter(target => {
             const dx = target.position.x - this.radarOptions.position.x
             const dy = target.position.y - this.radarOptions.position.y
             const distance = Math.sqrt(dx * dx + dy * dy)
@@ -392,12 +386,12 @@ export class LightRadar {
         return { targetsInRange, asteroidsInRange }
     }
 
-    radarScan(startAngle: number, endAngle: number, graphics: Phaser.GameObjects.Graphics): void {
+    radarScan(startAngle: number, endAngle: number, target: Target[], graphics: Phaser.GameObjects.Graphics): void {
         // clear tracks
         this.tracks = []
         this.sttTrack = null
 
-        const { targetsInRange, asteroidsInRange } = this.filterTargetsAndAsteroidsInScanArea(startAngle, endAngle)
+        const { targetsInRange, asteroidsInRange } = this.filterTargetsAndAsteroidsInScanArea(startAngle, endAngle, target)
 
         const circles = [...targetsInRange, ...asteroidsInRange].map(t => {
             const r = t.size / 2
@@ -461,5 +455,14 @@ export class LightRadar {
         this.renderer.renderAsteroids(asteroidsInRange, graphics)
         
         this.lastScanTime = 0
+    }
+
+    updateEnemiesInMain(): number | null {
+        if (this.destroyedTarget) {
+            const id = this.destroyedTarget.id;
+            this.destroyedTarget = null;
+            return id;
+        }
+        return null
     }
 }

@@ -2,6 +2,8 @@ import Phaser from "phaser"
 import { LightRadar } from "./radar/systems/lightRadar"
 import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer"
 import { Vector2 } from "./types"
+import { Target } from "./radar/entities/target"
+import { Asteroid } from "./radar/entities/asteroid"
 
 class Game extends Phaser.Scene
 {
@@ -9,20 +11,25 @@ class Game extends Phaser.Scene
     height: window.innerHeight,
     width: window.innerWidth
   }
-  private turn = 0
+  private canvas?: HTMLCanvasElement
   private graphics?: Phaser.GameObjects.Graphics
+  private missile?: Phaser.GameObjects.Image
+  private ship?: Phaser.Physics.Arcade.Image
   private sttBtn?: Phaser.GameObjects.Text
   private rwsBtn?: Phaser.GameObjects.Text
   private twsBtn?: Phaser.GameObjects.Text
   private emconBtn?: Phaser.GameObjects.Text
   private SARHBtn?: Phaser.GameObjects.Text
+  private radar?: LightRadar
+  private turn = 0
+  private enemies: Target[] = []
+  private asteroids: Asteroid[] = []
   private SHIP_SPEED = 0.1
   private SHIP_RATATION_SPEED = 8
   private RADAR_RANGE= 400
   private SCAN_SPEED = .04
-  private missile?: Phaser.GameObjects.Image
-  
-  constructor (private canvas?: HTMLCanvasElement, private ship?: Phaser.Physics.Arcade.Image, private radar?: LightRadar)
+
+  constructor()
   {
     super()
   }
@@ -101,83 +108,86 @@ class Game extends Phaser.Scene
     this.add.text(75 , 135, 'RWR', { font: '18px Courier', color: '#00ff00' })
 
     // INTERFACE
-    // this.sttBtn = this.add.text(20, this.window.height - 50, 'STT', { 
-    //   font: '22px Courier',
-    //   color: '#000',
-    //   backgroundColor: '#ffdb4d',
-    //   padding: { x: 10, y: 5 }
-    // })
-    // .setInteractive()
-    // .setOrigin(0)
-    // .on('pointerdown', () => {
-    //   if (this.radar?.getTracks().length === 0) return
-    //   this.radar?.setMode('stt')
-    // });
-    // this.rwsBtn = this.add.text(100, this.window.height - 50, 'RWS', { 
-    //   font: '22px Courier', 
-    //   color: '#000', 
-    //   backgroundColor: this.radar?.getMode() === 'rws' ? '#00ff00' : '#ffdb4d',
-    //   padding: { x: 10, y: 5 } 
-    // })
-    // .setInteractive()
-    // .setOrigin(0)
-    // .on('pointerdown', () => {
-    //   this.radar?.setTracks([])
-    //   this.radar?.setMode('rws')
-    // });
-    // this.twsBtn = this.add.text(200, this.window.height - 50, 'TWS', { 
-    //   font: '22px Courier', 
-    //   color: '#000', 
-    //   backgroundColor: this.radar?.getMode() === 'tws' ? '#00ff00' : '#ffdb4d', 
-    //   padding: { x: 10, y: 5 }
-    // })
-    // .setInteractive()
-    // .setOrigin(0)
-    // .on('pointerdown', () => {
-    //   this.radar?.setMode('tws')
-    // });
-    // this. emconBtn = this.add.text(300, this.window.height - 50, 'EMCON', {
-    //   font: '22px Courier',
-    //   color: '#000',
-    //   backgroundColor: this.radar?.getMode() === 'emcon' ? '#00ff00' : '#ffdb4d',
-    //   padding: { x: 10, y: 5 }
-    // })
-    // .setInteractive()
-    // .setOrigin(0)
-    // .on('pointerdown', () => {
-    //   this.radar?.setMode('emcon')
-    // });
-    // this.SARHBtn = this.add.text(400, this.window.height - 50, 'SARH', {
-    //   font: '22px Courier',
-    //   color: '#000',
-    //   backgroundColor: '#ffdb4d',
-    //   padding: { x: 10, y: 5 }
-    // })
-    // .setInteractive()
-    // .setOrigin(0)
-    // .on('pointerdown', () => {
-    //   this.radar?.shootSARH()
-    // });
+    this.sttBtn = this.add.text(20, this.window.height - 50, 'STT', { 
+      font: '22px Courier',
+      color: '#000',
+      backgroundColor: '#ffdb4d',
+      padding: { x: 10, y: 5 }
+    })
+    .setInteractive()
+    .setOrigin(0)
+    .on('pointerdown', () => {
+      if (this.radar?.getTracks().length === 0) return
+      this.radar?.setMode('stt')
+    });
+    this.rwsBtn = this.add.text(100, this.window.height - 50, 'RWS', { 
+      font: '22px Courier', 
+      color: '#000', 
+      backgroundColor: this.radar?.getMode() === 'rws' ? '#00ff00' : '#ffdb4d',
+      padding: { x: 10, y: 5 } 
+    })
+    .setInteractive()
+    .setOrigin(0)
+    .on('pointerdown', () => {
+      this.radar?.setTracks([])
+      this.radar?.setMode('rws')
+    });
+    this.twsBtn = this.add.text(200, this.window.height - 50, 'TWS', { 
+      font: '22px Courier', 
+      color: '#000', 
+      backgroundColor: this.radar?.getMode() === 'tws' ? '#00ff00' : '#ffdb4d', 
+      padding: { x: 10, y: 5 }
+    })
+    .setInteractive()
+    .setOrigin(0)
+    .on('pointerdown', () => {
+      this.radar?.setMode('tws')
+    });
+    this. emconBtn = this.add.text(300, this.window.height - 50, 'EMCON', {
+      font: '22px Courier',
+      color: '#000',
+      backgroundColor: this.radar?.getMode() === 'emcon' ? '#00ff00' : '#ffdb4d',
+      padding: { x: 10, y: 5 }
+    })
+    .setInteractive()
+    .setOrigin(0)
+    .on('pointerdown', () => {
+      this.radar?.setMode('emcon')
+    });
+    this.SARHBtn = this.add.text(400, this.window.height - 50, 'SARH', {
+      font: '22px Courier',
+      color: '#000',
+      backgroundColor: '#ffdb4d',
+      padding: { x: 10, y: 5 }
+    })
+    .setInteractive()
+    .setOrigin(0)
+    .on('pointerdown', () => {
+      this.radar?.shootSARH()
+    });
 
     // create targets and asteroids and push them to radar
-    this.radar.addTarget({ 
+    this.enemies.push({
+      id: 1,
       position: { x: 300, y: 300 },
       direction: { x: 1, y: 0},
       speed: 2,
       size: 10
     })
-    this.radar.addTarget({ 
+    this.enemies.push({
+      id: 2,
       position: {x: 400, y: 400 },
       direction: {x: -1, y: 1},
       speed: 2,
       size: 15
     })
-    this.radar.addAsteroid({
+    this.asteroids.push({
       position: { x: 200, y: 300 },
       direction: { x: 1, y: -1 },
       speed: .2,
       size: 20
     })
+
     this.radar.start()
   }
 
@@ -195,30 +205,36 @@ class Game extends Phaser.Scene
     }
     this.radar?.setPosition(this.ship?.getWorldPoint() || { x: 0, y: 0 });
     // move targets & asteroids
-    this.moveTargetsAndAsteroids(delta)
+    this.moveEnemiesAndAsteroids(delta)
 
     // radar scan
-    this.radar?.update(delta, this.ship?.angle || 0, this.graphics!);
+    this.radar?.update(delta, this.ship?.angle || 0, this.enemies, this.graphics!);
+
+    const id = this.radar?.updateEnemiesInMain();
+    if (id !== undefined) {
+      // Find and remove the target with the specified id
+      this.enemies = this.enemies.filter(enemy => enemy.id !== id);
+    }
 
     this.updateButtonColors();
   }
 
-  private moveTargetsAndAsteroids(delta: number) {
-    this.radar?.getTargets().forEach(target => {
-      target.position.x! += target.direction.x! * target.speed * delta / 1000;
-      target.position.y! += target.direction.y! * target.speed * delta / 1000;
-      if (target.position.x! <= 0 || target.position.x! >= Number(this?.canvas?.width)) {
-        target.direction.x! *= -1;
+  private moveEnemiesAndAsteroids(delta: number) {
+    this.enemies.forEach(enemy => {
+      enemy.position.x! += enemy.direction.x! * enemy.speed * delta / 1000;
+      enemy.position.y! += enemy.direction.y! * enemy.speed * delta / 1000;
+      if (enemy.position.x! <= 0 || enemy.position.x! >= Number(this?.canvas?.width)) {
+        enemy.direction.x! *= -1;
       }
-      if (target.position.y! <= 0 || target.position.y! >= Number(this.sys.game.config.height)) {
-        target.direction.y! *= -1;
+      if (enemy.position.y! <= 0 || enemy.position.y! >= Number(this.sys.game.config.height)) {
+        enemy.direction.y! *= -1;
       }
       if (this.graphics) {
         this.graphics.fillStyle(0xff0000);
-        this.graphics.fillCircle(target.position.x!, target.position.y!, target.size!/10);
+        this.graphics.fillCircle(enemy.position.x!, enemy.position.y!, enemy.size!/10);
       }
     })
-    this.radar?.getAsteroids().forEach(asteroid => {
+    this.asteroids.forEach(asteroid => {
       asteroid.position.x! += asteroid.direction.x! * asteroid.speed * delta / 1000;
       asteroid.position.y! += asteroid.direction.y! * asteroid.speed * delta / 1000;
       if (asteroid.position.x! <= 0 || asteroid.position.x! >= Number(this?.canvas?.width)) {
