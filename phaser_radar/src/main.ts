@@ -2,8 +2,9 @@ import Phaser from "phaser"
 import { LightRadar } from "./radar/systems/lightRadar"
 import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer"
 import { Vector2 } from "./types"
-import { Target } from "./radar/entities/target"
+import { Target } from "./radar/entities/ship"
 import { Asteroid } from "./radar/entities/asteroid"
+import { AiUnitController } from "./controller/aiUnitController"
 
 class Game extends Phaser.Scene
 {
@@ -22,6 +23,7 @@ class Game extends Phaser.Scene
   private SARHBtn?: Phaser.GameObjects.Text
   private radar?: LightRadar
   private turn = 0
+  private aiUpdateTimer?: Phaser.Time.TimerEvent
   private enemies: Target[] = []
   private asteroids: Asteroid[] = []
   private SHIP_SPEED = 0.1
@@ -167,24 +169,34 @@ class Game extends Phaser.Scene
     });
 
     // create targets and asteroids and push them to radar
-    this.enemies.push({
+    const enemy1 = {
       id: 1,
       position: { x: 300, y: 300 },
       direction: { x: 1, y: 0},
       speed: 2,
-      size: 10
-    })
-    this.enemies.push({
+      size: 10,
+      isTracked: false,
+      controller: new AiUnitController()
+    }
+    enemy1.controller.setPosition(enemy1.position)
+    enemy1.controller.setDirection(enemy1.direction)
+    const enemy2 = {
       id: 2,
       position: {x: 400, y: 400 },
       direction: {x: -1, y: 1},
       speed: 2,
-      size: 15
-    })
+      size: 15,
+      isTracked: false,
+      controller: new AiUnitController()
+    }
+    enemy2.controller.setPosition(enemy2.position)
+    enemy2.controller.setDirection(enemy2.direction)
+    this.enemies.push(enemy1)
+    this.enemies.push(enemy2)
     this.asteroids.push({
       position: { x: 200, y: 300 },
       direction: { x: 1, y: -1 },
-      speed: .2,
+      speed: .9,
       size: 20
     })
 
@@ -196,7 +208,7 @@ class Game extends Phaser.Scene
   {
     this.graphics?.clear();
     this.ship?.setAngularVelocity(this.turn * this.SHIP_RATATION_SPEED);
-    // Move ship in the direction it's facing with speed 100a
+    // Move ship in the direction it's facing
     if (this.ship) {
       const angleRad = Phaser.Math.DegToRad(this.ship.angle - 90);
       const velocityX = Math.cos(angleRad) * this.SHIP_SPEED;
@@ -210,10 +222,34 @@ class Game extends Phaser.Scene
     // radar scan
     this.radar?.update(delta, this.ship?.angle || 0, this.enemies, this.graphics!);
 
-    const id = this.radar?.updateEnemiesInMain();
-    if (id !== undefined) {
+    // update enemies
+    const destroyedEnemyId = this.radar?.updateEnemiesInMain();
+    if (destroyedEnemyId !== undefined) {
       // Find and remove the target with the specified id
-      this.enemies = this.enemies.filter(enemy => enemy.id !== id);
+      this.enemies = this.enemies.filter(enemy => enemy.id !== destroyedEnemyId);
+    }
+    const trackedEnemyId = this.radar?.alertTargetBeingTracked();
+    if (trackedEnemyId !== null) {
+      this.enemies.forEach(enemy => {
+        if (enemy.id === trackedEnemyId) {
+          enemy.isTracked = true;
+        } else {
+          enemy.isTracked = false;
+        }
+      })
+    }
+
+    // Update enemy AI controllers once per second
+    if (!this.aiUpdateTimer) {
+      this.aiUpdateTimer = this.time.addEvent({
+      delay: 1000,
+      callback: () => {
+        this.enemies.forEach(enemy => {
+        enemy.controller.update();
+        });
+      },
+      loop: true
+      });
     }
 
     this.updateButtonColors();

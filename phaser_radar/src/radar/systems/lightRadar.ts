@@ -1,7 +1,7 @@
 import { RadarOptions, Loadout } from '../../types'
 import { Track } from '../data/track'
 import { Asteroid } from '../entities/asteroid'
-import { Target } from '../entities/target'
+import { Target } from '../entities/ship'
 import { Missile, SARHMissile } from '../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
 
@@ -100,16 +100,6 @@ export class LightRadar {
                     if (this.lastScanTime >= scanDuration) {
                         this.radarScan(startAngle, endAngle, targets, graphics)
                     }
-
-                    // Handle active missiles movement in RWS mode
-                    for (const missile of this.activeMissiles) {
-                        // Move missile according to its direction and speed
-                        missile.position.x += missile.direction.x * missile.speed * delta / 1000;
-                        missile.position.y += missile.direction.y * missile.speed * delta / 1000;
-                        
-                        // Render missiles during RWS scan
-                        this.renderer.renderMissiles([missile], graphics);
-                    }
                 }
             }
 
@@ -127,8 +117,6 @@ export class LightRadar {
 
                 if (!this.sttTrack) {
                     this.sttTrack = this.tracks[0]
-                    //! change the direction opposite to radar direction
-                    //! change it over time
                 }
 
                 const dx = this.sttTrack.pos.x - this.radarOptions.position.x
@@ -398,14 +386,6 @@ export class LightRadar {
             return new Phaser.Geom.Circle(t.position.x, t.position.y, r)
         })
 
-        // Log targets found and their angles for debugging
-        targetsInRange.forEach(t => {
-            const dx = t.position.x - this.radarOptions.position.x
-            const dy = t.position.y - this.radarOptions.position.y
-            const angleToTarget = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
-            console.debug(`Target at (${t.position.x}, ${t.position.y}), angle: ${angleToTarget}, in scan area: ${startAngle}-${endAngle}`)
-        });
-
         for (const [index, t] of targetsInRange.entries()) {
             // Create a line from radar position to target
             const line = new Phaser.Geom.Line(
@@ -461,6 +441,14 @@ export class LightRadar {
         if (this.destroyedTarget) {
             const id = this.destroyedTarget.id;
             this.destroyedTarget = null;
+            return id;
+        }
+        return null
+    }
+
+    alertTargetBeingTracked(): number | null {
+        if (this.sttTrack) {
+            const id = this.sttTrack.id;
             return id;
         }
         return null
