@@ -453,4 +453,11 @@ export class LightRadar {
         }
         return null
     }
+
+    alertRwr(): number[] | null {
+        if (this.tracks.length > 0) {
+            return this.tracks.map(track => track.id);
+        }
+        return null
+    }
 }

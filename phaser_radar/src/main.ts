@@ -175,7 +175,8 @@ class Game extends Phaser.Scene
       direction: { x: 1, y: 0},
       speed: 2,
       size: 10,
-      isTracked: false,
+      isSttTracked: false,
+      isRadarTracked: false,
       controller: new AiUnitController()
     }
     enemy1.controller.setPosition(enemy1.position)
@@ -186,7 +187,8 @@ class Game extends Phaser.Scene
       direction: {x: -1, y: 1},
       speed: 2,
       size: 15,
-      isTracked: false,
+      isSttTracked: false,
+      isRadarTracked: false,
       controller: new AiUnitController()
     }
     enemy2.controller.setPosition(enemy2.position)
@@ -232,9 +234,19 @@ class Game extends Phaser.Scene
     if (trackedEnemyId !== null) {
       this.enemies.forEach(enemy => {
         if (enemy.id === trackedEnemyId) {
-          enemy.isTracked = true;
+          enemy.controller.setSttTracked(true);
         } else {
-          enemy.isTracked = false;
+          enemy.controller.setSttTracked(false);
+        }
+      })
+    }
+    const rwrAlertIds = this.radar?.alertRwr()
+    if (rwrAlertIds !== null && rwrAlertIds !== undefined && rwrAlertIds.length > 0) {
+      this.enemies.forEach(enemy => {
+        if (rwrAlertIds?.includes(enemy.id)) {
+          enemy.controller.setRadarTracked(true);
+        } else {
+          enemy.controller.setRadarTracked(false);
         }
       })
     }
@@ -257,6 +269,7 @@ class Game extends Phaser.Scene
 
   private moveEnemiesAndAsteroids(delta: number) {
     this.enemies.forEach(enemy => {
+      //! use the controller to getPosition() and setPosition()
       enemy.position.x! += enemy.direction.x! * enemy.speed * delta / 1000;
       enemy.position.y! += enemy.direction.y! * enemy.speed * delta / 1000;
       if (enemy.position.x! <= 0 || enemy.position.x! >= Number(this?.canvas?.width)) {
