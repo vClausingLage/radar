@@ -1,7 +1,8 @@
 import { Vector2 } from '../types';
 
 export class AiUnitController {
-    constructor(private position: Vector2 | null = null,
+    constructor(
+                private position: Vector2 | null = null,
                 private direction: Vector2 | null = null,
                 private sttTracked: boolean = false,
                 private radarTracked: boolean = false
@@ -24,7 +25,7 @@ export class AiUnitController {
     }
 
     update() {
-        
+        console.log(this.position, this.direction, this.sttTracked, this.radarTracked);
 
     }
 

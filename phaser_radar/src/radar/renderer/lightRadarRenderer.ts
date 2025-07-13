@@ -139,6 +139,6 @@ export class LightRadarRenderer {
     }
 
     renderAsteroids(asteroids: { position: Vector2, size: number }[], graphics: Phaser.GameObjects.Graphics) {
-        
+        console.log(asteroids, graphics)
     }
 }
