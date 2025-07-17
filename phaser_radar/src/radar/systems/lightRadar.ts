@@ -52,11 +52,10 @@ export class LightRadar {
                 this.radarOptions.azimuth = 15
                 break
             case 'emcon':
-                this.radarOptions.isScanning = false
+                this.radarOptions.azimuth = 0
                 break
    
             default:
-                this.radarOptions.isScanning = false
                 break
         }
     }
@@ -75,6 +74,30 @@ export class LightRadar {
         this.asteroids = [...this.asteroids, a]
     }
 
+    getLoadout() {
+        return this.loadout
+    }
+    setLoadout() {
+        // Find current active weapon and set the next one active
+        const loadoutKeys = Object.keys(this.loadout) as (keyof Loadout)[];
+        if (loadoutKeys.length > 0) {
+            const currentActiveIndex = loadoutKeys.findIndex(key => this.loadout[key]?.active === true);
+            
+            // Deactivate current active weapon
+            if (currentActiveIndex !== -1) {
+                this.loadout[loadoutKeys[currentActiveIndex]].active = false;
+            }
+            
+            // Activate next weapon (or first if none active or last was active)
+            const nextIndex = currentActiveIndex === -1 || currentActiveIndex === loadoutKeys.length - 1 
+            ? 0 
+            : currentActiveIndex + 1;
+            
+            this.loadout[loadoutKeys[nextIndex]].active = true;
+        }
+        console.log(this.loadout)
+    }
+
     start() {
         this.radarOptions.isScanning = true
     }
@@ -83,9 +106,13 @@ export class LightRadar {
     }
 
     update(delta: number, angle: number, targets: Target[], graphics: Phaser.GameObjects.Graphics): void {
+        const activeMissile = Object.keys(this.loadout).find(key => this.loadout[key as keyof Loadout]?.active);
+        this.renderer.renderHud(graphics, activeMissile)
         if (!this.radarOptions.isScanning) {
             // do nothing
         } else {
+            if (this.mode === 'emcon') {
+            }
             if (this.mode === 'rws') {
                 if (angle !== undefined) {
                     // calculations
@@ -157,35 +184,45 @@ export class LightRadar {
         }
     }
 
-    shootSARH(): void {
-        if (this.mode !== 'stt' || !this.sttTrack) {
-            console.error('Cannot shoot SARH, not in STT mode or no track selected')
-            return
-        }
-        this.loadout['AIM-177'] = (this.loadout['AIM-177'] || 0) - 1
-        if (this.loadout['AIM-177'] < 0) {
-            console.error('No AIM-177 missiles left in loadout')
+    shoot(): void {
+        let target
+
+        if (this.mode === 'stt' && this.sttTrack) {
+            target = this.sttTrack
+        } else if (this.mode === 'tws' && this.tracks.length > 0) {
+            // select target
+        } else {
+            console.error('No target to shoot at')
             return
         }
 
-        // Simulate shooting a SARH missile at the selected track
-        console.log(`Shooting SARH missile at target at position: ${this.sttTrack.pos.x}, ${this.sttTrack.pos.y}`)
-        
+        if (!target) {
+            console.error('No target to shoot at')
+            return
+        }
+                
         const missileStartX = this.radarOptions.position.x
-        const missileStartY = this.radarOptions.position.y
-        const missileTargetX = this.sttTrack.pos.x
-        const missileTargetY = this.sttTrack.pos.y
+        const missileStartY = this.radarOptions.position.y 
 
-        // Calculate direction vector and distance to target
-        const dxTotal = missileTargetX - missileStartX
-        const dyTotal = missileTargetY - missileStartY
-        const distance = Math.sqrt(dxTotal * dxTotal + dyTotal * dyTotal)
+        const distance = Math.sqrt(
+            (target.pos.x - missileStartX) ** 2 +
+            (target.pos.y - missileStartY) ** 2
+        );
 
         if (distance === 0) {
             console.log('Target is at current location, missile not fired.')
             return 
         }
 
+        // Calculate direction vector from ship to target
+        const dirX = target.pos.x - missileStartX;
+        const dirY = target.pos.y - missileStartY;
+        
+        // Normalize the direction vector
+        const dirLength = Math.sqrt(dirX * dirX + dirY * dirY);
+        const normalizedDirX = dirX / dirLength;
+        const normalizedDirY = dirY / dirLength;
+        
         const missile: SARHMissile = {
             type: 'AIM-177',
             burnTime: 14,
@@ -194,12 +231,12 @@ export class LightRadar {
             guidance: 'semi-active',
             warhead: 'high-explosive',
             position: {
-                x: missileStartX,
-                y: missileStartY
+            x: missileStartX,
+            y: missileStartY
             },
             direction: {
-                x: dxTotal / distance,
-                y: dyTotal / distance
+            x: normalizedDirX,
+            y: normalizedDirY
             }
         }
 
@@ -225,6 +262,11 @@ export class LightRadar {
             });
             this.missileUpdateDelta = 0
         }
+
+        //! flyInDirectionOfShip()
+
+        //! trackInDirectionOfTarget()
+
         // Update missile positions
         for (const m of this.activeMissiles) {
             // Calculate current direction as a vector

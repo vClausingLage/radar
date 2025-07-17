@@ -18,7 +18,7 @@ export type RadarOptions = {
 export type Mode = 'stt' | 'rws' | 'tws' | 'emcon'
 
 export type Loadout = {
-    [key in Missiles]: number
+    [key in Missiles]: { load: number, active: boolean }
 }
 
 // only for radar.ts

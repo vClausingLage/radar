@@ -20,7 +20,7 @@ class Game extends Phaser.Scene
   private rwsBtn?: Phaser.GameObjects.Text
   private twsBtn?: Phaser.GameObjects.Text
   private emconBtn?: Phaser.GameObjects.Text
-  private SARHBtn?: Phaser.GameObjects.Text
+  private ShootBtn?: Phaser.GameObjects.Text
   private radar?: LightRadar
   private turn = 0
   private aiUpdateTimer?: Phaser.Time.TimerEvent
@@ -58,6 +58,11 @@ class Game extends Phaser.Scene
     this.input.keyboard?.on('keyup-LEFT',   () => this.turn = 0);
     this.input.keyboard?.on('keydown-RIGHT', () => this.turn = 1);
     this.input.keyboard?.on('keyup-RIGHT',   () => this.turn = 0);
+    this.input.keyboard?.on('keydown-D', () => {
+      if (this.radar) {
+        this.radar.setLoadout()
+      }
+    });
     // SHIP
     this.ship = this.physics.add.image(this.window.width / 2, this.window.height, 'ship')
     this.ship.setVelocity(0, 0)
@@ -95,8 +100,14 @@ class Game extends Phaser.Scene
         new LightRadarRenderer(this.missile!, this),
         'rws',
         {
-          'AIM-177': 4,
-          'AIM-220': 0,
+          'AIM-177': {
+            load: 4,
+            active: true
+          },
+          'AIM-220': {
+            load: 2,
+            active: false
+          },
         },
     )
     this.radar?.setMode('rws')
@@ -134,17 +145,17 @@ class Game extends Phaser.Scene
       this.radar?.setTracks([])
       this.radar?.setMode('rws')
     });
-    this.twsBtn = this.add.text(200, this.window.height - 50, 'TWS', { 
-      font: '22px Courier', 
-      color: '#000', 
-      backgroundColor: this.radar?.getMode() === 'tws' ? '#00ff00' : '#ffdb4d', 
-      padding: { x: 10, y: 5 }
-    })
-    .setInteractive()
-    .setOrigin(0)
-    .on('pointerdown', () => {
-      this.radar?.setMode('tws')
-    });
+    // this.twsBtn = this.add.text(200, this.window.height - 50, 'TWS', { 
+    //   font: '22px Courier', 
+    //   color: '#000', 
+    //   backgroundColor: this.radar?.getMode() === 'tws' ? '#00ff00' : '#ffdb4d', 
+    //   padding: { x: 10, y: 5 }
+    // })
+    // .setInteractive()
+    // .setOrigin(0)
+    // .on('pointerdown', () => {
+    //   this.radar?.setMode('tws')
+    // });
     this. emconBtn = this.add.text(300, this.window.height - 50, 'EMCON', {
       font: '22px Courier',
       color: '#000',
@@ -156,7 +167,7 @@ class Game extends Phaser.Scene
     .on('pointerdown', () => {
       this.radar?.setMode('emcon')
     });
-    this.SARHBtn = this.add.text(400, this.window.height - 50, 'SARH', {
+    this.ShootBtn = this.add.text(400, this.window.height - 50, 'SHOOT', {
       font: '22px Courier',
       color: '#000',
       backgroundColor: '#ffdb4d',
@@ -165,7 +176,7 @@ class Game extends Phaser.Scene
     .setInteractive()
     .setOrigin(0)
     .on('pointerdown', () => {
-      this.radar?.shootSARH()
+      this.radar?.shoot()
     });
 
     // create targets and asteroids and push them to radar
@@ -326,7 +337,7 @@ class Game extends Phaser.Scene
       { btn: this.rwsBtn, mode: 'rws', active: '#00ff00' },
       { btn: this.twsBtn, mode: 'tws', active: '#00ff00' },
       { btn: this.emconBtn, mode: 'emcon', active: '#00ff00' },
-      { btn: this.SARHBtn, mode: 'stt', active: '#ffdb4d', onlyActive: true }, // SARH only active in STT
+      { btn: this.ShootBtn, mode: 'stt', active: '#ffdb4d', onlyActive: true }, // SARH only active in STT
     ];
 
     buttonConfigs.forEach(cfg => {

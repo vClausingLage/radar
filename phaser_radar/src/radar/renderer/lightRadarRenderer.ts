@@ -8,6 +8,20 @@ export class LightRadarRenderer {
         this.missileImage.setOrigin(0.5, 0.5);
     }
 
+    renderHud(graphics: Phaser.GameObjects.Graphics, activeMissile: string | undefined) {
+        graphics.lineStyle(1, 0xffffff, 0.5);
+        graphics.fillStyle(0x000000, 0.5);
+        
+        if (activeMissile) {
+            this.scene.add.text(20, 30, `Active Missile: ${activeMissile}`, { color: '#00ff00' });
+        } else {
+            this.scene.add.text(20, 30, "No Active Missile", { color: '#ff0000' });
+        }
+        this.scene.add.text(20, 50, "Press 'D' to change missile loadout", { color: '#ffffff' });
+        graphics.strokeRect(10, 10, 200, 50);
+        
+    }
+
     renderScanAzimuth(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number) {
         graphics.lineStyle(1, 0x00ff00, 0.5);
         const startX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(startAngle - 90));

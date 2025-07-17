@@ -25,11 +25,11 @@ export class AiUnitController {
     }
 
     update() {
-        console.log(this.position, this.direction, this.sttTracked, this.radarTracked);
-
+        
     }
-
+    
     destroy() {
+        console.log(this.position, this.direction, this.sttTracked, this.radarTracked);
         // Clean up resources if needed
         console.log('AI Unit Controller destroyed');
     }
