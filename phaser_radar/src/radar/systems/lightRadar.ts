@@ -184,7 +184,7 @@ export class LightRadar {
         }
     }
 
-    shoot(): void {
+    shoot(angle: number): void {
         let target
 
         if (this.mode === 'stt' && this.sttTrack) {
@@ -214,17 +214,11 @@ export class LightRadar {
             return 
         }
 
-        // Calculate direction vector from ship to target
-        const dirX = target.pos.x - missileStartX;
-        const dirY = target.pos.y - missileStartY;
-        
-        // Normalize the direction vector
-        const dirLength = Math.sqrt(dirX * dirX + dirY * dirY);
-        const normalizedDirX = dirX / dirLength;
-        const normalizedDirY = dirY / dirLength;
+        console.log('angle', angle)
         
         const missile: SARHMissile = {
             type: 'AIM-177',
+            age: 0,
             burnTime: 14,
             speed: 17.0,
             turnSpeed: .7,
@@ -235,8 +229,8 @@ export class LightRadar {
             y: missileStartY
             },
             direction: {
-            x: normalizedDirX,
-            y: normalizedDirY
+            x: Math.cos(Phaser.Math.DegToRad(angle)),
+            y: Math.sin(Phaser.Math.DegToRad(angle))
             }
         }
 
@@ -246,27 +240,21 @@ export class LightRadar {
     updateMissiles(delta: number, targets: Target[]): void {
         // Filter out missiles that have gone beyond their burn time
         this.missileUpdateDelta += delta
-
         if (this.missileUpdateDelta >= 1000) {
-
             for (const m of this.activeMissiles) {
-                console.log(`Missile ${m.type} at position (${m.position.x}, ${m.position.y}) with burn time ${m.burnTime}`);
+                console.log(`Missile ${m.type} at position (${m.position.x}, ${m.position.y}) with burn time ${m.burnTime} and age ${m.age}`);
             }
 
             this.activeMissiles = this.activeMissiles.filter(missile => {
-                if (missile.burnTime > 0) {
-                    missile.burnTime -= 1;
+                if (missile.age <= missile.burnTime) {
+                    missile.age += 1;
                     return true;
                 }
                 return false;
             });
             this.missileUpdateDelta = 0
         }
-
-        //! flyInDirectionOfShip()
-
-        //! trackInDirectionOfTarget()
-
+        
         // Update missile positions
         for (const m of this.activeMissiles) {
             // Calculate current direction as a vector
@@ -276,18 +264,11 @@ export class LightRadar {
             // Calculate target direction (either to STT target or continuing straight)
             let targetDirX = currentDirX;
             let targetDirY = currentDirY;
-            
-            // For SARH missiles in STT mode, calculate the target direction
-            if (this.mode === 'stt' && this.sttTrack && 
-                (m as SARHMissile).guidance === 'semi-active') {
-                const dxToTarget = this.sttTrack.pos.x - m.position.x;
-                const dyToTarget = this.sttTrack.pos.y - m.position.y;
-                const distToTarget = Math.sqrt(dxToTarget * dxToTarget + dyToTarget * dyToTarget);
-                
-                if (distToTarget > 0) {
-                    targetDirX = dxToTarget / distToTarget;
-                    targetDirY = dyToTarget / distToTarget;
-                }
+
+            if (m.age < 2) {
+                ({ targetDirX, targetDirY } = this.flyInDirectionOfShip(m));
+            } else {
+                ({ targetDirX, targetDirY } = this.trackInDirectionOfTarget(m));
             }
             
             // Interpolate direction based on turn speed (0 to 1)
@@ -501,5 +482,24 @@ export class LightRadar {
             return this.tracks.map(track => track.id);
         }
         return null
+    }
+
+    flyInDirectionOfShip(m: Missile): { targetDirX: number, targetDirY: number } {
+        return { targetDirX: m.direction.x, targetDirY: m.direction.y };
+    }
+
+    trackInDirectionOfTarget(m: Missile): { targetDirX: number, targetDirY: number } {
+        // in STT all missiles track the STT target
+        if (this.mode === 'stt' && this.sttTrack) {
+            const dxToTarget = this.sttTrack.pos.x - m.position.x;
+            const dyToTarget = this.sttTrack.pos.y - m.position.y;
+            const distToTarget = Math.sqrt(dxToTarget * dxToTarget + dyToTarget * dyToTarget);
+            
+            if (distToTarget > 0) {
+                m.direction.x = dxToTarget / distToTarget;
+                m.direction.y = dyToTarget / distToTarget;
+            }
+        }
+        return { targetDirX: m.direction.x, targetDirY: m.direction.y };
     }
 }

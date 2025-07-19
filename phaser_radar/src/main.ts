@@ -176,7 +176,7 @@ class Game extends Phaser.Scene
     .setInteractive()
     .setOrigin(0)
     .on('pointerdown', () => {
-      this.radar?.shoot()
+      this.radar?.shoot((this.ship?.angle || 0) - 90)
     });
 
     // create targets and asteroids and push them to radar

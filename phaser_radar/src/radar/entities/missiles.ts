@@ -1,6 +1,7 @@
 export interface BaseMissile {
     burnTime: number;
     speed: number;
+    age: number;
     turnSpeed: number;
     warhead: 'high-explosive' | 'fragmentation';
     position: {
