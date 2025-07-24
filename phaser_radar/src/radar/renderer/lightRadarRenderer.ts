@@ -4,22 +4,29 @@ import { Missile } from "../entities/missiles";
 
 export class LightRadarRenderer {
 
+    private text: Phaser.GameObjects.Text | undefined;
+    private info: Phaser.GameObjects.Text | undefined;
+    private activeMissileCache: string | undefined;
+
     constructor(private missileImage: Phaser.GameObjects.Image, public scene: Phaser.Scene) {
         this.missileImage.setOrigin(0.5, 0.5);
     }
 
-    renderHud(graphics: Phaser.GameObjects.Graphics, activeMissile: string | undefined) {
-        graphics.lineStyle(1, 0xffffff, 0.5);
-        graphics.fillStyle(0x000000, 0.5);
+    renderHud(activeMissile: string | undefined) {
+        //! use cache if no changes in active missile
+        if (this.activeMissileCache === activeMissile) {
+            return;
+        }
+
+        this.text?.destroy();
+        this.info?.destroy();
         
         if (activeMissile) {
-            this.scene.add.text(20, 30, `Active Missile: ${activeMissile}`, { color: '#00ff00' });
+            this.text = this.scene.add.text(20, 30, `Active Missile: ${activeMissile}`, { color: '#00ff00' });
         } else {
-            this.scene.add.text(20, 30, "No Active Missile", { color: '#ff0000' });
+            this.text = this.scene.add.text(20, 30, "No Active Missile", { color: '#ff0000' });
         }
-        this.scene.add.text(20, 50, "Press 'D' to change missile loadout", { color: '#ffffff' });
-        graphics.strokeRect(10, 10, 200, 50);
-        
+        this.info = this.scene.add.text(20, 50, "Press 'D' to change missile loadout", { color: '#ffffff' });
     }
 
     renderScanAzimuth(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number) {
@@ -153,6 +160,6 @@ export class LightRadarRenderer {
     }
 
     renderAsteroids(asteroids: { position: Vector2, size: number }[], graphics: Phaser.GameObjects.Graphics) {
-        console.log(asteroids, graphics)
+        
     }
 }

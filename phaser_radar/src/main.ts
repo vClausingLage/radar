@@ -337,7 +337,7 @@ class Game extends Phaser.Scene
       { btn: this.rwsBtn, mode: 'rws', active: '#00ff00' },
       { btn: this.twsBtn, mode: 'tws', active: '#00ff00' },
       { btn: this.emconBtn, mode: 'emcon', active: '#00ff00' },
-      { btn: this.ShootBtn, mode: 'stt', active: '#ffdb4d', onlyActive: true }, // SARH only active in STT
+      { btn: this.ShootBtn, mode: 'stt', active: '#ffdb4d', onlyActive: true },
     ];
 
     buttonConfigs.forEach(cfg => {

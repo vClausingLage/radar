@@ -4,6 +4,7 @@ import { Asteroid } from '../entities/asteroid'
 import { Target } from '../entities/ship'
 import { Missile, SARHMissile } from '../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
+import { calculateInterceptionVector } from '../../math'
 
 export class LightRadar {
 
@@ -95,7 +96,6 @@ export class LightRadar {
             
             this.loadout[loadoutKeys[nextIndex]].active = true;
         }
-        console.log(this.loadout)
     }
 
     start() {
@@ -107,7 +107,6 @@ export class LightRadar {
 
     update(delta: number, angle: number, targets: Target[], graphics: Phaser.GameObjects.Graphics): void {
         const activeMissile = Object.keys(this.loadout).find(key => this.loadout[key as keyof Loadout]?.active);
-        this.renderer.renderHud(graphics, activeMissile)
         if (!this.radarOptions.isScanning) {
             // do nothing
         } else {
@@ -168,6 +167,8 @@ export class LightRadar {
         this.updateMissiles(delta, targets)
 
         this.renderer.renderMissiles(this.activeMissiles, graphics)
+
+        this.renderer.renderHud(activeMissile)
     }
 
     getScanArea(angle: number): { startAngle: number, endAngle: number } | null {
@@ -213,9 +214,8 @@ export class LightRadar {
             console.log('Target is at current location, missile not fired.')
             return 
         }
-
-        console.log('angle', angle)
         
+        console.log('active loadout:', this.loadout)
         const missile: SARHMissile = {
             type: 'AIM-177',
             age: 0,
@@ -489,7 +489,7 @@ export class LightRadar {
     }
 
     trackInDirectionOfTarget(m: Missile): { targetDirX: number, targetDirY: number } {
-        // in STT all missiles track the STT target
+        // // in STT all missiles track the STT target
         if (this.mode === 'stt' && this.sttTrack) {
             const dxToTarget = this.sttTrack.pos.x - m.position.x;
             const dyToTarget = this.sttTrack.pos.y - m.position.y;
@@ -501,5 +501,12 @@ export class LightRadar {
             }
         }
         return { targetDirX: m.direction.x, targetDirY: m.direction.y };
+
+        // if (!this.sttTrack) {
+        //     return { targetDirX: m.direction.x, targetDirY: m.direction.y };
+        // }
+
+        // const vector = calculateInterceptionVector(m, this.sttTrack);
+        // return { targetDirX: vector.x, targetDirY: vector.y };
     }
 }
