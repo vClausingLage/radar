@@ -8,9 +8,9 @@ import { AiUnitController } from "./controller/aiUnitController"
 
 class Game extends Phaser.Scene
 {
-  private window = {
-    height: window.innerHeight,
-    width: window.innerWidth
+  private world = {
+    width: 1400,
+    height: 2500
   }
   private canvas?: HTMLCanvasElement
   private graphics?: Phaser.GameObjects.Graphics
@@ -44,32 +44,40 @@ class Game extends Phaser.Scene
     this.load.image('radar', 'screen.png')
     this.load.image('missile', 'missile.png')
     this.load.image('explosion', 'explosion.png')
-
-    // this.load.setBaseURL('https://cdn.phaserfiles.com/v385');
-    // this.load.atlas('flares', 'assets/particles/flares.png', 'assets/particles/flares.json');
   }
 
   create()
   {
+    // Set world bounds
+    this.physics.world.setBounds(0, 0, this.world.width, this.world.height);
+    
     // GRAPHICS
     this.graphics = this.add.graphics();
     // KEYS
-    this.input.keyboard?.on('keydown-LEFT', () => this.turn = -1);
-    this.input.keyboard?.on('keyup-LEFT',   () => this.turn = 0);
-    this.input.keyboard?.on('keydown-RIGHT', () => this.turn = 1);
-    this.input.keyboard?.on('keyup-RIGHT',   () => this.turn = 0);
-    this.input.keyboard?.on('keydown-D', () => {
+    this.input.keyboard?.on('keydown-A', () => this.turn = -1);
+    this.input.keyboard?.on('keyup-A',   () => this.turn = 0);
+    this.input.keyboard?.on('keydown-D', () => this.turn = 1);
+    this.input.keyboard?.on('keyup-D',   () => this.turn = 0);
+    this.input.keyboard?.on('keydown-Q', () => {
       if (this.radar) {
         this.radar.setLoadout()
       }
     });
     // SHIP
-    this.ship = this.physics.add.image(this.window.width / 2, this.window.height, 'ship')
+    this.ship = this.physics.add.image(500, 500, 'ship')
     this.ship.setVelocity(0, 0)
     this.ship.setAngle(0)
     this.ship.setBounce(.5, .5)
     this.ship.setCollideWorldBounds(true)
     this.ship.scale = 0.7
+
+    // Set camera to follow the ship
+    console.log('camera', this.cameras.main);
+    this.cameras.main.originX = this.ship.x;
+    this.cameras.main.originY = this.ship.y;
+    this.cameras.main.startFollow(this.ship);
+    this.cameras.main.setBounds(0, 0, this.world.width, this.world.height);
+    this.cameras.main.setLerp(0.1, 0.1);
 
     // const wisp = this.add.particles(400, 550, 'flares',
     // {
@@ -121,7 +129,7 @@ class Game extends Phaser.Scene
     this.add.text(75 , 135, 'RWR', { font: '18px Courier', color: '#00ff00' })
 
     // INTERFACE
-    this.sttBtn = this.add.text(20, this.window.height - 50, 'STT', { 
+    this.sttBtn = this.add.text(20, window.innerHeight - 50, 'STT', { 
       font: '22px Courier',
       color: '#000',
       backgroundColor: '#ffdb4d',
@@ -129,11 +137,12 @@ class Game extends Phaser.Scene
     })
     .setInteractive()
     .setOrigin(0)
+    .setScrollFactor(0)
     .on('pointerdown', () => {
       if (this.radar?.getTracks().length === 0) return
       this.radar?.setMode('stt')
     });
-    this.rwsBtn = this.add.text(100, this.window.height - 50, 'RWS', { 
+    this.rwsBtn = this.add.text(100, window.innerHeight - 50, 'RWS', { 
       font: '22px Courier', 
       color: '#000', 
       backgroundColor: this.radar?.getMode() === 'rws' ? '#00ff00' : '#ffdb4d',
@@ -141,6 +150,7 @@ class Game extends Phaser.Scene
     })
     .setInteractive()
     .setOrigin(0)
+    .setScrollFactor(0)
     .on('pointerdown', () => {
       this.radar?.setTracks([])
       this.radar?.setMode('rws')
@@ -156,7 +166,7 @@ class Game extends Phaser.Scene
     // .on('pointerdown', () => {
     //   this.radar?.setMode('tws')
     // });
-    this. emconBtn = this.add.text(300, this.window.height - 50, 'EMCON', {
+    this. emconBtn = this.add.text(300, window.innerHeight - 50, 'EMCON', {
       font: '22px Courier',
       color: '#000',
       backgroundColor: this.radar?.getMode() === 'emcon' ? '#00ff00' : '#ffdb4d',
@@ -164,10 +174,11 @@ class Game extends Phaser.Scene
     })
     .setInteractive()
     .setOrigin(0)
+    .setScrollFactor(0)
     .on('pointerdown', () => {
       this.radar?.setMode('emcon')
     });
-    this.ShootBtn = this.add.text(400, this.window.height - 50, 'SHOOT', {
+    this.ShootBtn = this.add.text(400, window.innerHeight - 50, 'SHOOT', {
       font: '22px Courier',
       color: '#000',
       backgroundColor: '#ffdb4d',
@@ -175,6 +186,7 @@ class Game extends Phaser.Scene
     })
     .setInteractive()
     .setOrigin(0)
+    .setScrollFactor(0)
     .on('pointerdown', () => {
       this.radar?.shoot((this.ship?.angle || 0) - 90)
     });
@@ -283,10 +295,10 @@ class Game extends Phaser.Scene
       //! use the controller to getPosition() and setPosition()
       enemy.position.x! += enemy.direction.x! * enemy.speed * delta / 1000;
       enemy.position.y! += enemy.direction.y! * enemy.speed * delta / 1000;
-      if (enemy.position.x! <= 0 || enemy.position.x! >= Number(this?.canvas?.width)) {
+      if (enemy.position.x! <= 0 || enemy.position.x! >= this.world.width) {
         enemy.direction.x! *= -1;
       }
-      if (enemy.position.y! <= 0 || enemy.position.y! >= Number(this.sys.game.config.height)) {
+      if (enemy.position.y! <= 0 || enemy.position.y! >= this.world.height) {
         enemy.direction.y! *= -1;
       }
       if (this.graphics) {
@@ -297,15 +309,11 @@ class Game extends Phaser.Scene
     this.asteroids.forEach(asteroid => {
       asteroid.position.x! += asteroid.direction.x! * asteroid.speed * delta / 1000;
       asteroid.position.y! += asteroid.direction.y! * asteroid.speed * delta / 1000;
-      if (asteroid.position.x! <= 0 || asteroid.position.x! >= Number(this?.canvas?.width)) {
+      if (asteroid.position.x! <= 0 || asteroid.position.x! >= this.world.width) {
         asteroid.direction.x! *= -1;
       }
-      if (asteroid.position.y! <= 0 || asteroid.position.y! >= Number(this.sys.game.config.height)) {
+      if (asteroid.position.y! <= 0 || asteroid.position.y! >= this.world.height) {
         asteroid.direction.y! *= -1;
-      }
-      if (this.graphics) {
-        this.graphics.fillStyle(0x888888);
-        this.graphics.fillCircle(asteroid.position.x!, asteroid.position.y!, asteroid.size!);
       }
       // Check for collision between the ship and this asteroid
       if (this.ship && Phaser.Geom.Intersects.CircleToRectangle(
@@ -321,7 +329,7 @@ class Game extends Phaser.Scene
         this.radar?.stop()
         
         // Optional: display explosion effect or game over text
-        this.add.text(this.window.width/2, this.window.height/2, 'SHIP DESTROYED', {
+        this.add.text(this.world.width/2, this.world.height/2, 'SHIP DESTROYED', {
           font: '32px Courier',
           color: '#ff0000'
         }).setOrigin(0.5);
@@ -353,8 +361,8 @@ class Game extends Phaser.Scene
 
 const config = {
     type: Phaser.AUTO,
-    width: window.innerWidth,
-    height: window.innerHeight,
+    width: 1400,
+    height: 2500,
     scene: Game,
     physics: {
         default: 'arcade',
