@@ -225,12 +225,31 @@ export class LightRadar {
             guidance: 'semi-active',
             warhead: 'high-explosive',
             position: {
-            x: missileStartX,
-            y: missileStartY
+                x: missileStartX,
+                y: missileStartY
             },
             direction: {
-            x: Math.cos(Phaser.Math.DegToRad(angle)),
-            y: Math.sin(Phaser.Math.DegToRad(angle))
+                x: Math.cos(Phaser.Math.DegToRad(angle)),
+                y: Math.sin(Phaser.Math.DegToRad(angle))
+            }
+        }
+
+        // DECREASE MISSILE LOADOUT
+        // Find the active weapon type in the loadout
+        const activeWeaponType = Object.keys(this.loadout).find(key => 
+            this.loadout[key as keyof Loadout]?.active
+        ) as keyof Loadout;
+
+        // If we have an active weapon with remaining count, decrease it
+        if (activeWeaponType && this.loadout[activeWeaponType]) {
+            const activeWeapon = this.loadout[activeWeaponType];
+            
+            if (activeWeapon.load > 0) {
+                activeWeapon.load--;
+                console.log(`Fired a ${activeWeaponType}. Remaining: ${activeWeapon.load}`);
+            } else {
+                console.log(`No ${activeWeaponType} missiles remaining`);
+                return; // Don't fire if no missiles left
             }
         }
 
