@@ -243,6 +243,10 @@ class Game extends Phaser.Scene
       if (asteroid.position.y! <= 0 || asteroid.position.y! >= this.world.height) {
         asteroid.direction.y! *= -1;
       }
+      if (this.graphics) {
+        this.graphics.fillStyle(0xff0000);
+        this.graphics.fillCircle(asteroid.position.x!, asteroid.position.y!, asteroid.size!/10);
+      }
       // Check for collision between the ship and this asteroid
       if (this.ship && Phaser.Geom.Intersects.CircleToRectangle(
         new Phaser.Geom.Circle(asteroid.position.x!, asteroid.position.y!, asteroid.size!),
