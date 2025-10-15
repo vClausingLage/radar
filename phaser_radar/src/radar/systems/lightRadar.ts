@@ -472,7 +472,7 @@ export class LightRadar {
         // sort tracks by distance
         this.tracks.sort((a, b) => a.dist - b.dist)
         
-        console.log('Targets in range:', this.tracks)
+        // console.log('Targets in range:', this.tracks)
         
         this.renderer.renderAsteroids(asteroidsInRange, graphics)
         
