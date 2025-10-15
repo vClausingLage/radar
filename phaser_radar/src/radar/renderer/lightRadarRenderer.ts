@@ -26,7 +26,7 @@ export class LightRadarRenderer {
         } else {
             this.text = this.scene.add.text(20, 30, "No Active Missile", { color: '#ff0000' }).setScrollFactor(0);
         }
-        this.info = this.scene.add.text(20, 50, "Press 'D' to change missile loadout", { color: '#ffffff' }).setScrollFactor(0);
+        this.info = this.scene.add.text(20, 50, "Press 'Q' to change missile loadout", { color: '#ffffff' }).setScrollFactor(0);
     }
 
     renderScanAzimuth(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number) {

@@ -23,8 +23,8 @@ class Game extends Phaser.Scene
   private aiUpdateTimer?: Phaser.Time.TimerEvent
   private enemies: Target[] = []
   private asteroids: Asteroid[] = []
-  private SHIP_SPEED = 20
-  private SHIP_ROTATION_SPEED = 20 //8
+  private SHIP_SPEED = 3
+  private SHIP_ROTATION_SPEED = 8
   private RADAR_RANGE= 400
   private SCAN_SPEED = .04
 
@@ -48,7 +48,7 @@ class Game extends Phaser.Scene
   {
     // WORLD
     this.physics.world.setBounds(0, 0, this.world.width, this.world.height);
-    this.add.image(this.world.width, this.world.height, 'universe');
+    this.add.image(0, 0, 'universe').setOrigin(0)
     
     // GRAPHICS
     this.graphics = this.add.graphics();
