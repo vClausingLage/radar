@@ -57,18 +57,18 @@ export class InterfaceRenderer {
         // });
 
         // EMCON Button
-        this.emconBtn = this.scene.add.text(300, camera.height - 50, 'EMCON', {
-            font: '22px Courier',
-            color: '#000',
-            backgroundColor: radar.getMode() === 'emcon' ? '#00ff00' : '#ffdb4d',
-            padding: { x: 10, y: 5 }
-        })
-        .setInteractive()
-        .setOrigin(0)
-        .setScrollFactor(0)
-        .on('pointerdown', () => {
-            radar.setMode('emcon');
-        });
+        // this.emconBtn = this.scene.add.text(300, camera.height - 50, 'EMCON', {
+        //     font: '22px Courier',
+        //     color: '#000',
+        //     backgroundColor: radar.getMode() === 'emcon' ? '#00ff00' : '#ffdb4d',
+        //     padding: { x: 10, y: 5 }
+        // })
+        // .setInteractive()
+        // .setOrigin(0)
+        // .setScrollFactor(0)
+        // .on('pointerdown', () => {
+        //     radar.setMode('emcon');
+        // });
 
         // Shoot Button
         this.shootBtn = this.scene.add.text(400, camera.height - 50, 'SHOOT', {

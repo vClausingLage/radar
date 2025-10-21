@@ -116,7 +116,7 @@ class Game extends Phaser.Scene
 
     // INTERFACE
     this.interfaceRenderer = new InterfaceRenderer(this);
-    this.interfaceRenderer.createInterface(this.radar, this.ship, this.physics.world);
+    this.interfaceRenderer.createInterface(this.radar, this.ship);
 
     // create targets and asteroids and push them to radar
     const enemy1 = {
