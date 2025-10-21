@@ -148,9 +148,31 @@ export class LightRadar {
                 const dx = this.sttTrack.pos.x - this.radarOptions.position.x
                 const dy = this.sttTrack.pos.y - this.radarOptions.position.y
                 const distanceToTrack = Math.sqrt(dx * dx + dy * dy)
-                const angleToTrack = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
+                let angleToTrack = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
 
-                if (distanceToTrack > this.radarOptions.range || angleToTrack < startAngle || angleToTrack > endAngle) {
+                // Normalize angles to be within -180 to 180 range
+                const normalizeAngle = (angle: number) => {
+                    while (angle > 180) angle -= 360;
+                    while (angle < -180) angle += 360;
+                    return angle;
+                }
+
+                angleToTrack = normalizeAngle(angleToTrack);
+                const normalizedStartAngle = normalizeAngle(startAngle);
+                const normalizedEndAngle = normalizeAngle(endAngle);
+
+                let isTrackInAngle = false;
+                
+                // Handle angle wraparound case
+                if (normalizedStartAngle > normalizedEndAngle) {
+                    // Wraparound case: track is in range if it's >= startAngle OR <= endAngle
+                    isTrackInAngle = angleToTrack >= normalizedStartAngle || angleToTrack <= normalizedEndAngle;
+                } else {
+                    // Normal case: track is in range if it's between start and end angles
+                    isTrackInAngle = angleToTrack >= normalizedStartAngle && angleToTrack <= normalizedEndAngle;
+                }
+
+                if (distanceToTrack > this.radarOptions.range || !isTrackInAngle) {
                     this.sttTrack = null
                     this.setMode('rws')
                     return
@@ -211,10 +233,29 @@ export class LightRadar {
         );
 
         if (distance === 0) {
-            console.log('Target is at current location, missile not fired.')
+            console.error('Target is at current location, missile not fired.')
             return 
         }
         
+        console.info('active loadout:', this.loadout)
+        const missile: SARHMissile = {
+            type: 'AIM-177',
+            age: 0,
+            burnTime: 14,
+            speed: 17.0,
+            turnSpeed: .7,
+            guidance: 'semi-active',
+            warhead: 'high-explosive',
+            position: {
+                x: missileStartX,
+                y: missileStartY
+            },
+            direction: {
+                x: Math.cos(Phaser.Math.DegToRad(angle)),
+                y: Math.sin(Phaser.Math.DegToRad(angle))
+            }
+        }
+
         // DECREASE MISSILE LOADOUT
         // Find the active weapon type in the loadout
         const activeWeaponType = Object.keys(this.loadout).find(key => 
@@ -227,9 +268,9 @@ export class LightRadar {
             
             if (activeWeapon.load > 0) {
                 activeWeapon.load--;
-                console.log(`Fired a ${activeWeaponType}. Remaining: ${activeWeapon.load}`);
+                console.info(`Fired a ${activeWeaponType}. Remaining: ${activeWeapon.load}`);
             } else {
-                console.log(`No ${activeWeaponType} missiles remaining`);
+                console.warn(`No ${activeWeaponType} missiles remaining`);
                 return; // Don't fire if no missiles left
             }
         }
@@ -350,7 +391,7 @@ export class LightRadar {
             const asteroidProximityThreshold = 3 + (asteroid.size / 2);
             
             if (distanceToAsteroid <= asteroidProximityThreshold) {
-                console.log(`Missile hit asteroid at position: ${asteroid.position.x}, ${asteroid.position.y}`);
+                console.info(`Missile hit asteroid at position: ${asteroid.position.x}, ${asteroid.position.y}`);
                 
                 // Remove the missile
                 this.activeMissiles = this.activeMissiles.filter(missile => missile !== m);
@@ -371,7 +412,7 @@ export class LightRadar {
             const proximityThreshold = 3 + (target.size / 2);
             
             if (distanceToTarget <= proximityThreshold) {
-                console.log(`Missile hit target at position: ${target.position.x}, ${target.position.y}`);
+                console.info(`Missile hit target at position: ${target.position.x}, ${target.position.y}`);
 
                 // Create an explosion sprite at the target's position
                 if (this.renderer.scene) {
@@ -423,20 +464,61 @@ export class LightRadar {
             const dx = target.position.x - this.radarOptions.position.x
             const dy = target.position.y - this.radarOptions.position.y
             const distance = Math.sqrt(dx * dx + dy * dy)
-            const angleToTarget = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
+            let angleToTarget = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
 
-            return distance <= this.radarOptions.range 
-            && angleToTarget >= startAngle 
-            && angleToTarget <= endAngle
+            // Normalize angles to be within -180 to 180 range
+            const normalizeAngle = (angle: number) => {
+                while (angle > 180) angle -= 360;
+                while (angle < -180) angle += 360;
+                return angle;
+            }
+
+            angleToTarget = normalizeAngle(angleToTarget);
+            const normalizedStartAngle = normalizeAngle(startAngle);
+            const normalizedEndAngle = normalizeAngle(endAngle);
+
+            let isInAngle = false;
+            
+            // Handle angle wraparound case (e.g., start=-156, end=-36)
+            if (normalizedStartAngle > normalizedEndAngle) {
+                // Wraparound case: target is in range if it's >= startAngle OR <= endAngle
+                isInAngle = angleToTarget >= normalizedStartAngle || angleToTarget <= normalizedEndAngle;
+            } else {
+                // Normal case: target is in range if it's between start and end angles
+                isInAngle = angleToTarget >= normalizedStartAngle && angleToTarget <= normalizedEndAngle;
+            }
+
+            return distance <= this.radarOptions.range && isInAngle
         })
         const asteroidsInRange = this.asteroids.filter(asteroid => {
             const dx = asteroid.position.x - this.radarOptions.position.x
             const dy = asteroid.position.y - this.radarOptions.position.y
             const distance = Math.sqrt(dx * dx + dy * dy)
-            const angleToAsteroid = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
+            let angleToAsteroid = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
 
-            return distance <= this.radarOptions.range &&
-                angleToAsteroid >= startAngle && angleToAsteroid <= endAngle
+            // Normalize angles to be within -180 to 180 range
+            const normalizeAngle = (angle: number) => {
+                while (angle > 180) angle -= 360;
+                while (angle < -180) angle += 360;
+                return angle;
+            }
+
+            angleToAsteroid = normalizeAngle(angleToAsteroid);
+            const normalizedStartAngle = normalizeAngle(startAngle);
+            const normalizedEndAngle = normalizeAngle(endAngle);
+
+            let isInAngle = false;
+            
+            // Handle angle wraparound case (e.g., start=-156, end=-36)
+            if (normalizedStartAngle > normalizedEndAngle) {
+                // Wraparound case: asteroid is in range if it's >= startAngle OR <= endAngle
+                isInAngle = angleToAsteroid >= normalizedStartAngle || angleToAsteroid <= normalizedEndAngle;
+            } else {
+                // Normal case: asteroid is in range if it's between start and end angles
+                isInAngle = angleToAsteroid >= normalizedStartAngle && angleToAsteroid <= normalizedEndAngle;
+            }
+
+            return distance <= this.radarOptions.range && isInAngle
         })
 
         return { targetsInRange, asteroidsInRange }

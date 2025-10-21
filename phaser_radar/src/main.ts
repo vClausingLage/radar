@@ -10,8 +10,8 @@ import { AiUnitController } from "./controller/aiUnitController"
 class Game extends Phaser.Scene
 {
   private world = {
-    width: 1000,
-    height: 500
+    width: 2500,
+    height: 2500
   }
   private canvas?: HTMLCanvasElement
   private graphics?: Phaser.GameObjects.Graphics
@@ -23,7 +23,7 @@ class Game extends Phaser.Scene
   private aiUpdateTimer?: Phaser.Time.TimerEvent
   private enemies: Target[] = []
   private asteroids: Asteroid[] = []
-  private SHIP_SPEED = 2
+  private SHIP_SPEED = 3
   private SHIP_ROTATION_SPEED = 8
   private RADAR_RANGE= 400
   private SCAN_SPEED = .04
@@ -36,17 +36,20 @@ class Game extends Phaser.Scene
   preload()
   {
     this.canvas = this.sys.game.canvas
+    this.load.image('universe', 'universe.png')
     this.load.image('ship', 'ship.png')
     this.load.image('rwr', 'screen.png')
     this.load.image('radar', 'screen.png')
     this.load.image('missile', 'missile.png')
     this.load.image('explosion', 'explosion.png')
+    this.load.image('asteroid', 'asteroid.png')
   }
 
   create()
   {
-    // Set world bounds
+    // WORLD
     this.physics.world.setBounds(0, 0, this.world.width, this.world.height);
+    this.add.image(0, 0, 'universe').setOrigin(0)
     
     // GRAPHICS
     this.graphics = this.add.graphics();
@@ -69,8 +72,14 @@ class Game extends Phaser.Scene
     this.ship.scale = 0.7
 
     // CAMERA
-    this.cameras.main.startFollow(this.ship, true, 0.1, 0.1);
-
+    console.log('camera', this.cameras.main);
+    // this.cameras.main.originX = this.ship.x;
+    // this.cameras.main.originY = this.ship.y;
+    this.cameras.main.setLerp(0.1, 0.1);
+    // set camera bounds to world bounds
+    this.cameras.main.setBounds(0, 0, this.world.width, this.world.height);
+    this.cameras.main.startFollow(this.ship);
+    
     // MISSILE
     this.missile = this.add.image(0, 0, 'missile').setVisible(false)
     // RADAR
@@ -140,7 +149,8 @@ class Game extends Phaser.Scene
       position: { x: 200, y: 300 },
       direction: { x: 1, y: -1 },
       speed: .9,
-      size: 20
+      size: 70,
+      sprite: this.add.image(200, 300, 'asteroid').setScale(70/1000)
     })
 
     this.radar.start()
@@ -237,6 +247,28 @@ class Game extends Phaser.Scene
       if (asteroid.position.y! <= 0 || asteroid.position.y! >= this.world.height) {
         asteroid.direction.y! *= -1;
       }
+      
+      // Create sprite only once when asteroid is first processed
+      if (!asteroid.sprite) {
+        const scale = Math.max(0.1, asteroid.size! / 100); // Better scaling calculation
+        try {
+          // Try to use asteroid image first, fallback to ship image with tint
+          asteroid.sprite = this.add.image(asteroid.position.x!, asteroid.position.y!, 'asteroid')
+            .setScale(scale);
+        } catch (e) {
+          // Fallback if asteroid image doesn't exist
+          asteroid.sprite = this.add.image(asteroid.position.x!, asteroid.position.y!, 'ship')
+            .setScale(scale)
+            .setTint(0x8B4513); // Brown tint to make it look like an asteroid
+        }
+      }
+      
+      // Update sprite position smoothly using direct property assignment for better performance
+      if (asteroid.sprite) {
+        asteroid.sprite.x = asteroid.position.x!;
+        asteroid.sprite.y = asteroid.position.y!;
+      }
+      
       // Check for collision between the ship and this asteroid
       if (this.ship && Phaser.Geom.Intersects.CircleToRectangle(
         new Phaser.Geom.Circle(asteroid.position.x!, asteroid.position.y!, asteroid.size!),
@@ -250,6 +282,14 @@ class Game extends Phaser.Scene
         // When ship is destroyed, also stop the radar
         this.radar?.stop()
         
+        // Clean up asteroid sprites
+        this.asteroids.forEach(asteroid => {
+          if (asteroid.sprite) {
+            asteroid.sprite.destroy();
+            asteroid.sprite = undefined;
+          }
+        });
+        
         // Optional: display explosion effect or game over text
         this.add.text(this.world.width/2, this.world.height/2, 'SHIP DESTROYED', {
           font: '32px Courier',
@@ -262,8 +302,6 @@ class Game extends Phaser.Scene
 
 const config = {
     type: Phaser.AUTO,
-    width: 500,
-    height: 500,
     scene: Game,
     physics: {
         default: 'arcade',

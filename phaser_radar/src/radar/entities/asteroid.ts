@@ -5,4 +5,5 @@ export interface Asteroid {
     direction: Vector2;
     speed: number;
     size: number;
+    sprite?: Phaser.GameObjects.Image;
 }
