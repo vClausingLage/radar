@@ -10,8 +10,8 @@ import { AiUnitController } from "./controller/aiUnitController"
 class Game extends Phaser.Scene
 {
   private world = {
-    width: 1400,
-    height: 2500
+    width: 1000,
+    height: 500
   }
   private canvas?: HTMLCanvasElement
   private graphics?: Phaser.GameObjects.Graphics
@@ -23,8 +23,8 @@ class Game extends Phaser.Scene
   private aiUpdateTimer?: Phaser.Time.TimerEvent
   private enemies: Target[] = []
   private asteroids: Asteroid[] = []
-  private SHIP_SPEED = 0.1
-  private SHIP_RATATION_SPEED = 8
+  private SHIP_SPEED = 2
+  private SHIP_ROTATION_SPEED = 8
   private RADAR_RANGE= 400
   private SCAN_SPEED = .04
 
@@ -61,20 +61,15 @@ class Game extends Phaser.Scene
       }
     });
     // SHIP
-    this.ship = this.physics.add.image(500, 500, 'ship')
+    this.ship = this.physics.add.image(200, 200, 'ship')
     this.ship.setVelocity(0, 0)
     this.ship.setAngle(0)
     this.ship.setBounce(.5, .5)
     this.ship.setCollideWorldBounds(true)
     this.ship.scale = 0.7
 
-    // Set camera to follow the ship
-    console.log('camera', this.cameras.main);
-    this.cameras.main.originX = this.ship.x;
-    this.cameras.main.originY = this.ship.y;
-    this.cameras.main.startFollow(this.ship);
-    this.cameras.main.setBounds(0, 0, this.world.width, this.world.height);
-    this.cameras.main.setLerp(0.1, 0.1);
+    // CAMERA
+    this.cameras.main.startFollow(this.ship, true, 0.1, 0.1);
 
     // MISSILE
     this.missile = this.add.image(0, 0, 'missile').setVisible(false)
@@ -103,6 +98,7 @@ class Game extends Phaser.Scene
         },
     )
     this.radar?.setMode('rws')
+    
     // make ship position radar position
     if (this.ship) {
       const shipPosition = this.ship.getWorldPoint()
@@ -111,7 +107,7 @@ class Game extends Phaser.Scene
 
     // INTERFACE
     this.interfaceRenderer = new InterfaceRenderer(this);
-    this.interfaceRenderer.createInterface(this.radar, this.ship);
+    this.interfaceRenderer.createInterface(this.radar, this.ship, this.physics.world);
 
     // create targets and asteroids and push them to radar
     const enemy1 = {
@@ -154,7 +150,7 @@ class Game extends Phaser.Scene
   update(_: number, delta: number)
   {
     this.graphics?.clear();
-    this.ship?.setAngularVelocity(this.turn * this.SHIP_RATATION_SPEED);
+    this.ship?.setAngularVelocity(this.turn * this.SHIP_ROTATION_SPEED);
     // Move ship in the direction it's facing
     if (this.ship) {
       const angleRad = Phaser.Math.DegToRad(this.ship.angle - 90);
@@ -163,6 +159,7 @@ class Game extends Phaser.Scene
       this.ship.setVelocity(velocityX, velocityY);
     }
     this.radar?.setPosition(this.ship?.getWorldPoint() || { x: 0, y: 0 });
+
     // move targets & asteroids
     this.moveEnemiesAndAsteroids(delta)
 
@@ -265,8 +262,8 @@ class Game extends Phaser.Scene
 
 const config = {
     type: Phaser.AUTO,
-    width: 1400,
-    height: 2500,
+    width: 500,
+    height: 500,
     scene: Game,
     physics: {
         default: 'arcade',

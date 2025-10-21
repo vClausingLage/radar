@@ -9,9 +9,11 @@ export class InterfaceRenderer {
 
     constructor(private scene: Phaser.Scene) {}
 
-    createInterface(radar: LightRadar, ship: Phaser.Physics.Arcade.Image) {
+    createInterface(radar: LightRadar, ship: Phaser.Physics.Arcade.Image, world: Phaser.Physics.Arcade.World) {
+        const cameraHeight = this.scene.cameras.main.height;
+        
         // STT Button
-        this.sttBtn = this.scene.add.text(20, window.innerHeight - 50, 'STT', { 
+        this.sttBtn = this.scene.add.text(20, cameraHeight - 50, 'STT', { 
             font: '22px Courier',
             color: '#000',
             backgroundColor: '#ffdb4d',
@@ -26,7 +28,7 @@ export class InterfaceRenderer {
         });
 
         // RWS Button
-        this.rwsBtn = this.scene.add.text(100, window.innerHeight - 50, 'RWS', { 
+        this.rwsBtn = this.scene.add.text(100, cameraHeight - 50, 'RWS', { 
             font: '22px Courier', 
             color: '#000', 
             backgroundColor: radar.getMode() === 'rws' ? '#00ff00' : '#ffdb4d',
@@ -40,22 +42,8 @@ export class InterfaceRenderer {
             radar.setMode('rws');
         });
 
-        // TWS Button (commented out in original)
-        // this.twsBtn = this.scene.add.text(200, window.innerHeight - 50, 'TWS', { 
-        //     font: '22px Courier', 
-        //     color: '#000', 
-        //     backgroundColor: radar.getMode() === 'tws' ? '#00ff00' : '#ffdb4d', 
-        //     padding: { x: 10, y: 5 }
-        // })
-        // .setInteractive()
-        // .setOrigin(0)
-        // .setScrollFactor(0)
-        // .on('pointerdown', () => {
-        //     radar.setMode('tws');
-        // });
-
         // EMCON Button
-        this.emconBtn = this.scene.add.text(300, window.innerHeight - 50, 'EMCON', {
+        this.emconBtn = this.scene.add.text(300, cameraHeight - 50, 'EMCON', {
             font: '22px Courier',
             color: '#000',
             backgroundColor: radar.getMode() === 'emcon' ? '#00ff00' : '#ffdb4d',
@@ -69,7 +57,7 @@ export class InterfaceRenderer {
         });
 
         // Shoot Button
-        this.shootBtn = this.scene.add.text(400, window.innerHeight - 50, 'SHOOT', {
+        this.shootBtn = this.scene.add.text(400, cameraHeight - 50, 'SHOOT', {
             font: '22px Courier',
             color: '#000',
             backgroundColor: '#ffdb4d',

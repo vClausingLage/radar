@@ -215,30 +215,11 @@ export class LightRadar {
             return 
         }
         
-        console.log('active loadout:', this.loadout)
-        const missile: SARHMissile = {
-            type: 'AIM-177',
-            age: 0,
-            burnTime: 14,
-            speed: 17.0,
-            turnSpeed: .7,
-            guidance: 'semi-active',
-            warhead: 'high-explosive',
-            position: {
-                x: missileStartX,
-                y: missileStartY
-            },
-            direction: {
-                x: Math.cos(Phaser.Math.DegToRad(angle)),
-                y: Math.sin(Phaser.Math.DegToRad(angle))
-            }
-        }
-
         // DECREASE MISSILE LOADOUT
         // Find the active weapon type in the loadout
         const activeWeaponType = Object.keys(this.loadout).find(key => 
             this.loadout[key as keyof Loadout]?.active
-        ) as keyof Loadout;
+        ) as keyof Loadout;       
 
         // If we have an active weapon with remaining count, decrease it
         if (activeWeaponType && this.loadout[activeWeaponType]) {
@@ -252,8 +233,53 @@ export class LightRadar {
                 return; // Don't fire if no missiles left
             }
         }
+        console.log('active loadout:', activeWeaponType)
 
-        this.activeMissiles.push(missile)
+        switch (activeWeaponType) {
+            case 'AIM-177':
+                const sarhMissile: SARHMissile = {
+                    type: 'AIM-177',
+                    age: 0,
+                    burnTime: 14,
+                    speed: 17.0,
+                    turnSpeed: .7,
+                    guidance: 'semi-active',
+                    warhead: 'high-explosive',
+                    position: {
+                        x: missileStartX,
+                        y: missileStartY
+                    },
+                    direction: {
+                        x: Math.cos(Phaser.Math.DegToRad(angle)),
+                        y: Math.sin(Phaser.Math.DegToRad(angle))
+                    }
+                };
+                this.activeMissiles.push(sarhMissile);
+                break;
+            case 'AIM-220':
+                const activeRadarMissile: Missile = {
+                    type: 'AIM-220',
+                    age: 0,
+                    burnTime: 14,
+                    speed: 21,
+                    turnSpeed: 0.8,
+                    guidance: 'active',
+                    warhead: 'high-explosive',
+                    position: {
+                        x: missileStartX,
+                        y: missileStartY
+                    },
+                    direction: {
+                        x: Math.cos(Phaser.Math.DegToRad(angle)),
+                        y: Math.sin(Phaser.Math.DegToRad(angle))
+                    }
+                };
+                this.activeMissiles.push(activeRadarMissile);
+                break;
+            default:
+                console.error(`Unknown missile type: ${activeWeaponType}`);
+                return;
+        }
     }
 
     updateMissiles(delta: number, targets: Target[]): void {
