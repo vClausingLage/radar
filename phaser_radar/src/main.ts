@@ -149,8 +149,8 @@ class Game extends Phaser.Scene
       position: { x: 200, y: 300 },
       direction: { x: 1, y: -1 },
       speed: .9,
-      size: 70,
-      sprite: this.add.image(200, 300, 'asteroid').setScale(70/1000)
+      size: 7,
+      sprite: this.add.image(200, 300, 'asteroid').setScale(.07)
     })
 
     this.radar.start()
@@ -250,7 +250,7 @@ class Game extends Phaser.Scene
       
       // Create sprite only once when asteroid is first processed
       if (!asteroid.sprite) {
-        const scale = Math.max(0.1, asteroid.size! / 100); // Better scaling calculation
+        const scale = Math.max(0.1, asteroid.size! / 100);
         try {
           // Try to use asteroid image first, fallback to ship image with tint
           asteroid.sprite = this.add.image(asteroid.position.x!, asteroid.position.y!, 'asteroid')
@@ -273,7 +273,7 @@ class Game extends Phaser.Scene
       if (this.ship && Phaser.Geom.Intersects.CircleToRectangle(
         new Phaser.Geom.Circle(asteroid.position.x!, asteroid.position.y!, asteroid.size!),
         new Phaser.Geom.Rectangle(this.ship.x - this.ship.displayWidth/2, this.ship.y - this.ship.displayHeight/2,
-        this.ship.displayWidth * .7, this.ship.displayHeight * .7)
+        this.ship.displayWidth, this.ship.displayHeight)
       )) {
         // Destroy the ship
         this.ship.setVisible(false);
