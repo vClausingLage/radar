@@ -238,23 +238,6 @@ export class LightRadar {
         }
         
         console.info('active loadout:', this.loadout)
-        const missile: SARHMissile = {
-            type: 'AIM-177',
-            age: 0,
-            burnTime: 14,
-            speed: 17.0,
-            turnSpeed: .7,
-            guidance: 'semi-active',
-            warhead: 'high-explosive',
-            position: {
-                x: missileStartX,
-                y: missileStartY
-            },
-            direction: {
-                x: Math.cos(Phaser.Math.DegToRad(angle)),
-                y: Math.sin(Phaser.Math.DegToRad(angle))
-            }
-        }
 
         // DECREASE MISSILE LOADOUT
         // Find the active weapon type in the loadout
@@ -354,7 +337,10 @@ export class LightRadar {
             if (m.age < 2) {
                 ({ targetDirX, targetDirY } = this.flyInDirectionOfShip(m));
             } else {
-                ({ targetDirX, targetDirY } = this.trackInDirectionOfTarget(m));
+                const trackResult = this.trackInDirectionOfTarget(m);
+                if (trackResult) {
+                    ({ targetDirX, targetDirY } = trackResult);
+                }
             }
             
             // Interpolate direction based on turn speed (0 to 1)
@@ -615,25 +601,94 @@ export class LightRadar {
         return { targetDirX: m.direction.x, targetDirY: m.direction.y };
     }
 
-    trackInDirectionOfTarget(m: Missile): { targetDirX: number, targetDirY: number } {
+    trackInDirectionOfTarget(m: Missile): { targetDirX: number, targetDirY: number } | null {
         // // in STT all missiles track the STT target
-        if (this.mode === 'stt' && this.sttTrack) {
-            const dxToTarget = this.sttTrack.pos.x - m.position.x;
-            const dyToTarget = this.sttTrack.pos.y - m.position.y;
-            const distToTarget = Math.sqrt(dxToTarget * dxToTarget + dyToTarget * dyToTarget);
+        // if (this.mode === 'stt' && this.sttTrack) {
+        //     const dxToTarget = this.sttTrack.pos.x - m.position.x;
+        //     const dyToTarget = this.sttTrack.pos.y - m.position.y;
+        //     const distToTarget = Math.sqrt(dxToTarget * dxToTarget + dyToTarget * dyToTarget);
             
-            if (distToTarget > 0) {
-                m.direction.x = dxToTarget / distToTarget;
-                m.direction.y = dyToTarget / distToTarget;
+        //     if (distToTarget > 0) {
+        //         m.direction.x = dxToTarget / distToTarget;
+        //         m.direction.y = dyToTarget / distToTarget;
+        //     }
+        // }
+        // return { targetDirX: m.direction.x, targetDirY: m.direction.y };
+        // 1. Find relative position vector
+        const targetPos = this.sttTrack?.pos!;
+        const targetVelocity = this.sttTrack?.dir!
+        const relPos = {
+            x: targetPos.x - m.position.x,
+            y: targetPos.y - m.position.y,
+        };
+
+        // 2. Calculate quadratic coefficients (a, b, c)
+        const a =
+            targetVelocity.x * targetVelocity.x +
+            targetVelocity.y * targetVelocity.y -
+            m.speed * m.speed;
+
+        const b = 2 * (relPos.x * targetVelocity.x + relPos.y * targetVelocity.y);
+        
+        const c = relPos.x * relPos.x + relPos.y * relPos.y;
+
+        // 3. Solve for time 't'
+        
+        let t = 0; // Time to intercept
+
+        // Check if we have a linear equation (a is close to zero)
+        if (Math.abs(a) < 0.001) {
+            if (Math.abs(b) < 0.001) {
+            // No solution (or infinite solutions)
+            return null;
+            }
+            t = -c / b;
+        } else {
+            // Solve the quadratic equation
+            const discriminant = b * b - 4 * a * c;
+
+            if (discriminant < 0) {
+            // No real solution, missile can't catch target
+            return null;
+            }
+
+            const t1 = (-b + Math.sqrt(discriminant)) / (2 * a);
+            const t2 = (-b - Math.sqrt(discriminant)) / (2 * a);
+
+            // We need the smallest positive time
+            if (t1 > 0 && t2 > 0) {
+            t = Math.min(t1, t2);
+            } else if (t1 > 0) {
+            t = t1;
+            } else if (t2 > 0) {
+            t = t2;
+            } else {
+            // Both solutions are negative, intercept is in the past
+            return null;
             }
         }
-        return { targetDirX: m.direction.x, targetDirY: m.direction.y };
 
-        // if (!this.sttTrack) {
-        //     return { targetDirX: m.direction.x, targetDirY: m.direction.y };
-        // }
+        // 4. Calculate the intercept position
+        const interceptPos = {
+            x: targetPos.x + targetVelocity.x * t,
+            y: targetPos.y + targetVelocity.y * t,
+        };
 
-        // const vector = calculateInterceptionVector(m, this.sttTrack);
-        // return { targetDirX: vector.x, targetDirY: vector.y };
+        // 5. Find the vector from missile to intercept
+        const direction = {
+            x: interceptPos.x - m.position.x,
+            y: interceptPos.y - m.position.y,
+        };
+
+        // 6. Normalize the direction vector
+        const mag = Math.sqrt(direction.x * direction.x + direction.y * direction.y);
+        if (mag === 0) {
+            return null; // Should not happen if t > 0
+        }
+
+        return {
+            targetDirX: direction.x / mag,
+            targetDirY: direction.y / mag,
+        };
     }
 }
