@@ -145,13 +145,15 @@ class Game extends Phaser.Scene
     enemy2.controller.setDirection(enemy2.direction)
     this.enemies.push(enemy1)
     this.enemies.push(enemy2)
-    this.asteroids.push({
-      position: { x: 200, y: 300 },
-      direction: { x: 1, y: -1 },
-      speed: .9,
-      size: 7,
-      sprite: this.add.image(200, 300, 'asteroid').setScale(.07)
-    })
+    const asteroid1 = new Asteroid(
+      this, 
+      { x: 200, y: 300 }, 
+      { x: 1, y: -1 }, 
+      .9, 
+      7)
+    this.asteroids.push(asteroid1)
+
+    console.log('asteroids', this.asteroids);
 
     this.radar.start()
   }
@@ -247,27 +249,7 @@ class Game extends Phaser.Scene
       if (asteroid.position.y! <= 0 || asteroid.position.y! >= this.world.height) {
         asteroid.direction.y! *= -1;
       }
-      
-      // Create sprite only once when asteroid is first processed
-      if (!asteroid.sprite) {
-        const scale = Math.max(0.1, asteroid.size! / 100);
-        try {
-          // Try to use asteroid image first, fallback to ship image with tint
-          asteroid.sprite = this.add.image(asteroid.position.x!, asteroid.position.y!, 'asteroid')
-            .setScale(scale);
-        } catch (e) {
-          // Fallback if asteroid image doesn't exist
-          asteroid.sprite = this.add.image(asteroid.position.x!, asteroid.position.y!, 'ship')
-            .setScale(scale)
-            .setTint(0x8B4513); // Brown tint to make it look like an asteroid
-        }
-      }
-      
-      // Update sprite position smoothly using direct property assignment for better performance
-      if (asteroid.sprite) {
-        asteroid.sprite.x = asteroid.position.x!;
-        asteroid.sprite.y = asteroid.position.y!;
-      }
+      // set direction and speed of asteroid wirth sprite
       
       // Check for collision between the ship and this asteroid
       if (this.ship && Phaser.Geom.Intersects.CircleToRectangle(
@@ -284,17 +266,14 @@ class Game extends Phaser.Scene
         
         // Clean up asteroid sprites
         this.asteroids.forEach(asteroid => {
-          if (asteroid.sprite) {
-            asteroid.sprite.destroy();
-            asteroid.sprite = undefined;
-          }
+          asteroid.destroy();
         });
         
         // Optional: display explosion effect or game over text
         this.add.text(this.world.width/2, this.world.height/2, 'SHIP DESTROYED', {
           font: '32px Courier',
           color: '#ff0000'
-        }).setOrigin(0.5);
+        }).setOrigin(0, 0);
       }
     })
   }
