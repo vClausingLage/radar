@@ -5,6 +5,7 @@ import { Target } from '../entities/ship'
 import { Missile, SARHMissile } from '../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
 import { normalizeAngle } from '../../math'
+import { IMAGE_SCALE } from '../../settings'
 
 export class LightRadar {
 
@@ -230,8 +231,6 @@ export class LightRadar {
             console.error('Target is at current location, missile not fired.')
             return 
         }
-        
-        console.info('active loadout:', this.loadout)
 
         // DECREASE MISSILE LOADOUT
         // Find the active weapon type in the loadout
@@ -402,7 +401,7 @@ export class LightRadar {
                         'explosion'
                     );
 
-                    explosion.setScale(.05);
+                    explosion.setScale(IMAGE_SCALE);
                     
                     explosion.alpha = 1;
                     this.renderer.scene.tweens.add({

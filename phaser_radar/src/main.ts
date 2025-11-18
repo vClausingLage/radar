@@ -3,9 +3,10 @@ import { LightRadar } from "./radar/systems/lightRadar"
 import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer"
 import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer"
 import { Vector2 } from "./types"
-import { Target } from "./radar/entities/ship"
+import { PlayerShip, Target } from "./radar/entities/ship"
 import { Asteroid } from "./radar/entities/asteroid"
 import { AiUnitController } from "./controller/aiUnitController"
+import { IMAGE_SCALE } from "./settings"
 
 class Game extends Phaser.Scene
 {
@@ -16,7 +17,7 @@ class Game extends Phaser.Scene
   private canvas?: HTMLCanvasElement
   private graphics?: Phaser.GameObjects.Graphics
   private missile?: Phaser.GameObjects.Image
-  private ship?: Phaser.Physics.Arcade.Image
+  private player?: PlayerShip
   private radar?: LightRadar
   private interfaceRenderer?: InterfaceRenderer
   private turn = 0
@@ -64,17 +65,24 @@ class Game extends Phaser.Scene
       }
     });
     // SHIP
-    this.ship = this.physics.add.image(200, 200, 'ship')
-    this.ship.setVelocity(0, 0)
-    this.ship.setAngle(0)
-    this.ship.setBounce(.5, .5)
-    this.ship.setCollideWorldBounds(true)
-    this.ship.setScale(0.7)
-
+    // this.ship = this.physics.add.image(200, 200, 'ship')
+    // this.ship.setVelocity(0, 0)
+    // this.ship.setAngle(0)
+    // this.ship.setBounce(.5, .5)
+    // this.ship.setCollideWorldBounds(true)
+    // this.ship.setScale(IMAGE_SCALE)
+    this.player = new PlayerShip(
+      this,
+      200,
+      200,
+      this.SHIP_SPEED,
+      0.5,
+    )
+    this.player.init()
     // CAMERA
     // set camera bounds to world bounds
     this.cameras.main.setBounds(0, 0, this.world.width, this.world.height);
-    this.cameras.main.startFollow(this.ship);
+    this.cameras.main.startFollow(this.player);
     
     // MISSILE
     this.missile = this.add.image(0, 0, 'missile').setVisible(false)
@@ -105,14 +113,14 @@ class Game extends Phaser.Scene
     this.radar?.setMode('rws')
     
     // make ship position radar position
-    if (this.ship) {
-      const shipPosition = this.ship.getWorldPoint()
+    if (this.player) {
+      const shipPosition = this.player.getWorldPoint()
       this.radar?.setPosition({ x: shipPosition.x, y: shipPosition.y - 50 })
     }
 
     // INTERFACE
     this.interfaceRenderer = new InterfaceRenderer(this);
-    this.interfaceRenderer.createInterface(this.radar, this.ship);
+    this.interfaceRenderer.createInterface(this.radar, this.player);
 
     // TARGETS (ENEMIES) & ASTEROIDS
     const enemy1 = {
@@ -139,19 +147,16 @@ class Game extends Phaser.Scene
     }
     enemy2.controller.setPosition(enemy2.position)
     enemy2.controller.setDirection(enemy2.direction)
-    this.enemies.push(enemy1)
-    this.enemies.push(enemy2)
+    // this.enemies.push(enemy1)
+    // this.enemies.push(enemy2)
     const asteroid1 = new Asteroid(
       this, 
       { x: 300, y: 250 }, 
-      90, 
-      .9, 
-      25) // Size for radar occlusion (larger than visual)
+      90,
+      1,
+      25)
     asteroid1.init()    
     this.asteroids.push(asteroid1)
-    
-    // Add asteroids to radar for occlusion calculations
-    this.radar.addAsteroid(asteroid1);
 
     console.log('asteroids', this.asteroids);
 
@@ -162,21 +167,21 @@ class Game extends Phaser.Scene
   update(_: number, delta: number)
   {
     this.graphics?.clear();
-    this.ship?.setAngularVelocity(this.turn * this.SHIP_ROTATION_SPEED);
+    this.player?.setAngularVelocity(this.turn * this.SHIP_ROTATION_SPEED);
     // Move ship in the direction it's facing
-    if (this.ship) {
-      const angleRad = Phaser.Math.DegToRad(this.ship.angle - 90);
+    if (this.player) {
+      const angleRad = Phaser.Math.DegToRad(this.player.angle - 90);
       const velocityX = Math.cos(angleRad) * this.SHIP_SPEED;
       const velocityY = Math.sin(angleRad) * this.SHIP_SPEED;
-      this.ship.setVelocity(velocityX, velocityY);
+      this.player.setVelocity(velocityX, velocityY);
     }
-    this.radar?.setPosition(this.ship?.getWorldPoint() || { x: 0, y: 0 });
+    this.radar?.setPosition(this.player?.getWorldPoint() || { x: 0, y: 0 });
 
     // move targets & asteroids
     this.moveEnemiesAndAsteroids(delta)
 
     // radar scan
-    this.radar?.update(delta, this.ship?.angle || 0, this.enemies, this.graphics!);
+    this.radar?.update(delta, this.player?.angle || 0, this.enemies, this.graphics!);
 
     // update enemies
     const destroyedEnemyId = this.radar?.updateEnemiesInMain();
@@ -242,14 +247,11 @@ class Game extends Phaser.Scene
     })
     this.asteroids.forEach(asteroid => {
       // Check for collision between the ship and this asteroid
-      if (this.ship && Phaser.Geom.Intersects.CircleToCircle(
-        new Phaser.Geom.Circle(asteroid.position.x!, asteroid.position.y!, asteroid.size!),
-        new Phaser.Geom.Circle(this.ship.x, this.ship.y, Math.max(this.ship.displayWidth, this.ship.displayHeight) / 2)
-      )) {
+      if (this.player && Phaser.Geom.Intersects.RectangleToRectangle(this.player.getBounds(), asteroid.getBounds())) {
         // Destroy the ship
-        this.ship.setVisible(false);
-        this.ship.setActive(false);
-        this.ship.disableBody(true, true);
+        this.player.setVisible(false);
+        this.player.setActive(false);
+        this.player.disableBody(true, true);
         // When ship is destroyed, also stop the radar
         this.radar?.stop()
         
@@ -258,8 +260,8 @@ class Game extends Phaser.Scene
           asteroid.destroy();
         });
         
-        // Optional: display explosion effect or game over text
-        this.add.text(this.world.width/2, this.world.height/2, 'SHIP DESTROYED', {
+        // Display "SHIP DESTROYED" message
+        this.add.text(300, 0, 'SHIP DESTROYED', {
           font: '32px Courier',
           color: '#ff0000'
         }).setOrigin(0, 0);
