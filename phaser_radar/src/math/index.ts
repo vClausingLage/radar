@@ -26,6 +26,12 @@ export function getDistance(pos: Vector2, t: Vector2): number {
   return Math.sqrt(Math.pow(t.x - pos.x, 2) + Math.pow(t.y - pos.y, 2));
 }
 
+export const normalizeAngle = (angle: number): number => {
+    while (angle > 180) angle -= 360;
+  while (angle < -180) angle += 360;
+  return angle;
+}
+
 export function calculateInterceptionVector(missile: Missile, track: Track): Vector2 {
   const missilePosition = { x: missile.position.x, y: missile.position.y };
   const missileSpeed = missile.speed;

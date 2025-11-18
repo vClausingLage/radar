@@ -4,7 +4,7 @@ import { Asteroid } from '../entities/asteroid'
 import { Target } from '../entities/ship'
 import { Missile, SARHMissile } from '../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
-import { calculateInterceptionVector } from '../../math'
+import { normalizeAngle } from '../../math'
 
 export class LightRadar {
 
@@ -151,12 +151,6 @@ export class LightRadar {
                 let angleToTrack = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
 
                 // Normalize angles to be within -180 to 180 range
-                const normalizeAngle = (angle: number) => {
-                    while (angle > 180) angle -= 360;
-                    while (angle < -180) angle += 360;
-                    return angle;
-                }
-
                 angleToTrack = normalizeAngle(angleToTrack);
                 const normalizedStartAngle = normalizeAngle(startAngle);
                 const normalizedEndAngle = normalizeAngle(endAngle);
@@ -453,12 +447,6 @@ export class LightRadar {
             let angleToTarget = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
 
             // Normalize angles to be within -180 to 180 range
-            const normalizeAngle = (angle: number) => {
-                while (angle > 180) angle -= 360;
-                while (angle < -180) angle += 360;
-                return angle;
-            }
-
             angleToTarget = normalizeAngle(angleToTarget);
             const normalizedStartAngle = normalizeAngle(startAngle);
             const normalizedEndAngle = normalizeAngle(endAngle);

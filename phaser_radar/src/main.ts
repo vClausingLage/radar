@@ -69,13 +69,9 @@ class Game extends Phaser.Scene
     this.ship.setAngle(0)
     this.ship.setBounce(.5, .5)
     this.ship.setCollideWorldBounds(true)
-    this.ship.scale = 0.7
+    this.ship.setScale(0.7)
 
     // CAMERA
-    console.log('camera', this.cameras.main);
-    // this.cameras.main.originX = this.ship.x;
-    // this.cameras.main.originY = this.ship.y;
-    this.cameras.main.setLerp(0.1, 0.1);
     // set camera bounds to world bounds
     this.cameras.main.setBounds(0, 0, this.world.width, this.world.height);
     this.cameras.main.startFollow(this.ship);
@@ -118,7 +114,7 @@ class Game extends Phaser.Scene
     this.interfaceRenderer = new InterfaceRenderer(this);
     this.interfaceRenderer.createInterface(this.radar, this.ship);
 
-    // create targets and asteroids and push them to radar
+    // TARGETS (ENEMIES) & ASTEROIDS
     const enemy1 = {
       id: 1,
       position: { x: 300, y: 300 },
@@ -147,11 +143,15 @@ class Game extends Phaser.Scene
     this.enemies.push(enemy2)
     const asteroid1 = new Asteroid(
       this, 
-      { x: 200, y: 300 }, 
-      { x: 1, y: -1 }, 
+      { x: 300, y: 250 }, 
+      90, 
       .9, 
-      7)
+      25) // Size for radar occlusion (larger than visual)
+    asteroid1.init()    
     this.asteroids.push(asteroid1)
+    
+    // Add asteroids to radar for occlusion calculations
+    this.radar.addAsteroid(asteroid1);
 
     console.log('asteroids', this.asteroids);
 
@@ -241,21 +241,10 @@ class Game extends Phaser.Scene
       }
     })
     this.asteroids.forEach(asteroid => {
-      asteroid.position.x! += asteroid.direction.x! * asteroid.speed * delta / 1000;
-      asteroid.position.y! += asteroid.direction.y! * asteroid.speed * delta / 1000;
-      if (asteroid.position.x! <= 0 || asteroid.position.x! >= this.world.width) {
-        asteroid.direction.x! *= -1;
-      }
-      if (asteroid.position.y! <= 0 || asteroid.position.y! >= this.world.height) {
-        asteroid.direction.y! *= -1;
-      }
-      // set direction and speed of asteroid wirth sprite
-      
       // Check for collision between the ship and this asteroid
-      if (this.ship && Phaser.Geom.Intersects.CircleToRectangle(
+      if (this.ship && Phaser.Geom.Intersects.CircleToCircle(
         new Phaser.Geom.Circle(asteroid.position.x!, asteroid.position.y!, asteroid.size!),
-        new Phaser.Geom.Rectangle(this.ship.x - this.ship.displayWidth/2, this.ship.y - this.ship.displayHeight/2,
-        this.ship.displayWidth, this.ship.displayHeight)
+        new Phaser.Geom.Circle(this.ship.x, this.ship.y, Math.max(this.ship.displayWidth, this.ship.displayHeight) / 2)
       )) {
         // Destroy the ship
         this.ship.setVisible(false);
@@ -264,7 +253,7 @@ class Game extends Phaser.Scene
         // When ship is destroyed, also stop the radar
         this.radar?.stop()
         
-        // Clean up asteroid sprites
+        // Clean up asteroids
         this.asteroids.forEach(asteroid => {
           asteroid.destroy();
         });
