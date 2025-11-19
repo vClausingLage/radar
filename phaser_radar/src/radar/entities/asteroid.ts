@@ -8,13 +8,6 @@ export class Asteroid extends Phaser.Physics.Arcade.Sprite {
         this.direction = direction;
         this.speed = speed;
         this.size = size;
-    }
-    position: Vector2;
-    direction: number;
-    speed: number;
-    size: number;
-
-    init() {
         this.setScale(IMAGE_SCALE);
         this.setPosition(this.position.x, this.position.y);
         this.setAngle(this.direction);
@@ -26,4 +19,8 @@ export class Asteroid extends Phaser.Physics.Arcade.Sprite {
             this.speed * Math.sin(Phaser.Math.DegToRad(this.direction - 90))
         );
     }
+    position: Vector2;
+    direction: number;
+    speed: number;
+    size: number;
 }

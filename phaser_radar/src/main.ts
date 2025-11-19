@@ -6,7 +6,6 @@ import { Vector2 } from "./types"
 import { PlayerShip, Target } from "./radar/entities/ship"
 import { Asteroid } from "./radar/entities/asteroid"
 import { AiUnitController } from "./controller/aiUnitController"
-import { IMAGE_SCALE } from "./settings"
 
 class Game extends Phaser.Scene
 {
@@ -78,7 +77,6 @@ class Game extends Phaser.Scene
       this.SHIP_SPEED,
       0.5,
     )
-    this.player.init()
     // CAMERA
     // set camera bounds to world bounds
     this.cameras.main.setBounds(0, 0, this.world.width, this.world.height);
@@ -155,7 +153,6 @@ class Game extends Phaser.Scene
       90,
       1,
       25)
-    asteroid1.init()    
     this.asteroids.push(asteroid1)
 
     console.log('asteroids', this.asteroids);
