@@ -383,21 +383,21 @@ export class LightRadar {
 
     checkCollisionWithTarget(m: Missile, targets: Target[]) {
         for (const target of targets) {
-            const dxTarget = m.position.x - target.position.x;
-            const dyTarget = m.position.y - target.position.y;
+            const dxTarget = m.position.x - target.x;
+            const dyTarget = m.position.y - target.y;
             const distanceToTarget = Math.sqrt(dxTarget * dxTarget + dyTarget * dyTarget);
             
             // Define proximity detection radius (missile + target size for more realistic collision)
             const proximityThreshold = 3 + (target.size / 2);
             
             if (distanceToTarget <= proximityThreshold) {
-                console.info(`Missile hit target at position: ${target.position.x}, ${target.position.y}`);
+                console.info(`Missile hit target at position: ${target.x}, ${target.y}`);
 
                 // Create an explosion sprite at the target's position
                 if (this.renderer.scene) {
                     const explosion = this.renderer.scene.add.sprite(
-                        target.position.x,
-                        target.position.y,
+                        target.x,
+                        target.y,
                         'explosion'
                     );
 
@@ -421,7 +421,7 @@ export class LightRadar {
                 this.destroyedTarget = target;
 
                 // Also remove corresponding track if it exists
-                if (this.sttTrack && this.sttTrack.pos.x === target.position.x && this.sttTrack.pos.y === target.position.y) {
+                if (this.sttTrack && this.sttTrack.pos.x === target.x && this.sttTrack.pos.y === target.y) {
                     this.sttTrack = null;
                     if (this.mode === 'stt') {
                         this.setMode('rws');
@@ -429,7 +429,7 @@ export class LightRadar {
                 }
                 
                 this.tracks = this.tracks.filter(track => 
-                    !(track.pos.x === target.position.x && track.pos.y === target.position.y)
+                    !(track.pos.x === target.x && track.pos.y === target.y)
                 );
                 
                 // Stop checking other targets since this missile is already destroyed
@@ -440,8 +440,8 @@ export class LightRadar {
 
     filterTargetsAndAsteroidsInScanArea(startAngle: number, endAngle: number, targets: Target[]): { targetsInRange: Target[], asteroidsInRange: Asteroid[] } {
         const targetsInRange = targets.filter(target => {
-            const dx = target.position.x - this.radarOptions.position.x
-            const dy = target.position.y - this.radarOptions.position.y
+            const dx = target.x - this.radarOptions.position.x
+            const dy = target.y - this.radarOptions.position.y
             const distance = Math.sqrt(dx * dx + dy * dy)
             let angleToTarget = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
 
@@ -506,7 +506,7 @@ export class LightRadar {
 
         const circles = [...targetsInRange, ...asteroidsInRange].map(t => {
             const r = t.size / 2
-            return new Phaser.Geom.Circle(t.position.x, t.position.y, r)
+            return new Phaser.Geom.Circle(t.x, t.y, r)
         })
 
         for (const [index, t] of targetsInRange.entries()) {
@@ -514,13 +514,13 @@ export class LightRadar {
             const line = new Phaser.Geom.Line(
                 this.radarOptions.position.x,
                 this.radarOptions.position.y,
-                t.position.x,
-                t.position.y
+                t.x,
+                t.y
             )
 
             // Check for collisions with all other circles except the current target
             const otherCircles = circles.filter(circle => 
-                circle.x !== t.position.x || circle.y !== t.position.y
+                circle.x !== t.x || circle.y !== t.y
             )
 
             // Check if line intersects with any other circle
@@ -529,15 +529,15 @@ export class LightRadar {
             )
 
             // Calculate distance
-            const dx = t.position.x - this.radarOptions.position.x
-            const dy = t.position.y - this.radarOptions.position.y
+            const dx = t.x - this.radarOptions.position.x
+            const dy = t.y - this.radarOptions.position.y
             const distance = Math.sqrt(dx * dx + dy * dy)
 
             // Only draw and process target if there's no collision
             if (!hasCollision) {
                 this.tracks = [...this.tracks, {
                     id: index,
-                    pos: t.position,
+                    pos: { x: t.x, y: t.y },
                     dist: distance,
                     dir: t.direction,
                     speed: t.speed,
@@ -589,19 +589,6 @@ export class LightRadar {
     }
 
     trackInDirectionOfTarget(m: Missile): { targetDirX: number, targetDirY: number } | null {
-        // // in STT all missiles track the STT target
-        // if (this.mode === 'stt' && this.sttTrack) {
-        //     const dxToTarget = this.sttTrack.pos.x - m.position.x;
-        //     const dyToTarget = this.sttTrack.pos.y - m.position.y;
-        //     const distToTarget = Math.sqrt(dxToTarget * dxToTarget + dyToTarget * dyToTarget);
-            
-        //     if (distToTarget > 0) {
-        //         m.direction.x = dxToTarget / distToTarget;
-        //         m.direction.y = dyToTarget / distToTarget;
-        //     }
-        // }
-        // return { targetDirX: m.direction.x, targetDirY: m.direction.y };
-        // 1. Find relative position vector
         if (this.mode === 'stt' && this.sttTrack) {
             const targetPos = this.sttTrack?.pos!;
             const targetVelocity = this.sttTrack?.dir!

@@ -2,10 +2,10 @@ import Phaser from "phaser"
 import { LightRadar } from "./radar/systems/lightRadar"
 import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer"
 import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer"
-import { Vector2 } from "./types"
 import { PlayerShip, Target } from "./radar/entities/ship"
 import { Asteroid } from "./radar/entities/asteroid"
 import { AiUnitController } from "./controller/aiUnitController"
+import { shipSettings, radarDefaultSettings } from "./settings"
 
 class Game extends Phaser.Scene
 {
@@ -17,16 +17,11 @@ class Game extends Phaser.Scene
   private graphics?: Phaser.GameObjects.Graphics
   private missile?: Phaser.GameObjects.Image
   private player?: PlayerShip
-  private radar?: LightRadar
   private interfaceRenderer?: InterfaceRenderer
   private turn = 0
   private aiUpdateTimer?: Phaser.Time.TimerEvent
   private enemies: Target[] = []
   private asteroids: Asteroid[] = []
-  private SHIP_SPEED = 3
-  private SHIP_ROTATION_SPEED = 8
-  private RADAR_RANGE= 400
-  private SCAN_SPEED = .04
 
   constructor()
   {
@@ -49,8 +44,9 @@ class Game extends Phaser.Scene
   {
     // WORLD
     this.physics.world.setBounds(0, 0, this.world.width, this.world.height);
+    // ADD IMAGES
     this.add.image(0, 0, 'universe').setOrigin(0)
-    
+    this.missile = this.add.image(0, 0, 'missile').setVisible(false)
     // GRAPHICS
     this.graphics = this.add.graphics();
     // KEYS
@@ -59,66 +55,40 @@ class Game extends Phaser.Scene
     this.input.keyboard?.on('keydown-D', () => this.turn = 1);
     this.input.keyboard?.on('keyup-D',   () => this.turn = 0);
     this.input.keyboard?.on('keydown-Q', () => {
-      if (this.radar) {
-        this.radar.setLoadout()
+      if (this.player) {
+        this.player.radar.setLoadout()
       }
     });
-    // SHIP
-    // this.ship = this.physics.add.image(200, 200, 'ship')
-    // this.ship.setVelocity(0, 0)
-    // this.ship.setAngle(0)
-    // this.ship.setBounce(.5, .5)
-    // this.ship.setCollideWorldBounds(true)
-    // this.ship.setScale(IMAGE_SCALE)
+
+    // PLAYER SHIP
     this.player = new PlayerShip(
       this,
-      200,
-      200,
-      this.SHIP_SPEED,
-      0.5,
+      shipSettings.START_POSITION.x,
+      shipSettings.START_POSITION.y,
+      shipSettings.SPEED,
+      shipSettings.SIZE,
+      shipSettings.START_LOADOUT,
+      new LightRadar(
+        radarDefaultSettings,
+        new LightRadarRenderer(this.missile!, this),
+        'rws',
+        shipSettings.START_LOADOUT
+      )
     )
+    // make ship position radar position
+    if (this.player) {
+      const shipPosition = this.player.getWorldPoint()
+      this.player?.radar?.setPosition({ x: shipPosition.x, y: shipPosition.y - 50 })
+    }
+
     // CAMERA
     // set camera bounds to world bounds
     this.cameras.main.setBounds(0, 0, this.world.width, this.world.height);
     this.cameras.main.startFollow(this.player);
     
-    // MISSILE
-    this.missile = this.add.image(0, 0, 'missile').setVisible(false)
-    // RADAR
-    const radarOptions = {
-      range: this.RADAR_RANGE,
-      position: { x: 0, y: 0 } as Vector2,
-      isScanning: true,
-      azimuth: 20,
-      scanSpeed: this.SCAN_SPEED,
-    }
-    // RADAR & DEFAULT SETTINGS
-    this.radar = new LightRadar(
-        radarOptions,
-        new LightRadarRenderer(this.missile!, this),
-        'rws',
-        {
-          'AIM-177': {
-            load: 4,
-            active: true
-          },
-          'AIM-220': {
-            load: 2,
-            active: false
-          },
-        },
-    )
-    this.radar?.setMode('rws')
-    
-    // make ship position radar position
-    if (this.player) {
-      const shipPosition = this.player.getWorldPoint()
-      this.radar?.setPosition({ x: shipPosition.x, y: shipPosition.y - 50 })
-    }
-
     // INTERFACE
     this.interfaceRenderer = new InterfaceRenderer(this);
-    this.interfaceRenderer.createInterface(this.radar, this.player);
+    this.interfaceRenderer.createInterface(this.player?.radar, this.player);
 
     // TARGETS (ENEMIES) & ASTEROIDS
     const enemy1 = {
@@ -156,23 +126,23 @@ class Game extends Phaser.Scene
     this.asteroids.push(asteroid1)
 
     console.log('asteroids', this.asteroids);
-
-    this.radar.start()
+    
+    this.player?.radar?.start()
   }
 
   // update time , delta
   update(_: number, delta: number)
   {
     this.graphics?.clear();
-    this.player?.setAngularVelocity(this.turn * this.SHIP_ROTATION_SPEED);
+    this.player?.setAngularVelocity(this.turn * shipSettings.ROTATION_SPEED);
     // Move ship in the direction it's facing
     if (this.player) {
       const angleRad = Phaser.Math.DegToRad(this.player.angle - 90);
-      const velocityX = Math.cos(angleRad) * this.SHIP_SPEED;
-      const velocityY = Math.sin(angleRad) * this.SHIP_SPEED;
+      const velocityX = Math.cos(angleRad) * shipSettings.SPEED;
+      const velocityY = Math.sin(angleRad) * shipSettings.SPEED;
       this.player.setVelocity(velocityX, velocityY);
     }
-    this.radar?.setPosition(this.player?.getWorldPoint() || { x: 0, y: 0 });
+    this.player?.radar?.setPosition(this.player?.getWorldPoint() || { x: 0, y: 0 });
 
     // move targets & asteroids
     this.moveEnemiesAndAsteroids(delta)
@@ -181,12 +151,12 @@ class Game extends Phaser.Scene
     this.radar?.update(delta, this.player?.angle || 0, this.enemies, this.graphics!);
 
     // update enemies
-    const destroyedEnemyId = this.radar?.updateEnemiesInMain();
+    const destroyedEnemyId = this.player?.radar?.updateEnemiesInMain();
     if (destroyedEnemyId !== undefined) {
       // Find and remove the target with the specified id
       this.enemies = this.enemies.filter(enemy => enemy.id !== destroyedEnemyId);
     }
-    const trackedEnemyId = this.radar?.alertTargetBeingTracked();
+    const trackedEnemyId = this.player?.radar?.alertTargetBeingTracked();
     if (trackedEnemyId !== null) {
       this.enemies.forEach(enemy => {
         if (enemy.id === trackedEnemyId) {
@@ -196,7 +166,7 @@ class Game extends Phaser.Scene
         }
       })
     }
-    const rwrAlertIds = this.radar?.alertRwr()
+    const rwrAlertIds = this.player?.radar?.alertRwr()
     if (rwrAlertIds !== null && rwrAlertIds !== undefined && rwrAlertIds.length > 0) {
       this.enemies.forEach(enemy => {
         if (rwrAlertIds?.includes(enemy.id)) {
@@ -221,8 +191,8 @@ class Game extends Phaser.Scene
     }
 
     // Update interface
-    if (this.radar && this.interfaceRenderer) {
-      this.interfaceRenderer.updateButtonColors(this.radar);
+    if (this.player?.radar && this.interfaceRenderer) {
+      this.interfaceRenderer.updateButtonColors(this.player.radar);
     }
   }
 
@@ -250,7 +220,7 @@ class Game extends Phaser.Scene
         this.player.setActive(false);
         this.player.disableBody(true, true);
         // When ship is destroyed, also stop the radar
-        this.radar?.stop()
+        this.player?.radar?.stop()
         
         // Clean up asteroids
         this.asteroids.forEach(asteroid => {
