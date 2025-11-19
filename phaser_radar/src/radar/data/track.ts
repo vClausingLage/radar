@@ -3,7 +3,7 @@ export interface Track {
     id: number
     pos: Vector2
     dist: number
-    dir: Vector2
+    dir: number
     speed: number
     age: number
     lastUpdate: number

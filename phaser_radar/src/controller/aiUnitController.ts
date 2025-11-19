@@ -3,7 +3,7 @@ import { Vector2 } from '../types';
 export class AiUnitController {
     constructor(
                 private position: Vector2 | null = null,
-                private direction: Vector2 | null = null,
+                private direction: number | null = null,
                 private sttTracked: boolean = false,
                 private radarTracked: boolean = false
     ) {}
@@ -12,7 +12,7 @@ export class AiUnitController {
         this.position = position;
     }
 
-    setDirection(direction: Vector2) {
+    setDirection(direction: number) {
         this.direction = direction;
     }
 

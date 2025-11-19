@@ -5,7 +5,7 @@ import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer"
 import { PlayerShip, Target } from "./radar/entities/ship"
 import { Asteroid } from "./radar/entities/asteroid"
 import { AiUnitController } from "./controller/aiUnitController"
-import { shipSettings, radarDefaultSettings } from "./settings"
+import { shipSettings, radarDefaultSettings, targetSettings } from "./settings"
 
 class Game extends Phaser.Scene
 {
@@ -20,7 +20,7 @@ class Game extends Phaser.Scene
   private interfaceRenderer?: InterfaceRenderer
   private turn = 0
   private aiUpdateTimer?: Phaser.Time.TimerEvent
-  private enemies: Target[] = []
+  private targets: Target[] = []
   private asteroids: Asteroid[] = []
 
   constructor()
@@ -67,12 +67,12 @@ class Game extends Phaser.Scene
       shipSettings.START_POSITION.y,
       shipSettings.SPEED,
       shipSettings.SIZE,
-      shipSettings.START_LOADOUT,
+      shipSettings.LOADOUT,
       new LightRadar(
         radarDefaultSettings,
         new LightRadarRenderer(this.missile!, this),
         'rws',
-        shipSettings.START_LOADOUT
+        shipSettings.LOADOUT
       )
     )
     // make ship position radar position
@@ -91,35 +91,29 @@ class Game extends Phaser.Scene
     this.interfaceRenderer.createInterface(this.player?.radar, this.player);
 
     // TARGETS (ENEMIES) & ASTEROIDS
-    const enemy1 = {
-      id: 1,
-      position: { x: 300, y: 300 },
-      direction: { x: 1, y: 0},
-      speed: 2,
-      size: 10,
-      isSttTracked: false,
-      isRadarTracked: false,
-      controller: new AiUnitController()
-    }
-    enemy1.controller.setPosition(enemy1.position)
-    enemy1.controller.setDirection(enemy1.direction)
-    const enemy2 = {
-      id: 2,
-      position: {x: 400, y: 400 },
-      direction: {x: -1, y: 1},
-      speed: 2,
-      size: 15,
-      isSttTracked: false,
-      isRadarTracked: false,
-      controller: new AiUnitController()
-    }
-    enemy2.controller.setPosition(enemy2.position)
-    enemy2.controller.setDirection(enemy2.direction)
-    // this.enemies.push(enemy1)
-    // this.enemies.push(enemy2)
+    const target1 = new Target(
+      this, 
+      400,
+      400,
+      .01,
+      10,
+      targetSettings.LOADOUT,
+      new LightRadar(
+        radarDefaultSettings,
+        new LightRadarRenderer(this.missile!, this),
+        'rws',
+        targetSettings.LOADOUT
+      ),
+      1,
+      new AiUnitController(),
+      270
+    )
+    target1.controller.setPosition({ x: 800, y: 800 })
+    target1.controller.setDirection(270)
+    this.targets.push(target1)
     const asteroid1 = new Asteroid(
       this, 
-      { x: 300, y: 250 }, 
+      { x: 600, y: 500 }, 
       90,
       1,
       25)
@@ -145,45 +139,45 @@ class Game extends Phaser.Scene
     this.player?.radar?.setPosition(this.player?.getWorldPoint() || { x: 0, y: 0 });
 
     // move targets & asteroids
-    this.moveEnemiesAndAsteroids(delta)
+    this.moveTargetsAndAsteroids()
 
     // radar scan
-    this.radar?.update(delta, this.player?.angle || 0, this.enemies, this.graphics!);
+    this.player?.radar?.update(delta, this.player?.angle || 0, this.targets, this.graphics!);
 
-    // update enemies
+    // update targets
     const destroyedEnemyId = this.player?.radar?.updateEnemiesInMain();
     if (destroyedEnemyId !== undefined) {
       // Find and remove the target with the specified id
-      this.enemies = this.enemies.filter(enemy => enemy.id !== destroyedEnemyId);
+      this.targets = this.targets.filter(target => target.id !== destroyedEnemyId);
     }
     const trackedEnemyId = this.player?.radar?.alertTargetBeingTracked();
     if (trackedEnemyId !== null) {
-      this.enemies.forEach(enemy => {
-        if (enemy.id === trackedEnemyId) {
-          enemy.controller.setSttTracked(true);
+      this.targets.forEach(t => {
+        if (t.id === trackedEnemyId) {
+          t.controller.setSttTracked(true);
         } else {
-          enemy.controller.setSttTracked(false);
+          t.controller.setSttTracked(false);
         }
       })
     }
     const rwrAlertIds = this.player?.radar?.alertRwr()
     if (rwrAlertIds !== null && rwrAlertIds !== undefined && rwrAlertIds.length > 0) {
-      this.enemies.forEach(enemy => {
-        if (rwrAlertIds?.includes(enemy.id)) {
-          enemy.controller.setRadarTracked(true);
+      this.targets.forEach(t => {
+        if (rwrAlertIds?.includes(t.id)) {
+          t.controller.setRadarTracked(true);
         } else {
-          enemy.controller.setRadarTracked(false);
+          t.controller.setRadarTracked(false);
         }
       })
     }
 
-    // Update enemy AI controllers once per second
+    // Update target AI controllers once per second
     if (!this.aiUpdateTimer) {
       this.aiUpdateTimer = this.time.addEvent({
       delay: 1000,
       callback: () => {
-        this.enemies.forEach(enemy => {
-        enemy.controller.update();
+        this.targets.forEach(t => {
+        t.controller.update();
         });
       },
       loop: true
@@ -196,20 +190,20 @@ class Game extends Phaser.Scene
     }
   }
 
-  private moveEnemiesAndAsteroids(delta: number) {
-    this.enemies.forEach(enemy => {
-      //! use the controller to getPosition() and setPosition()
-      enemy.position.x! += enemy.direction.x! * enemy.speed * delta / 1000;
-      enemy.position.y! += enemy.direction.y! * enemy.speed * delta / 1000;
-      if (enemy.position.x! <= 0 || enemy.position.x! >= this.world.width) {
-        enemy.direction.x! *= -1;
+  // TO DO 
+  // this method must be moved to a controller
+  // collision checks could be done in a extra physics controller
+  private moveTargetsAndAsteroids() {
+    this.targets.forEach(t => {
+      if (t.x! <= 0 || t.x! >= this.world.width) {
+        t.x! *= -1;
       }
-      if (enemy.position.y! <= 0 || enemy.position.y! >= this.world.height) {
-        enemy.direction.y! *= -1;
+      if (t.y! <= 0 || t.y! >= this.world.height) {
+        t.y! *= -1;
       }
       if (this.graphics) {
         this.graphics.fillStyle(0xff0000);
-        this.graphics.fillCircle(enemy.position.x!, enemy.position.y!, enemy.size!/10);
+        this.graphics.fillCircle(t.x!, t.y!, 10);
       }
     })
     this.asteroids.forEach(asteroid => {

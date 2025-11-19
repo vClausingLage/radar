@@ -23,4 +23,8 @@ export class Asteroid extends Phaser.Physics.Arcade.Sprite {
     direction: number;
     speed: number;
     size: number;
+
+    getSize(): number {
+        return this.size;
+    }
 }

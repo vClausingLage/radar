@@ -388,7 +388,7 @@ export class LightRadar {
             const distanceToTarget = Math.sqrt(dxTarget * dxTarget + dyTarget * dyTarget);
             
             // Define proximity detection radius (missile + target size for more realistic collision)
-            const proximityThreshold = 3 + (target.size / 2);
+            const proximityThreshold = 3 + (target.getSize() / 2);
             
             if (distanceToTarget <= proximityThreshold) {
                 console.info(`Missile hit target at position: ${target.x}, ${target.y}`);
@@ -505,7 +505,7 @@ export class LightRadar {
         const { targetsInRange, asteroidsInRange } = this.filterTargetsAndAsteroidsInScanArea(startAngle, endAngle, target)
 
         const circles = [...targetsInRange, ...asteroidsInRange].map(t => {
-            const r = t.size / 2
+            const r = t.getSize() / 2
             return new Phaser.Geom.Circle(t.x, t.y, r)
         })
 
@@ -539,8 +539,8 @@ export class LightRadar {
                     id: index,
                     pos: { x: t.x, y: t.y },
                     dist: distance,
-                    dir: t.direction,
-                    speed: t.speed,
+                    dir: t.getDirection(),
+                    speed: t.getSpeed() || 0,
                     age: 0,
                     lastUpdate: 0,
                     confidence: 0,

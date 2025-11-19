@@ -1,6 +1,7 @@
 import { Vector2 } from "../../types";
 import { Track } from "../data/track";
 import { Missile } from "../entities/missiles";
+import { Target } from "../entities/ship";
 
 export class LightRadarRenderer {
 
@@ -40,12 +41,12 @@ export class LightRadarRenderer {
         graphics.lineBetween(radarPosition.x, radarPosition.y, endX, endY);
     }
 
-    renderRwsContacts(graphics: Phaser.GameObjects.Graphics, t: any, distance: number) {
+    renderRwsContacts(graphics: Phaser.GameObjects.Graphics, t: Target, distance: number) {
         // Draw green rectangle at target position on separate graphics object
         const rectGraphics = graphics.scene?.add.graphics();
         if (rectGraphics) {
             rectGraphics.fillStyle(0x00ff00, 0.7);
-            rectGraphics.fillRect(t.position.x - 5, t.position.y - 5, 10, 10);
+            rectGraphics.fillRect(t.x - 5, t.y - 5, 10, 10);
             graphics.scene?.tweens.add({
                 targets: rectGraphics,
                 alpha: 0,
@@ -56,7 +57,7 @@ export class LightRadarRenderer {
         
         // Display distance as text with fade out
         // distance is shown as 'nautical miles' => calculated dist divided by 10
-        const distanceText = graphics.scene?.add.text(t.position.x + 10, t.position.y - 10, 
+        const distanceText = graphics.scene?.add.text(t.x + 10, t.y - 10, 
             (distance / 10).toFixed(0), 
             { fontSize: '12px', color: '#00ff00' }
         );
@@ -71,18 +72,18 @@ export class LightRadarRenderer {
         
         // Draw short line in direction of target with fade out
         const lineLength = 20;
-        const angle = Math.atan2(t.direction.y, t.direction.x);
-        const endX = t.position.x + lineLength * Math.cos(angle);
-        const endY = t.position.y + lineLength * Math.sin(angle);
+        const angle = Phaser.Math.DegToRad(t.angle);
+        const endX = t.x + lineLength * Math.cos(angle);
+        const endY = t.y + lineLength * Math.sin(angle);
         
         graphics.lineStyle(2, 0x00ff00, 1);
-        graphics.lineBetween(t.position.x, t.position.y, endX, endY);
+        graphics.lineBetween(t.x, t.y, endX, endY);
         
         // Create a separate graphics object for the line to fade it
         const lineGraphics = graphics.scene?.add.graphics();
         if (lineGraphics) {
             lineGraphics.lineStyle(2, 0x00ff00, 1);
-            lineGraphics.lineBetween(t.position.x, t.position.y, endX, endY);
+            lineGraphics.lineBetween(t.x, t.y, endX, endY);
             graphics.scene?.tweens.add({
                 targets: lineGraphics,
                 alpha: 0,
@@ -124,7 +125,7 @@ export class LightRadarRenderer {
         // Draw short line in direction of target with fade out
         if (track.dir) {
             const lineLength = 20;
-            const angle = Math.atan2(track.dir.y, track.dir.x);
+            const angle = Phaser.Math.DegToRad(track.dir);
             const endX = track.pos.x + lineLength * Math.cos(angle);
             const endY = track.pos.y + lineLength * Math.sin(angle);
             
