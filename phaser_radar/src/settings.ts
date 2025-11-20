@@ -8,6 +8,7 @@ export const shipSettings = {
     SPEED: 2,
     ROTATION_SPEED: 16,
     SIZE: 0.5,
+    DIRECTION: 20,
     START_POSITION: { 
         x: 350, 
         y: 700 

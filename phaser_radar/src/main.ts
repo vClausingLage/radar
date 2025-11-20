@@ -65,15 +65,16 @@ class Game extends Phaser.Scene
       this,
       shipSettings.START_POSITION.x,
       shipSettings.START_POSITION.y,
+      shipSettings.DIRECTION,
       shipSettings.SPEED,
       shipSettings.SIZE,
-      shipSettings.LOADOUT,
       new LightRadar(
         radarDefaultSettings,
         new LightRadarRenderer(this.missile!, this),
         'rws',
         shipSettings.LOADOUT
-      )
+      ),
+      shipSettings.LOADOUT
     )
     // make ship position radar position
     if (this.player) {
@@ -95,26 +96,24 @@ class Game extends Phaser.Scene
       this, 
       400,
       400,
-      .01,
-      10,
-      targetSettings.LOADOUT,
+      100,
+      0.5,
+      1,
       new LightRadar(
         radarDefaultSettings,
         new LightRadarRenderer(this.missile!, this),
         'rws',
         targetSettings.LOADOUT
       ),
+      targetSettings.LOADOUT,
       1,
       new AiUnitController(),
-      270
     )
-    target1.controller.setPosition({ x: 800, y: 800 })
-    target1.controller.setDirection(270)
     this.targets.push(target1)
     const asteroid1 = new Asteroid(
       this, 
       { x: 600, y: 500 }, 
-      90,
+      120,
       1,
       25)
     this.asteroids.push(asteroid1)

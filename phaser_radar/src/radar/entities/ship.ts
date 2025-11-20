@@ -7,11 +7,11 @@ abstract class Ship extends Phaser.Physics.Arcade.Sprite {
         public scene: Phaser.Scene, 
         public x: number, 
         public y: number, 
+        private direction: number,
         speed: number, 
         private size: number,
-        loadout: Loadout, 
         radar: LightRadar,
-        private direction?: number,
+        loadout: Loadout, 
     ) {
         super(scene, x, y, 'ship');
         this.loadout = loadout;
@@ -22,6 +22,7 @@ abstract class Ship extends Phaser.Physics.Arcade.Sprite {
         this.body?.setSize(size, size);
         this.setVelocity(speed);
         this.radar.setMode('rws');
+        this.angle = direction;
     }
     isRadarTracked: boolean = false;
     isSttTracked: boolean = false;
@@ -31,23 +32,49 @@ abstract class Ship extends Phaser.Physics.Arcade.Sprite {
     getSize(): number {
         return this.size;
     }
-    getSpeed(): number | null {
-        return this.body?.velocity.length() || null
+    getSpeed(): number {
+        if (!this.body || !this.body.velocity) {
+            throw new Error('Velocity of Target is undefined');
+        }
+        return this.body.velocity.length()
     }
     getDirection(): number {
-        return this.direction || 0
+        if (this.angle === undefined) {
+            throw new Error('Direction of Target is undefined');
+        }
+        return this.angle
     }
 }
 
 export class PlayerShip extends Ship {
-    constructor(scene: Phaser.Scene, x: number, y: number, speed: number, size: number, loadout: Loadout, radar: LightRadar, direction?: number) {
-        super(scene, x, y, speed, size, loadout, radar, direction);
+    constructor(
+        scene: Phaser.Scene, 
+        x: number, 
+        y: number, 
+        direction: number, 
+        speed: number, 
+        size: number, 
+        radar: LightRadar, 
+        loadout: Loadout
+    ) {
+        super(scene, x, y, direction, speed, size, radar, loadout);
     }
 }
 
 export class Target extends Ship {
-    constructor(scene: Phaser.Scene, x: number, y: number, speed: number, size: number, loadout: Loadout, radar: LightRadar, id: number, controller: AiUnitController, direction?: number) {
-        super(scene, x, y, speed, size, loadout, radar, direction);
+    constructor(
+        scene: Phaser.Scene, 
+        x: number, 
+        y: number, 
+        direction: number,
+        speed: number, 
+        size: number, 
+        radar: LightRadar, 
+        loadout: Loadout, 
+        id: number, 
+        controller: AiUnitController, 
+    ) {
+        super(scene, x, y, direction, speed, size, radar, loadout);
         this.id = id;
         this.controller = controller;
         this.setVisible(false);

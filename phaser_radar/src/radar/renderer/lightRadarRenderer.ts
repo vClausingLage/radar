@@ -72,13 +72,11 @@ export class LightRadarRenderer {
         
         // Draw short line in direction of target with fade out
         const lineLength = 20;
-        const angle = Phaser.Math.DegToRad(t.angle);
+        const angle = t.getDirection();
         const endX = t.x + lineLength * Math.cos(angle);
         const endY = t.y + lineLength * Math.sin(angle);
-        
-        graphics.lineStyle(2, 0x00ff00, 1);
-        graphics.lineBetween(t.x, t.y, endX, endY);
-        
+
+        graphics.scene?.add.line(t.x, t.y, endX, endY, 0x00ff00, 1);
         // Create a separate graphics object for the line to fade it
         const lineGraphics = graphics.scene?.add.graphics();
         if (lineGraphics) {
