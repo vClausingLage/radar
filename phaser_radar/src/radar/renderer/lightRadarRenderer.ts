@@ -123,7 +123,7 @@ export class LightRadarRenderer {
         // Draw short line in direction of target with fade out
         if (track.dir) {
             const lineLength = 20;
-            const angle = track.dir
+            const angle = Phaser.Math.DegToRad(track.dir);
             const endX = track.pos.x + lineLength * Math.cos(angle);
             const endY = track.pos.y + lineLength * Math.sin(angle);
             

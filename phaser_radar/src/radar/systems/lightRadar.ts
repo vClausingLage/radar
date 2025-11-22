@@ -134,6 +134,7 @@ export class LightRadar {
                 const middleAngle: number = angle
                 const startAngle: number = middleAngle - this.radarOptions.azimuth
                 const endAngle: number = middleAngle + this.radarOptions.azimuth
+
                 this.renderer.renderScanAzimuth(graphics, this.radarOptions.position, this.radarOptions.range, startAngle, endAngle)
                 if (this.tracks.length <= 0) {
                     console.error('No tracks found')
@@ -146,13 +147,32 @@ export class LightRadar {
                     this.sttTrack = this.tracks[0]
                 }
 
+                // Update sttTrack with current target information
+                const trackedTarget = targets.find(t => t.id === this.sttTrack!.id);
+                if (trackedTarget) {
+                    // Update position
+                    this.sttTrack.pos = { x: trackedTarget.x, y: trackedTarget.y };
+                    // Update direction
+                    this.sttTrack.dir = trackedTarget.getDirection();
+                    // Update speed
+                    this.sttTrack.speed = trackedTarget.getSpeed();
+                    // Recalculate distance
+                    const dx = this.sttTrack.pos.x - this.radarOptions.position.x;
+                    const dy = this.sttTrack.pos.y - this.radarOptions.position.y;
+                    this.sttTrack.dist = Math.sqrt(dx * dx + dy * dy);
+                } else {
+                    // Target not found, switch back to RWS
+                    console.error('Tracked target not found');
+                    this.sttTrack = null;
+                    this.mode = 'rws';
+                    return;
+                }
+
                 const dx = this.sttTrack.pos.x - this.radarOptions.position.x
                 const dy = this.sttTrack.pos.y - this.radarOptions.position.y
                 const distanceToTrack = Math.sqrt(dx * dx + dy * dy)
-                let angleToTrack = Phaser.Math.RadToDeg(Math.atan2(dy, dx))
 
-                // Normalize angles to be within -180 to 180 range
-                angleToTrack = normalizeAngle(angleToTrack);
+                let angleToTrack = normalizeAngle(Phaser.Math.RadToDeg(Math.atan2(dy, dx)))
                 const normalizedStartAngle = normalizeAngle(startAngle);
                 const normalizedEndAngle = normalizeAngle(endAngle);
 
@@ -175,6 +195,7 @@ export class LightRadar {
 
                 this.lastScanTime += delta
                 if (this.lastScanTime >= 1000) {
+                    console.log('STT Track:', this.sttTrack.pos)
                     this.renderer.renderStt(this.sttTrack, graphics)
                     this.lastScanTime = 0
                 }
@@ -467,7 +488,7 @@ export class LightRadar {
             const dx = asteroid.position.x - this.radarOptions.position.x
             const dy = asteroid.position.y - this.radarOptions.position.y
             const distance = Math.sqrt(dx * dx + dy * dy)
-            let angleToAsteroid = Phaser.Math.RadToDeg(Math.atan2(dy, dx))
+            let angleToAsteroid = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
 
             // Normalize angles to be within -180 to 180 range
             const normalizeAngle = (angle: number) => {
@@ -509,7 +530,7 @@ export class LightRadar {
             return new Phaser.Geom.Circle(t.x, t.y, r)
         })
 
-        for (const [index, t] of targetsInRange.entries()) {
+        for (const [_, t] of targetsInRange.entries()) {
             // Create a line from radar position to target
             const line = new Phaser.Geom.Line(
                 this.radarOptions.position.x,
@@ -536,11 +557,11 @@ export class LightRadar {
             // Only draw and process target if there's no collision
             if (!hasCollision) {
                 this.tracks = [...this.tracks, {
-                    id: index,
+                    id: t.id, // Use the actual target's ID, not the loop index
                     pos: { x: t.x, y: t.y },
                     dist: distance,
                     dir: t.getDirection(),
-                    speed: t.getSpeed() || 0,
+                    speed: t.getSpeed(),
                     age: 0,
                     lastUpdate: 0,
                     confidence: 0,
@@ -590,8 +611,16 @@ export class LightRadar {
 
     trackInDirectionOfTarget(m: Missile): { targetDirX: number, targetDirY: number } | null {
         if (this.mode === 'stt' && this.sttTrack) {
+            console.log("Calculating lead for missile towards STT target")
+            console.log(this.sttTrack.pos)
+            console.log(this.sttTrack.dir)
+            const angleRad = Phaser.Math.DegToRad(this.sttTrack.dir);
+            const targetVelocity = {
+                x: Math.cos(angleRad) * this.sttTrack.speed,
+                y: Math.sin(angleRad) * this.sttTrack.speed
+            };
             const targetPos = this.sttTrack?.pos!;
-            const targetVelocity = this.sttTrack?.dir!
+            // const targetVelocity = this.sttTrack?.dir!
             const relPos = {
                 x: targetPos.x - m.position.x,
                 y: targetPos.y - m.position.y,
