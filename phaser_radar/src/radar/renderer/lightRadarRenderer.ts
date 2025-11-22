@@ -32,12 +32,12 @@ export class LightRadarRenderer {
 
     renderScanAzimuth(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number) {
         graphics.lineStyle(1, 0x00ff00, 0.5);
-        const startX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(startAngle - 90));
-        const startY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(startAngle - 90));
+        const startX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(startAngle));
+        const startY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(startAngle));
         graphics.lineBetween(radarPosition.x, radarPosition.y, startX, startY);
 
-        const endX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(endAngle - 90));
-        const endY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(endAngle - 90));
+        const endX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(endAngle));
+        const endY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(endAngle));
         graphics.lineBetween(radarPosition.x, radarPosition.y, endX, endY);
     }
 
@@ -147,7 +147,7 @@ export class LightRadarRenderer {
             if (graphics.scene) {
                 const missileSprite = graphics.scene.add.sprite(missile.position.x, missile.position.y, this.missileImage.texture.key);
                 missileSprite.setScale(0.5); // Adjust scale as needed
-                missileSprite.setAngle(Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x)) + 90);
+                missileSprite.setAngle(Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x)));
                 graphics.scene.tweens.add({
                     targets: missileSprite,
                     alpha: 0,

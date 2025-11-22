@@ -22,10 +22,10 @@ export class Math  extends Scene
         
         var line = new Phaser.Geom.Line(center.x, center.y, 300, 400);
         
-        line = Phaser.Geom.Line.SetToAngle(line, center.x, center.y, Phaser.Math.DegToRad(0 -90), 100);
+        line = Phaser.Geom.Line.SetToAngle(line, center.x, center.y, Phaser.Math.DegToRad(0), 100);
         
         var line2 = new Phaser.Geom.Line(center.x, center.y, 300, 400);
-        Phaser.Geom.Line.RotateAroundPoint(line2, center, Phaser.Math.DegToRad(-90));
+        Phaser.Geom.Line.RotateAroundPoint(line2, center, Phaser.Math.DegToRad(0));
         
         const graphics = this.add.graphics();
         graphics.lineStyle(2, 0xff0000, 1);

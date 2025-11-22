@@ -149,7 +149,7 @@ export class LightRadar {
                 const dx = this.sttTrack.pos.x - this.radarOptions.position.x
                 const dy = this.sttTrack.pos.y - this.radarOptions.position.y
                 const distanceToTrack = Math.sqrt(dx * dx + dy * dy)
-                let angleToTrack = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
+                let angleToTrack = Phaser.Math.RadToDeg(Math.atan2(dy, dx))
 
                 // Normalize angles to be within -180 to 180 range
                 angleToTrack = normalizeAngle(angleToTrack);
@@ -443,7 +443,7 @@ export class LightRadar {
             const dx = target.x - this.radarOptions.position.x
             const dy = target.y - this.radarOptions.position.y
             const distance = Math.sqrt(dx * dx + dy * dy)
-            let angleToTarget = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
+            let angleToTarget = Phaser.Math.RadToDeg(Math.atan2(dy, dx))
 
             // Normalize angles to be within -180 to 180 range
             angleToTarget = normalizeAngle(angleToTarget);
@@ -467,7 +467,7 @@ export class LightRadar {
             const dx = asteroid.position.x - this.radarOptions.position.x
             const dy = asteroid.position.y - this.radarOptions.position.y
             const distance = Math.sqrt(dx * dx + dy * dy)
-            let angleToAsteroid = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
+            let angleToAsteroid = Phaser.Math.RadToDeg(Math.atan2(dy, dx))
 
             // Normalize angles to be within -180 to 180 range
             const normalizeAngle = (angle: number) => {
