@@ -81,7 +81,7 @@ export class InterfaceRenderer {
         .setOrigin(0)
         .setScrollFactor(0)
         .on('pointerdown', () => {
-            radar.shoot((ship.angle || 0) - 90);
+            radar.shoot((ship.angle || 0));
         });
 
         // RWR Display

@@ -57,7 +57,7 @@ export class LightRadarRenderer {
         
         // Display distance as text with fade out
         // distance is shown as 'nautical miles' => calculated dist divided by 10
-        const distanceText = graphics.scene?.add.text(t.x + 10, t.y - 10, 
+        const distanceText = graphics.scene?.add.text(t.x + 18, t.y - 15, 
             (distance / 10).toFixed(0), 
             { fontSize: '12px', color: '#00ff00' }
         );
@@ -72,7 +72,7 @@ export class LightRadarRenderer {
         
         // Draw short line in direction of target with fade out
         const lineLength = 20;
-        const angle = t.getDirection();
+        const angle = Phaser.Math.DegToRad(t.getDirection());
         const endX = t.x + lineLength * Math.cos(angle);
         const endY = t.y + lineLength * Math.sin(angle);
 
@@ -106,8 +106,8 @@ export class LightRadarRenderer {
         
         // Display distance as text with fade out
         const distanceText = graphics.scene?.add.text(
-            track.pos.x + 10, 
-            track.pos.y - 10, 
+            track.pos.x + 18, 
+            track.pos.y - 15, 
             (track.dist / 10).toFixed(0), 
             { fontSize: '12px', color: '#ff0000' }
         );
@@ -123,7 +123,7 @@ export class LightRadarRenderer {
         // Draw short line in direction of target with fade out
         if (track.dir) {
             const lineLength = 20;
-            const angle = Phaser.Math.DegToRad(track.dir);
+            const angle = track.dir
             const endX = track.pos.x + lineLength * Math.cos(angle);
             const endY = track.pos.y + lineLength * Math.sin(angle);
             

@@ -237,7 +237,6 @@ std::vector<Vector3> generateDirectionalVectors() {
     for (int yawDegrees = 0; yawDegrees < 360; ++yawDegrees) {
         // for (int pitchDegrees = 0; pitchDegrees < 181; ++pitchDegrees) { //181 to include straight up and down.
             double yawRadians = yawDegrees * M_PI / 180.0;
-            // double pitchRadians = (pitchDegrees - 90) * M_PI / 180.0; // 90 to 90 pitch
 
             Vector3 vector;
             vector.x = cos(yawRadians);// * cos(pitchRadians);

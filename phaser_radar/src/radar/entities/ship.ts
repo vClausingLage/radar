@@ -8,26 +8,28 @@ abstract class Ship extends Phaser.Physics.Arcade.Sprite {
         public x: number, 
         public y: number, 
         private direction: number,
-        speed: number, 
+        private speed: number, 
         private size: number,
-        radar: LightRadar,
-        loadout: Loadout, 
+        public radar: LightRadar,
+        private loadout: Loadout, 
+        private isRadarTracked: boolean = false,
+        private isSttTracked: boolean = false,
     ) {
         super(scene, x, y, 'ship');
+        
         this.loadout = loadout;
         this.radar = radar;
         this.setScale(size);
         this.scene.add.existing(this);
         this.scene.physics.add.existing(this);
         this.body?.setSize(size, size);
-        this.setVelocity(speed);
+        this.body?.velocity.set(
+            Math.cos(Phaser.Math.DegToRad(direction)) * speed, 
+            Math.sin(Phaser.Math.DegToRad(direction)) * speed
+        );
         this.radar.setMode('rws');
-        this.angle = direction;
+        this.angle = this.direction;
     }
-    isRadarTracked: boolean = false;
-    isSttTracked: boolean = false;
-    loadout: Loadout;
-    radar: LightRadar;
 
     getSize(): number {
         return this.size;
@@ -71,14 +73,10 @@ export class Target extends Ship {
         size: number, 
         radar: LightRadar, 
         loadout: Loadout, 
-        id: number, 
-        controller: AiUnitController, 
+        public id: number, 
+        public controller: AiUnitController, 
     ) {
         super(scene, x, y, direction, speed, size, radar, loadout);
-        this.id = id;
-        this.controller = controller;
         this.setVisible(false);
     }
-    id: number;
-    controller: AiUnitController;
 }

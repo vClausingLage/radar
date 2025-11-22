@@ -96,8 +96,8 @@ class Game extends Phaser.Scene
       this, 
       400,
       400,
-      100,
-      0.5,
+      0,
+      5,
       1,
       new LightRadar(
         radarDefaultSettings,
@@ -130,7 +130,7 @@ class Game extends Phaser.Scene
     this.player?.setAngularVelocity(this.turn * shipSettings.ROTATION_SPEED);
     // Move ship in the direction it's facing
     if (this.player) {
-      const angleRad = Phaser.Math.DegToRad(this.player.angle - 90);
+      const angleRad = Phaser.Math.DegToRad(this.player.angle);
       const velocityX = Math.cos(angleRad) * shipSettings.SPEED;
       const velocityY = Math.sin(angleRad) * shipSettings.SPEED;
       this.player.setVelocity(velocityX, velocityY);
@@ -138,7 +138,7 @@ class Game extends Phaser.Scene
     this.player?.radar?.setPosition(this.player?.getWorldPoint() || { x: 0, y: 0 });
 
     // move targets & asteroids
-    this.moveTargetsAndAsteroids()
+    this.checkCollisions()
 
     // radar scan
     this.player?.radar?.update(delta, this.player?.angle || 0, this.targets, this.graphics!);
@@ -192,22 +192,29 @@ class Game extends Phaser.Scene
   // TO DO 
   // this method must be moved to a controller
   // collision checks could be done in a extra physics controller
-  private moveTargetsAndAsteroids() {
+  private checkCollisions() {
     this.targets.forEach(t => {
-      if (t.x! <= 0 || t.x! >= this.world.width) {
-        t.x! *= -1;
-      }
-      if (t.y! <= 0 || t.y! >= this.world.height) {
-        t.y! *= -1;
-      }
-      if (this.graphics) {
-        this.graphics.fillStyle(0xff0000);
-        this.graphics.fillCircle(t.x!, t.y!, 10);
+      if (this.player && Phaser.Geom.Intersects.RectangleToRectangle(this.player.getBounds(), t.getBounds())) {
+        // Destroy the ship
+        this.player.setVisible(false);
+        this.player.setActive(false);
+        this.player.disableBody(true, true);
+        // When ship is destroyed, also stop the radar
+        this.player?.radar?.stop()
+        // Clean up targets
+        this.targets.forEach(target => {
+          target.destroy();
+        });
+        // Display "SHIP DESTROYED" message
+        this.add.text(300, 0, 'SHIP DESTROYED', {
+          font: '32px Courier',
+          color: '#ff0000'
+        }).setOrigin(0, 0);
       }
     })
-    this.asteroids.forEach(asteroid => {
+    this.asteroids.forEach(a => {
       // Check for collision between the ship and this asteroid
-      if (this.player && Phaser.Geom.Intersects.RectangleToRectangle(this.player.getBounds(), asteroid.getBounds())) {
+      if (this.player && Phaser.Geom.Intersects.RectangleToRectangle(this.player.getBounds(), a.getBounds())) {
         // Destroy the ship
         this.player.setVisible(false);
         this.player.setActive(false);
