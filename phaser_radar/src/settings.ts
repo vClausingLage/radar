@@ -1,7 +1,7 @@
 import { Vector2 } from "./types"
 
 // GAME
-export const IMAGE_SCALE = 0.5
+export const IMAGE_SCALE = 1
 
 // PLAYER SHIP
 export const shipSettings = {

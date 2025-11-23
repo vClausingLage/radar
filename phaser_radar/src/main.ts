@@ -5,7 +5,7 @@ import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer"
 import { PlayerShip, Target } from "./radar/entities/ship"
 import { Asteroid } from "./radar/entities/asteroid"
 import { AiUnitController } from "./controller/aiUnitController"
-import { shipSettings, radarDefaultSettings, targetSettings } from "./settings"
+import { shipSettings, radarDefaultSettings, targetSettings, IMAGE_SCALE } from "./settings"
 
 class Game extends Phaser.Scene
 {
@@ -79,7 +79,8 @@ class Game extends Phaser.Scene
     // make ship position radar position
     if (this.player) {
       const shipPosition = this.player.getWorldPoint()
-      this.player?.radar?.setPosition({ x: shipPosition.x, y: shipPosition.y - 50 })
+      this.player?.radar?.setPosition({ x: shipPosition.x, y: shipPosition.y})
+      this.player.setScale(IMAGE_SCALE);
     }
 
     // CAMERA
@@ -94,10 +95,10 @@ class Game extends Phaser.Scene
     // TARGETS (ENEMIES) & ASTEROIDS
     const target1 = new Target(
       this, 
+      350,
       400,
-      400,
-      0,
-      5,
+      90,
+      2,
       1,
       new LightRadar(
         radarDefaultSettings,
@@ -112,7 +113,10 @@ class Game extends Phaser.Scene
     this.targets.push(target1)
     const asteroid1 = new Asteroid(
       this, 
-      { x: 600, y: 500 }, 
+      { 
+        x: 350,
+        y: 450 
+      }, 
       120,
       1,
       25)

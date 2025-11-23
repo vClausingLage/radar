@@ -19,7 +19,7 @@ abstract class Ship extends Phaser.Physics.Arcade.Sprite {
         
         this.loadout = loadout;
         this.radar = radar;
-        this.setScale(size);
+        // this.setScale(size);
         this.scene.add.existing(this);
         this.scene.physics.add.existing(this);
         this.body?.setSize(size, size);

@@ -1,3 +1,4 @@
+import { IMAGE_SCALE } from "../../settings";
 import { Vector2 } from "../../types";
 import { Track } from "../data/track";
 import { Missile } from "../entities/missiles";
@@ -146,7 +147,7 @@ export class LightRadarRenderer {
         missiles.forEach(missile => {
             if (graphics.scene) {
                 const missileSprite = graphics.scene.add.sprite(missile.position.x, missile.position.y, this.missileImage.texture.key);
-                missileSprite.setScale(0.5); // Adjust scale as needed
+                missileSprite.setScale(IMAGE_SCALE);
                 missileSprite.setAngle(Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x)));
                 graphics.scene.tweens.add({
                     targets: missileSprite,

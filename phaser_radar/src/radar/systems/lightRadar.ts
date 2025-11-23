@@ -525,39 +525,63 @@ export class LightRadar {
 
         const { targetsInRange, asteroidsInRange } = this.filterTargetsAndAsteroidsInScanArea(startAngle, endAngle, target)
 
-        const circles = [...targetsInRange, ...asteroidsInRange].map(t => {
-            const r = t.getSize() / 2
-            return new Phaser.Geom.Circle(t.x, t.y, r)
-        })
+        // Create circles using actual display dimensions
+        const targetCircles = targetsInRange.map(t => {
+            // Use displayWidth/Height for actual rendered size
+            const radius = (t.displayWidth || t.width) / 2;
+            return { circle: new Phaser.Geom.Circle(t.x, t.y, radius), id: t.id };
+        });
 
-        for (const [_, t] of targetsInRange.entries()) {
+        const asteroidCircles = asteroidsInRange.map(a => {
+            // Use displayWidth/Height for actual rendered size
+            const radius = (a.displayWidth || a.width) / 2;
+            return { circle: new Phaser.Geom.Circle(a.position.x, a.position.y, radius), id: null };
+        });
+
+        const allCircles = [...targetCircles, ...asteroidCircles];
+
+        for (const t of targetsInRange) {
             // Create a line from radar position to target
             const line = new Phaser.Geom.Line(
                 this.radarOptions.position.x,
                 this.radarOptions.position.y,
                 t.x,
                 t.y
-            )
+            );
 
-            // Check for collisions with all other circles except the current target
-            const otherCircles = circles.filter(circle => 
-                circle.x !== t.x || circle.y !== t.y
-            )
+            const targetDistance = Phaser.Geom.Line.Length(line);
 
-            // Check if line intersects with any other circle
-            const hasCollision = otherCircles.some(circle => 
-                Phaser.Geom.Intersects.LineToCircle(line, circle)
-            )
+            // Check for occlusion by other objects
+            let hasCollision = false;
+
+            for (const obj of allCircles) {
+                // Skip checking the target against itself
+                if (obj.id === t.id) continue;
+
+                // Calculate distance from radar to occluding object
+                const dx = obj.circle.x - this.radarOptions.position.x;
+                const dy = obj.circle.y - this.radarOptions.position.y;
+                const occluderDistance = Math.sqrt(dx * dx + dy * dy);
+
+                // Only check objects closer to radar than the target
+                if (occluderDistance < targetDistance) {
+                    if (Phaser.Geom.Intersects.LineToCircle(line, obj.circle)) {
+                        hasCollision = true;
+                        console.log(`Target ${t.id} occluded by object at (${obj.circle.x}, ${obj.circle.y})`);
+                        break;
+                    }
+                }
+            }
 
             // Calculate distance
-            const dx = t.x - this.radarOptions.position.x
-            const dy = t.y - this.radarOptions.position.y
-            const distance = Math.sqrt(dx * dx + dy * dy)
+            const dx = t.x - this.radarOptions.position.x;
+            const dy = t.y - this.radarOptions.position.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
 
             // Only draw and process target if there's no collision
             if (!hasCollision) {
                 this.tracks = [...this.tracks, {
-                    id: t.id, // Use the actual target's ID, not the loop index
+                    id: t.id,
                     pos: { x: t.x, y: t.y },
                     dist: distance,
                     dir: t.getDirection(),
