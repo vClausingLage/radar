@@ -21,7 +21,6 @@ export class LightRadar {
         private tracks: Track[] = [],
         private sttTrack: Track | null = null,
         private destroyedTarget: Target | null = null,
-        private asteroids: Asteroid[] = [],
     ) {}
 
     getPosition() {
@@ -69,13 +68,6 @@ export class LightRadar {
         this.tracks = tracks
     }
 
-    getAsteroids() {
-        return this.asteroids
-    }
-    addAsteroid(a: Asteroid) {
-        this.asteroids = [...this.asteroids, a]
-    }
-
     getLoadout() {
         return this.loadout
     }
@@ -106,7 +98,7 @@ export class LightRadar {
         this.radarOptions.isScanning = false
     }
 
-    update(delta: number, angle: number, targets: Target[], graphics: Phaser.GameObjects.Graphics): void {
+    update(delta: number, angle: number, targets: Target[], asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
         const activeMissile = Object.keys(this.loadout).find(key => this.loadout[key as keyof Loadout]?.active);
         if (!this.radarOptions.isScanning) {
             // do nothing
@@ -125,7 +117,7 @@ export class LightRadar {
                     this.renderer.renderScanAzimuth(graphics, this.radarOptions.position, this.radarOptions.range, startAngle, endAngle)
 
                     if (this.lastScanTime >= scanDuration) {
-                        this.radarScan(startAngle, endAngle, targets, graphics)
+                        this.radarScan(startAngle, endAngle, targets, asteroids, graphics)
                     }
                 }
             }
@@ -202,7 +194,7 @@ export class LightRadar {
             }
         }
         // update missiles
-        this.updateMissiles(delta, targets)
+        this.updateMissiles(delta, targets, asteroids)
 
         this.renderer.renderMissiles(this.activeMissiles, graphics)
 
@@ -271,7 +263,6 @@ export class LightRadar {
                 return; // Don't fire if no missiles left
             }
         }
-        console.log('active loadout:', activeWeaponType)
 
         switch (activeWeaponType) {
             case 'AIM-177':
@@ -320,12 +311,12 @@ export class LightRadar {
         }
     }
 
-    updateMissiles(delta: number, targets: Target[]): void {
+    updateMissiles(delta: number, targets: Target[], asteroids: Asteroid[]): void {
         // Filter out missiles that have gone beyond their burn time
         this.missileUpdateDelta += delta
         if (this.missileUpdateDelta >= 1000) {
             for (const m of this.activeMissiles) {
-                console.log(`Missile ${m.type} at position (${m.position.x}, ${m.position.y}) with burn time ${m.burnTime} and age ${m.age}`);
+                console.info(`Missile ${m.type} at position (${m.position.x}, ${m.position.y}) with burn time ${m.burnTime} and age ${m.age}`);
             }
 
             this.activeMissiles = this.activeMissiles.filter(missile => {
@@ -374,21 +365,21 @@ export class LightRadar {
             m.position.y += m.direction.y * m.speed * delta / 1000;
 
             // Check for missile collisions with asteroids
-            this.checkCollisionWithAsteroid(m);
+            this.checkCollisionWithAsteroid(m, asteroids);
 
             // Check for missile collisions with targets
             this.checkCollisionWithTarget(m, targets);
         }
     }
 
-    checkCollisionWithAsteroid(m: Missile) {
-        for (const asteroid of this.asteroids) {
+    checkCollisionWithAsteroid(m: Missile, asteroids: Asteroid[]) {
+        for (const asteroid of asteroids) {
             const dxAsteroid = m.position.x - asteroid.position.x;
             const dyAsteroid = m.position.y - asteroid.position.y;
             const distanceToAsteroid = Math.sqrt(dxAsteroid * dxAsteroid + dyAsteroid * dyAsteroid);
             
             // Define proximity threshold based on asteroid size
-            const asteroidProximityThreshold = 3 + (asteroid.size / 2);
+            const asteroidProximityThreshold = 3 + (asteroid?.body?.width! / 2);
             
             if (distanceToAsteroid <= asteroidProximityThreshold) {
                 console.info(`Missile hit asteroid at position: ${asteroid.position.x}, ${asteroid.position.y}`);
@@ -409,7 +400,7 @@ export class LightRadar {
             const distanceToTarget = Math.sqrt(dxTarget * dxTarget + dyTarget * dyTarget);
             
             // Define proximity detection radius (missile + target size for more realistic collision)
-            const proximityThreshold = 3 + (target.getSize() / 2);
+            const proximityThreshold = 3 + (target.body?.width! / 2);
             
             if (distanceToTarget <= proximityThreshold) {
                 console.info(`Missile hit target at position: ${target.x}, ${target.y}`);
@@ -459,7 +450,7 @@ export class LightRadar {
         }
     }
 
-    filterTargetsAndAsteroidsInScanArea(startAngle: number, endAngle: number, targets: Target[]): { targetsInRange: Target[], asteroidsInRange: Asteroid[] } {
+    filterTargetsAndAsteroidsInScanArea(startAngle: number, endAngle: number, targets: Target[], asteroids: Asteroid[]): { targetsInRange: Target[], asteroidsInRange: Asteroid[] } {
         const targetsInRange = targets.filter(target => {
             const dx = target.x - this.radarOptions.position.x
             const dy = target.y - this.radarOptions.position.y
@@ -484,11 +475,11 @@ export class LightRadar {
 
             return distance <= this.radarOptions.range && isInAngle
         })
-        const asteroidsInRange = this.asteroids.filter(asteroid => {
-            const dx = asteroid.position.x - this.radarOptions.position.x
-            const dy = asteroid.position.y - this.radarOptions.position.y
+        const asteroidsInRange = asteroids.filter(a => {
+            const dx = a.position.x - this.radarOptions.position.x
+            const dy = a.position.y - this.radarOptions.position.y
             const distance = Math.sqrt(dx * dx + dy * dy)
-            let angleToAsteroid = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90
+            let angleToAsteroid = Phaser.Math.RadToDeg(Math.atan2(dy, dx))
 
             // Normalize angles to be within -180 to 180 range
             const normalizeAngle = (angle: number) => {
@@ -518,60 +509,96 @@ export class LightRadar {
         return { targetsInRange, asteroidsInRange }
     }
 
-    radarScan(startAngle: number, endAngle: number, target: Target[], graphics: Phaser.GameObjects.Graphics): void {
+    radarScan(startAngle: number, endAngle: number, targets: Target[], asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
         // clear tracks
         this.tracks = []
         this.sttTrack = null
 
-        const { targetsInRange, asteroidsInRange } = this.filterTargetsAndAsteroidsInScanArea(startAngle, endAngle, target)
+        const { targetsInRange, asteroidsInRange } = this.filterTargetsAndAsteroidsInScanArea(startAngle, endAngle, targets, asteroids)
+
+        console.log('Asteroids in scan area:', asteroidsInRange)
 
         // Create circles using actual display dimensions
         const targetCircles = targetsInRange.map(t => {
-            // Use displayWidth/Height for actual rendered size
-            const radius = (t.displayWidth || t.width) / 2;
-            return { circle: new Phaser.Geom.Circle(t.x, t.y, radius), id: t.id };
+            return t.getCircle();
         });
 
         const asteroidCircles = asteroidsInRange.map(a => {
-            // Use displayWidth/Height for actual rendered size
-            const radius = (a.displayWidth || a.width) / 2;
-            return { circle: new Phaser.Geom.Circle(a.position.x, a.position.y, radius), id: null };
+            return a.getCircle();
         });
 
         const allCircles = [...targetCircles, ...asteroidCircles];
 
+        const radarPosition = {
+            x: this.radarOptions.position.x,
+            y: this.radarOptions.position.y
+        }
+        
         for (const t of targetsInRange) {
-            // Create a line from radar position to target
-            const line = new Phaser.Geom.Line(
-                this.radarOptions.position.x,
-                this.radarOptions.position.y,
-                t.x,
-                t.y
-            );
-
-            const targetDistance = Phaser.Geom.Line.Length(line);
-
-            // Check for occlusion by other objects
             let hasCollision = false;
+            // Create lines to r, l, t, b points of target circle
+            const c = t.getCircle();
+            
+            // const cP = {
+            //     rp: c.right,
+            //     lp: c.left,
+            //     tp: c.top,
+            //     bp: c.bottom
+            // }
+            // for (const pointKey of Object.keys(cP) as (keyof typeof cP)[]) {
+            //     const l = new Phaser.Geom.Line(
+            //         radarPosition.x,
+            //         radarPosition.y,
+            //         cP[pointKey],
+            //         cP[pointKey]
+            //     )
+            // }
 
-            for (const obj of allCircles) {
-                // Skip checking the target against itself
-                if (obj.id === t.id) continue;
+            // Check if any of the four cardinal points have an unobstructed line to radar
+            const cardinalPoints = [
+                { x: c.right, y: c.y },    // right
+                { x: c.left, y: c.y },     // left
+                { x: c.x, y: c.top },      // top
+                { x: c.x, y: c.bottom }    // bottom
+            ];
 
-                // Calculate distance from radar to occluding object
-                const dx = obj.circle.x - this.radarOptions.position.x;
-                const dy = obj.circle.y - this.radarOptions.position.y;
-                const occluderDistance = Math.sqrt(dx * dx + dy * dy);
+            let unobstructedLines = 0;
 
-                // Only check objects closer to radar than the target
-                if (occluderDistance < targetDistance) {
-                    if (Phaser.Geom.Intersects.LineToCircle(line, obj.circle)) {
-                        hasCollision = true;
-                        console.log(`Target ${t.id} occluded by object at (${obj.circle.x}, ${obj.circle.y})`);
+            for (const point of cardinalPoints) {
+                const line = new Phaser.Geom.Line(
+                    radarPosition.x,
+                    radarPosition.y,
+                    point.x,
+                    point.y
+                );
+                
+                let lineHasObstruction = false;
+                
+                // Check against all other circles (except the current target's circle)
+                for (const otherCircle of allCircles) {
+                    if (otherCircle === c) continue; // Skip self
+
+                    // Skip circles that are very close to the radar position (likely the scanning ship itself)
+                    const distToRadar = Math.sqrt(
+                        (otherCircle.x - radarPosition.x) ** 2 + 
+                        (otherCircle.y - radarPosition.y) ** 2
+                    );
+                    if (distToRadar < 150) continue; // Skip if within 50 pixels of radar (adjust threshold as needed)
+                    
+                    
+                    if (Phaser.Geom.Intersects.LineToCircle(line, otherCircle)) {
+                        lineHasObstruction = true;
                         break;
                     }
                 }
+                
+                if (!lineHasObstruction) {
+                    unobstructedLines++;
+                }
             }
+
+            // If all four lines are obstructed, set hasCollision to true
+            hasCollision = unobstructedLines === 0;
 
             // Calculate distance
             const dx = t.x - this.radarOptions.position.x;
@@ -600,6 +627,9 @@ export class LightRadar {
         
         console.log('Targets in range:', this.tracks)
         
+        // THIS RENDERER SHOULD USE 
+        // TERRAIN RADAR LIKE RENDERING FOR ASTEROIDS
+        // NOT IMPLEMENTED
         this.renderer.renderAsteroids(asteroidsInRange, graphics)
         
         this.lastScanTime = 0

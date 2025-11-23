@@ -1,6 +1,6 @@
-import { IMAGE_SCALE } from "../../settings";
 import { Vector2 } from "../../types";
 import { Track } from "../data/track";
+import { Asteroid } from "../entities/asteroid";
 import { Missile } from "../entities/missiles";
 import { Target } from "../entities/ship";
 
@@ -147,7 +147,7 @@ export class LightRadarRenderer {
         missiles.forEach(missile => {
             if (graphics.scene) {
                 const missileSprite = graphics.scene.add.sprite(missile.position.x, missile.position.y, this.missileImage.texture.key);
-                missileSprite.setScale(IMAGE_SCALE);
+                // missileSprite.setScale(IMAGE_SCALE);
                 missileSprite.setAngle(Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x)));
                 graphics.scene.tweens.add({
                     targets: missileSprite,
@@ -159,7 +159,7 @@ export class LightRadarRenderer {
         });
     }
 
-    renderAsteroids(asteroids: { position: Vector2, size: number }[], graphics: Phaser.GameObjects.Graphics) {
+    renderAsteroids(asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics) {
         
     }
 }

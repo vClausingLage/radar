@@ -5,7 +5,7 @@ import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer"
 import { PlayerShip, Target } from "./radar/entities/ship"
 import { Asteroid } from "./radar/entities/asteroid"
 import { AiUnitController } from "./controller/aiUnitController"
-import { shipSettings, radarDefaultSettings, targetSettings, IMAGE_SCALE } from "./settings"
+import { shipSettings, radarDefaultSettings, targetSettings } from "./settings"
 
 class Game extends Phaser.Scene
 {
@@ -13,7 +13,7 @@ class Game extends Phaser.Scene
     width: 2500,
     height: 2500
   }
-  private canvas?: HTMLCanvasElement
+  private canvas?: HTMLCanvasElement = this.sys?.game?.canvas ?? undefined
   private graphics?: Phaser.GameObjects.Graphics
   private missile?: Phaser.GameObjects.Image
   private player?: PlayerShip
@@ -26,6 +26,7 @@ class Game extends Phaser.Scene
   constructor()
   {
     super()
+    console.info(this.canvas)
   }
   
   preload()
@@ -67,7 +68,6 @@ class Game extends Phaser.Scene
       shipSettings.START_POSITION.y,
       shipSettings.DIRECTION,
       shipSettings.SPEED,
-      shipSettings.SIZE,
       new LightRadar(
         radarDefaultSettings,
         new LightRadarRenderer(this.missile!, this),
@@ -80,7 +80,7 @@ class Game extends Phaser.Scene
     if (this.player) {
       const shipPosition = this.player.getWorldPoint()
       this.player?.radar?.setPosition({ x: shipPosition.x, y: shipPosition.y})
-      this.player.setScale(IMAGE_SCALE);
+      // this.player.setScale(IMAGE_SCALE);
     }
 
     // CAMERA
@@ -98,7 +98,6 @@ class Game extends Phaser.Scene
       350,
       400,
       90,
-      2,
       1,
       new LightRadar(
         radarDefaultSettings,
@@ -111,16 +110,16 @@ class Game extends Phaser.Scene
       new AiUnitController(),
     )
     this.targets.push(target1)
-    const asteroid1 = new Asteroid(
-      this, 
-      { 
-        x: 350,
-        y: 450 
-      }, 
-      120,
-      1,
-      25)
-    this.asteroids.push(asteroid1)
+    // const asteroid1 = new Asteroid(
+    //   this, 
+    //   { 
+    //     x: 350,
+    //     y: 450 
+    //   }, 
+    //   120,
+    //   1
+    // )
+    // this.asteroids.push(asteroid1)
 
     console.log('asteroids', this.asteroids);
     
@@ -131,6 +130,7 @@ class Game extends Phaser.Scene
   update(_: number, delta: number)
   {
     this.graphics?.clear();
+    this.debugRenderer();
     this.player?.setAngularVelocity(this.turn * shipSettings.ROTATION_SPEED);
     // Move ship in the direction it's facing
     if (this.player) {
@@ -145,7 +145,7 @@ class Game extends Phaser.Scene
     this.checkCollisions()
 
     // radar scan
-    this.player?.radar?.update(delta, this.player?.angle || 0, this.targets, this.graphics!);
+    this.player?.radar?.update(delta, this.player?.angle || 0, this.targets, this.asteroids, this.graphics!);
 
     // update targets
     const destroyedEnemyId = this.player?.radar?.updateEnemiesInMain();
@@ -197,47 +197,90 @@ class Game extends Phaser.Scene
   // this method must be moved to a controller
   // collision checks could be done in a extra physics controller
   private checkCollisions() {
+    // targets
     this.targets.forEach(t => {
-      if (this.player && Phaser.Geom.Intersects.RectangleToRectangle(this.player.getBounds(), t.getBounds())) {
-        // Destroy the ship
+      const playerCircle = this.player?.getCircle();
+      const targetCircle = t.getCircle();
+      if (!playerCircle || !targetCircle) return;
+      playerCircle.radius = Math.max(0, playerCircle.radius);
+      targetCircle.radius = Math.max(0, targetCircle.radius);
+      const collider = Phaser.Geom.Intersects.CircleToCircle(playerCircle, targetCircle);
+      if (collider && this.player) {
+        console.warn('Collision detected between player and target ID:', t.id);
         this.player.setVisible(false);
         this.player.setActive(false);
         this.player.disableBody(true, true);
-        // When ship is destroyed, also stop the radar
-        this.player?.radar?.stop()
-        // Clean up targets
-        this.targets.forEach(target => {
-          target.destroy();
-        });
-        // Display "SHIP DESTROYED" message
-        this.add.text(300, 0, 'SHIP DESTROYED', {
+        this.player?.radar?.stop();
+        this.targets.forEach(target => target.destroy());
+        this.asteroids.forEach(asteroid => asteroid.destroy());
+        const cam = this.cameras.main;
+        this.add.text(cam.centerX, cam.centerY, 'SHIP DESTROYED', {
           font: '32px Courier',
           color: '#ff0000'
-        }).setOrigin(0, 0);
+        }).setOrigin(0.5, 0.5).setScrollFactor(0);
       }
-    })
+    });
+
+    // asteroids
     this.asteroids.forEach(a => {
-      // Check for collision between the ship and this asteroid
-      if (this.player && Phaser.Geom.Intersects.RectangleToRectangle(this.player.getBounds(), a.getBounds())) {
-        // Destroy the ship
+      const playerCircle = this.player?.getCircle();
+      const asteroidCircle = a.getCircle();
+      if (!playerCircle || !asteroidCircle) return;
+      playerCircle.radius = Math.max(0, playerCircle.radius);
+      asteroidCircle.radius = Math.max(0, asteroidCircle.radius);
+      const collider = Phaser.Geom.Intersects.CircleToCircle(playerCircle, asteroidCircle);
+      if (collider && this.player) {
+        console.warn('Collision detected between player and asteroid');
         this.player.setVisible(false);
         this.player.setActive(false);
         this.player.disableBody(true, true);
-        // When ship is destroyed, also stop the radar
-        this.player?.radar?.stop()
-        
-        // Clean up asteroids
-        this.asteroids.forEach(asteroid => {
-          asteroid.destroy();
-        });
-        
-        // Display "SHIP DESTROYED" message
-        this.add.text(300, 0, 'SHIP DESTROYED', {
+        this.player?.radar?.stop();
+        this.targets.forEach(target => target.destroy());
+        this.asteroids.forEach(asteroid => asteroid.destroy());
+        const cam = this.cameras.main;
+        this.add.text(cam.centerX, cam.centerY, 'SHIP DESTROYED', {
           font: '32px Courier',
           color: '#ff0000'
-        }).setOrigin(0, 0);
+        }).setOrigin(0.5, 0.5).setScrollFactor(0);
       }
-    })
+    });
+  }
+
+  debugRenderer() {
+    if (!this.graphics) return;
+
+      // Draw player ship bounds
+      if (this.player) {
+        const c = this.player.getCircle();
+        this.graphics.lineStyle(2, 0x00ff00, 1);
+        this.graphics.strokeCircle(
+        c!.x,
+        c!.y,
+        c!.radius
+        );
+      }
+
+      // Draw target bounds
+      this.targets.forEach(t => {
+        const c = t.getCircle();
+        this.graphics!.lineStyle(2, 0xff0000, 1);
+        this.graphics!.strokeCircle(
+        c!.x,
+        c!.y,
+        c!.radius
+        );
+      });
+
+      // Draw asteroid bounds
+      this.asteroids.forEach(a => {
+        const c = a.getCircle();
+        this.graphics!.lineStyle(2, 0xffff00, 1);
+        this.graphics!.strokeCircle(
+        c!.x,
+        c!.y,
+        c!.radius
+        );
+      });
   }
 }
 

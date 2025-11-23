@@ -1,6 +1,7 @@
 import { Loadout } from "../../types";
 import { LightRadar } from "../systems/lightRadar";
 import { AiUnitController } from "../../controller/aiUnitController";
+import { PhysicsController } from "../../controller/physicsController";
 
 abstract class Ship extends Phaser.Physics.Arcade.Sprite {
     constructor(
@@ -9,31 +10,31 @@ abstract class Ship extends Phaser.Physics.Arcade.Sprite {
         public y: number, 
         private direction: number,
         private speed: number, 
-        private size: number,
         public radar: LightRadar,
         private loadout: Loadout, 
         private isRadarTracked: boolean = false,
         private isSttTracked: boolean = false,
+        private physicsController?: PhysicsController,
     ) {
         super(scene, x, y, 'ship');
         
         this.loadout = loadout;
         this.radar = radar;
-        // this.setScale(size);
         this.scene.add.existing(this);
         this.scene.physics.add.existing(this);
-        this.body?.setSize(size, size);
         this.body?.velocity.set(
             Math.cos(Phaser.Math.DegToRad(direction)) * speed, 
             Math.sin(Phaser.Math.DegToRad(direction)) * speed
         );
         this.radar.setMode('rws');
         this.angle = this.direction;
+        this.physicsController = new PhysicsController();
     }
 
-    getSize(): number {
-        return this.size;
+    getCircle() {
+        return new Phaser.Geom.Circle(this.x, this.y, ((this.body?.width || 0) / 2) - 10);
     }
+
     getSpeed(): number {
         if (!this.body || !this.body.velocity) {
             throw new Error('Velocity of Target is undefined');
@@ -55,11 +56,10 @@ export class PlayerShip extends Ship {
         y: number, 
         direction: number, 
         speed: number, 
-        size: number, 
         radar: LightRadar, 
         loadout: Loadout
     ) {
-        super(scene, x, y, direction, speed, size, radar, loadout);
+        super(scene, x, y, direction, speed, radar, loadout);
     }
 }
 
@@ -70,13 +70,12 @@ export class Target extends Ship {
         y: number, 
         direction: number,
         speed: number, 
-        size: number, 
         radar: LightRadar, 
         loadout: Loadout, 
         public id: number, 
         public controller: AiUnitController, 
     ) {
-        super(scene, x, y, direction, speed, size, radar, loadout);
+        super(scene, x, y, direction, speed, radar, loadout);
         this.setVisible(false);
     }
 }
