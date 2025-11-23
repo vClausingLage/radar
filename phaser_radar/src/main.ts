@@ -110,16 +110,16 @@ class Game extends Phaser.Scene
       new AiUnitController(),
     )
     this.targets.push(target1)
-    // const asteroid1 = new Asteroid(
-    //   this, 
-    //   { 
-    //     x: 350,
-    //     y: 450 
-    //   }, 
-    //   120,
-    //   1
-    // )
-    // this.asteroids.push(asteroid1)
+    const asteroid1 = new Asteroid(
+      this, 
+      { 
+        x: 350,
+        y: 450 
+      }, 
+      120,
+      1
+    )
+    this.asteroids.push(asteroid1)
 
     console.log('asteroids', this.asteroids);
     

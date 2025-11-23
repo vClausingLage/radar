@@ -516,17 +516,12 @@ export class LightRadar {
 
         const { targetsInRange, asteroidsInRange } = this.filterTargetsAndAsteroidsInScanArea(startAngle, endAngle, targets, asteroids)
 
-        console.log('Asteroids in scan area:', asteroidsInRange)
-
-        // Create circles using actual display dimensions
         const targetCircles = targetsInRange.map(t => {
             return t.getCircle();
         });
-
         const asteroidCircles = asteroidsInRange.map(a => {
             return a.getCircle();
         });
-
         const allCircles = [...targetCircles, ...asteroidCircles];
 
         const radarPosition = {
@@ -538,28 +533,12 @@ export class LightRadar {
             let hasCollision = false;
             // Create lines to r, l, t, b points of target circle
             const c = t.getCircle();
-            
-            // const cP = {
-            //     rp: c.right,
-            //     lp: c.left,
-            //     tp: c.top,
-            //     bp: c.bottom
-            // }
-            // for (const pointKey of Object.keys(cP) as (keyof typeof cP)[]) {
-            //     const l = new Phaser.Geom.Line(
-            //         radarPosition.x,
-            //         radarPosition.y,
-            //         cP[pointKey],
-            //         cP[pointKey]
-            //     )
-            // }
 
-            // Check if any of the four cardinal points have an unobstructed line to radar
             const cardinalPoints = [
-                { x: c.right, y: c.y },    // right
-                { x: c.left, y: c.y },     // left
-                { x: c.x, y: c.top },      // top
-                { x: c.x, y: c.bottom }    // bottom
+                { x: c.right, y: c.y },
+                { x: c.left, y: c.y },
+                { x: c.x, y: c.top },
+                { x: c.x, y: c.bottom }
             ];
 
             let unobstructedLines = 0;
@@ -576,15 +555,7 @@ export class LightRadar {
                 
                 // Check against all other circles (except the current target's circle)
                 for (const otherCircle of allCircles) {
-                    if (otherCircle === c) continue; // Skip self
-
-                    // Skip circles that are very close to the radar position (likely the scanning ship itself)
-                    const distToRadar = Math.sqrt(
-                        (otherCircle.x - radarPosition.x) ** 2 + 
-                        (otherCircle.y - radarPosition.y) ** 2
-                    );
-                    if (distToRadar < 150) continue; // Skip if within 50 pixels of radar (adjust threshold as needed)
-                    
+                    if (otherCircle.x === c.x && otherCircle.y === c.y && otherCircle.radius === c.radius) continue;
                     
                     if (Phaser.Geom.Intersects.LineToCircle(line, otherCircle)) {
                         lineHasObstruction = true;
