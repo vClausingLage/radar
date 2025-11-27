@@ -114,7 +114,7 @@ export class LightRadar {
                     const endAngle: number = middleAngle + this.radarOptions.azimuth
                     const scanDuration = this.radarOptions.range * this.radarOptions.scanSpeed * (endAngle - startAngle)
 
-                    this.renderer.renderScanAzimuth(graphics, this.radarOptions.position, this.radarOptions.range, startAngle, endAngle)
+                    this.renderer.renderScanAzimuth(graphics, this.radarOptions.position, this.radarOptions.range, startAngle, endAngle, this.radarOptions.range)
 
                     if (this.lastScanTime >= scanDuration) {
                         this.radarScan(startAngle, endAngle, targets, asteroids, graphics)
@@ -127,7 +127,7 @@ export class LightRadar {
                 const startAngle: number = middleAngle - this.radarOptions.azimuth
                 const endAngle: number = middleAngle + this.radarOptions.azimuth
 
-                this.renderer.renderScanAzimuth(graphics, this.radarOptions.position, this.radarOptions.range, startAngle, endAngle)
+                this.renderer.renderScanAzimuth(graphics, this.radarOptions.position, this.radarOptions.range, startAngle, endAngle, this.radarOptions.range)
                 if (this.tracks.length <= 0) {
                     console.error('No tracks found')
                     this.sttTrack = null
@@ -270,7 +270,7 @@ export class LightRadar {
                     type: 'AIM-177',
                     age: 0,
                     burnTime: 14,
-                    speed: 17.0,
+                    speed: 33.0,
                     turnSpeed: .7,
                     guidance: 'semi-active',
                     warhead: 'high-explosive',
@@ -290,7 +290,7 @@ export class LightRadar {
                     type: 'AIM-220',
                     age: 0,
                     burnTime: 14,
-                    speed: 21,
+                    speed: 38.0,
                     turnSpeed: 0.8,
                     guidance: 'active',
                     warhead: 'high-explosive',

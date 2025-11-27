@@ -18,7 +18,7 @@ export interface SARHMissile extends BaseMissile {
     type: 'AIM-177';
     guidance: 'semi-active';
     burnTime: 14;
-    speed: 17.0;
+    speed: 33.0;
     turnSpeed: 0.7
 }
 
@@ -26,7 +26,7 @@ export interface ActiveRadarMissile extends BaseMissile {
     type: 'AIM-220';
     guidance: 'active';
     burnTime: 14;
-    speed: 21;
+    speed: 38.0;
     turnSpeed: 0.8;
 }
 

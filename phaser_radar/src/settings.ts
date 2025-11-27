@@ -27,9 +27,8 @@ export const shipSettings = {
 
 // RADAR
 export const radarModule = {
-    RANGE: 400,
+    RANGE: 450,
     SCAN_SPEED: 0.04,
-
 }
 export const radarDefaultSettings = {
     range: radarModule.RANGE,
@@ -40,7 +39,6 @@ export const radarDefaultSettings = {
 }
 
 // TARGETS
-
 export const targetSettings = {
     LOADOUT: {
         'AIM-177': {
@@ -53,4 +51,18 @@ export const targetSettings = {
         },
     },
     SIZE: 0.5,
+}
+
+// MISSILES
+export const missileSettings = {
+    "AIM-177": {
+        SPEED: 7,
+        TURN_SPEED: 0.7,
+        BURN_TIME: 20
+    },
+    "AIM-220": {
+        SPEED: 6,
+        TURN_SPEED: 0.5,
+        BURN_TIME: 25
+    }
 }

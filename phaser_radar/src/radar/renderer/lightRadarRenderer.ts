@@ -8,6 +8,7 @@ export class LightRadarRenderer {
 
     private text: Phaser.GameObjects.Text | undefined;
     private info: Phaser.GameObjects.Text | undefined;
+    private rangeText: Phaser.GameObjects.Text | undefined;
     private activeMissileCache: string | undefined;
 
     constructor(private missileImage: Phaser.GameObjects.Image, public scene: Phaser.Scene) {
@@ -30,16 +31,25 @@ export class LightRadarRenderer {
         }
         this.info = this.scene.add.text(20, 50, "Press 'Q' to change missile loadout", { color: '#ffffff' }).setScrollFactor(0);
     }
-
-    renderScanAzimuth(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number) {
+    
+    renderScanAzimuth(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, range: number) {
         graphics.lineStyle(1, 0x00ff00, 0.5);
         const startX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(startAngle));
         const startY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(startAngle));
         graphics.lineBetween(radarPosition.x, radarPosition.y, startX, startY);
-
+        
         const endX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(endAngle));
         const endY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(endAngle));
         graphics.lineBetween(radarPosition.x, radarPosition.y, endX, endY);
+        // Draw arc
+        graphics.beginPath();
+        graphics.arc(radarPosition.x, radarPosition.y, radarRange, Phaser.Math.DegToRad(startAngle), Phaser.Math.DegToRad(endAngle), false);
+        graphics.strokePath();
+        // Display range text
+        this.rangeText?.destroy();
+        const midX = radarPosition.x + (startX - radarPosition.x) * 0.7;
+        const midY = radarPosition.y + (startY - radarPosition.y) * 0.7;
+        this.rangeText = this.scene.add.text(midX, midY, `Range: ${range}`, { color: '#00ff00' }).setScrollFactor(0);
     }
 
     renderRwsContacts(graphics: Phaser.GameObjects.Graphics, t: Target, distance: number) {

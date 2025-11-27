@@ -96,9 +96,9 @@ class Game extends Phaser.Scene
     const target1 = new Target(
       this, 
       350,
-      400,
-      90,
-      1,
+      300,
+      120,
+      2,
       new LightRadar(
         radarDefaultSettings,
         new LightRadarRenderer(this.missile!, this),
@@ -113,7 +113,7 @@ class Game extends Phaser.Scene
     const asteroid1 = new Asteroid(
       this, 
       { 
-        x: 350,
+        x: 500,
         y: 450 
       }, 
       120,
