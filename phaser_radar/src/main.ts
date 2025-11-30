@@ -1,44 +1,44 @@
-import Phaser from "phaser"
-import { LightRadar } from "./radar/systems/lightRadar"
-import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer"
-import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer"
-import { PlayerShip, Target } from "./radar/entities/ship"
-import { Asteroid } from "./radar/entities/asteroid"
-import { AiUnitController } from "./controller/aiUnitController"
-import { shipSettings, radarDefaultSettings, targetSettings } from "./settings"
+import Phaser from "phaser";
+import { LightRadar } from "./radar/systems/lightRadar";
+import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer";
+import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer";
+import { PlayerShip, Target } from "./radar/entities/ship";
+import { Asteroid } from "./radar/entities/asteroid";
+import { AiUnitController } from "./controller/aiUnitController";
+import { CAMERA_ZOOM, shipSettings, radarDefaultSettings, targetSettings } from "./settings";
 
 class Game extends Phaser.Scene
 {
   private world = {
     width: 2500,
     height: 2500
-  }
-  private canvas?: HTMLCanvasElement = this.sys?.game?.canvas ?? undefined
-  private graphics?: Phaser.GameObjects.Graphics
-  private missile?: Phaser.GameObjects.Image
-  private player?: PlayerShip
-  private interfaceRenderer?: InterfaceRenderer
-  private turn = 0
-  private aiUpdateTimer?: Phaser.Time.TimerEvent
-  private targets: Target[] = []
-  private asteroids: Asteroid[] = []
+  };
+  private canvas?: HTMLCanvasElement = this.sys?.game?.canvas ?? undefined;
+  private graphics?: Phaser.GameObjects.Graphics;
+  private missile?: Phaser.GameObjects.Image;
+  private player?: PlayerShip;
+  private interfaceRenderer?: InterfaceRenderer;
+  private turn = 0;
+  private aiUpdateTimer?: Phaser.Time.TimerEvent;
+  private targets: Target[] = [];
+  private asteroids: Asteroid[] = [];
 
   constructor()
   {
-    super()
-    console.info(this.canvas)
+    super();
+    console.info(this.canvas);
   }
   
   preload()
   {
-    this.canvas = this.sys.game.canvas
-    this.load.image('universe', 'universe.png')
-    this.load.image('ship', 'ship.png')
-    this.load.image('rwr', 'screen.png')
-    this.load.image('radar', 'screen.png')
-    this.load.image('missile', 'missile.png')
-    this.load.image('explosion', 'explosion.png')
-    this.load.image('asteroid', 'asteroid.png')
+    this.canvas = this.sys.game.canvas;
+    this.load.image('universe', 'universe.png');
+    this.load.image('ship', 'ship.png');
+    this.load.image('rwr', 'screen.png');
+    this.load.image('radar', 'screen.png');
+    this.load.image('missile', 'missile.png');
+    this.load.image('explosion', 'explosion.png');
+    this.load.image('asteroid', 'asteroid.png');
   }
 
   create()
@@ -46,8 +46,9 @@ class Game extends Phaser.Scene
     // WORLD
     this.physics.world.setBounds(0, 0, this.world.width, this.world.height);
     // ADD IMAGES
-    this.add.image(0, 0, 'universe').setOrigin(0)
-    this.missile = this.add.image(0, 0, 'missile').setVisible(false)
+    this.add.image(0, 0, 'universe').setOrigin(0).setScale(2.5);
+    // REMOVE
+    this.missile = this.add.image(0, 0, 'missile').setVisible(false);
     // GRAPHICS
     this.graphics = this.add.graphics();
     // KEYS
@@ -57,7 +58,7 @@ class Game extends Phaser.Scene
     this.input.keyboard?.on('keyup-D',   () => this.turn = 0);
     this.input.keyboard?.on('keydown-Q', () => {
       if (this.player) {
-        this.player.radar.setLoadout()
+        this.player.radar.setLoadout();
       }
     });
 
@@ -78,16 +79,15 @@ class Game extends Phaser.Scene
     )
     // make ship position radar position
     if (this.player) {
-      const shipPosition = this.player.getWorldPoint()
-      this.player?.radar?.setPosition({ x: shipPosition.x, y: shipPosition.y})
-      // this.player.setScale(IMAGE_SCALE);
+      const shipPosition = this.player.getWorldPoint();
+      this.player?.radar?.setPosition({ x: shipPosition.x, y: shipPosition.y});
     }
 
     // CAMERA
     // set camera bounds to world bounds
     this.cameras.main.setBounds(0, 0, this.world.width, this.world.height);
     this.cameras.main.startFollow(this.player);
-    this.cameras.main.setZoom(0.95);
+    this.cameras.main.setZoom(CAMERA_ZOOM);
     
     // INTERFACE
     this.interfaceRenderer = new InterfaceRenderer(this);
@@ -109,8 +109,8 @@ class Game extends Phaser.Scene
       targetSettings.LOADOUT,
       1,
       new AiUnitController(),
-    )
-    this.targets.push(target1)
+    );
+    this.targets.push(target1);
     const asteroid1 = new Asteroid(
       this, 
       { 
@@ -119,12 +119,12 @@ class Game extends Phaser.Scene
       }, 
       120,
       1
-    )
-    this.asteroids.push(asteroid1)
+    );
+    this.asteroids.push(asteroid1);
 
     console.log('asteroids', this.asteroids);
     
-    this.player?.radar?.start()
+    this.player?.radar?.start();
   }
 
   // update time , delta
@@ -143,7 +143,7 @@ class Game extends Phaser.Scene
     this.player?.radar?.setPosition(this.player?.getWorldPoint() || { x: 0, y: 0 });
 
     // move targets & asteroids
-    this.checkCollisions()
+    this.checkCollisions();
 
     // radar scan
     this.player?.radar?.update(delta, this.player?.angle || 0, this.targets, this.asteroids, this.graphics!);
@@ -164,7 +164,7 @@ class Game extends Phaser.Scene
         }
       })
     }
-    const rwrAlertIds = this.player?.radar?.alertRwr()
+    const rwrAlertIds = this.player?.radar?.alertRwr();
     if (rwrAlertIds !== null && rwrAlertIds !== undefined && rwrAlertIds.length > 0) {
       this.targets.forEach(t => {
         if (rwrAlertIds?.includes(t.id)) {
@@ -294,6 +294,6 @@ const config = {
             gravity: { x: 0, y: 0 }
         }
     },
-}
+};
 
-new Phaser.Game(config)
+new Phaser.Game(config);

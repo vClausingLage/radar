@@ -2,6 +2,7 @@ import { Vector2 } from "./types"
 
 // GAME
 export const IMAGE_SCALE = 1
+export const CAMERA_ZOOM = .5
 
 // PLAYER SHIP
 export const shipSettings = {
@@ -10,8 +11,8 @@ export const shipSettings = {
     SIZE: 0.5,
     DIRECTION: 270,
     START_POSITION: { 
-        x: 350, 
-        y: 700 
+        x: 2100, 
+        y: 2400
     },
     LOADOUT: {
         'AIM-177': {
