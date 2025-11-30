@@ -87,6 +87,7 @@ class Game extends Phaser.Scene
     // set camera bounds to world bounds
     this.cameras.main.setBounds(0, 0, this.world.width, this.world.height);
     this.cameras.main.startFollow(this.player);
+    this.cameras.main.setZoom(0.95);
     
     // INTERFACE
     this.interfaceRenderer = new InterfaceRenderer(this);

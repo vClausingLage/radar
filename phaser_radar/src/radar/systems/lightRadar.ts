@@ -2,7 +2,7 @@ import { RadarOptions, Loadout } from '../../types'
 import { Track } from '../data/track'
 import { Asteroid } from '../entities/asteroid'
 import { Target } from '../entities/ship'
-import { Missile, SARHMissile } from '../entities/missiles'
+import { ActiveRadarMissile, Missile, SARHMissile } from '../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
 import { normalizeAngle } from '../../math'
 import { IMAGE_SCALE } from '../../settings'
@@ -266,43 +266,23 @@ export class LightRadar {
 
         switch (activeWeaponType) {
             case 'AIM-177':
-                const sarhMissile: SARHMissile = {
-                    type: 'AIM-177',
-                    age: 0,
-                    burnTime: 14,
-                    speed: 33.0,
-                    turnSpeed: .7,
-                    guidance: 'semi-active',
-                    warhead: 'high-explosive',
-                    position: {
-                        x: missileStartX,
-                        y: missileStartY
-                    },
-                    direction: {
-                        x: Math.cos(Phaser.Math.DegToRad(angle)),
-                        y: Math.sin(Phaser.Math.DegToRad(angle))
-                    }
-                };
+                const sarhMissile = new SARHMissile(
+                    this.renderer.scene!,
+                    missileStartX,
+                    missileStartY,
+                    Math.cos(Phaser.Math.DegToRad(angle)),
+                    Math.sin(Phaser.Math.DegToRad(angle))
+                )
                 this.activeMissiles.push(sarhMissile);
                 break;
             case 'AIM-220':
-                const activeRadarMissile: Missile = {
-                    type: 'AIM-220',
-                    age: 0,
-                    burnTime: 14,
-                    speed: 38.0,
-                    turnSpeed: 0.8,
-                    guidance: 'active',
-                    warhead: 'high-explosive',
-                    position: {
-                        x: missileStartX,
-                        y: missileStartY
-                    },
-                    direction: {
-                        x: Math.cos(Phaser.Math.DegToRad(angle)),
-                        y: Math.sin(Phaser.Math.DegToRad(angle))
-                    }
-                };
+                const activeRadarMissile = new ActiveRadarMissile(
+                    this.renderer.scene!,
+                    missileStartX,
+                    missileStartY,
+                    Math.cos(Phaser.Math.DegToRad(angle)),
+                    Math.sin(Phaser.Math.DegToRad(angle))
+                );
                 this.activeMissiles.push(activeRadarMissile);
                 break;
             default:
@@ -636,10 +616,9 @@ export class LightRadar {
 
     trackInDirectionOfTarget(m: Missile): { targetDirX: number, targetDirY: number } | null {
         if (this.mode === 'stt' && this.sttTrack) {
-            console.log("Calculating lead for missile towards STT target")
-            console.log(this.sttTrack.pos)
-            console.log(this.sttTrack.dir)
+            // console.info("Calculating lead for missile towards STT target")
             const angleRad = Phaser.Math.DegToRad(this.sttTrack.dir);
+            // 1. Calculate relative position and velocity
             const targetVelocity = {
                 x: Math.cos(angleRad) * this.sttTrack.speed,
                 y: Math.sin(angleRad) * this.sttTrack.speed
