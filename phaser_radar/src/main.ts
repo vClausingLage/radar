@@ -15,7 +15,6 @@ class Game extends Phaser.Scene
   };
   private canvas?: HTMLCanvasElement = this.sys?.game?.canvas ?? undefined;
   private graphics?: Phaser.GameObjects.Graphics;
-  private missile?: Phaser.GameObjects.Image;
   private player?: PlayerShip;
   private interfaceRenderer?: InterfaceRenderer;
   private turn = 0;
@@ -47,8 +46,6 @@ class Game extends Phaser.Scene
     this.physics.world.setBounds(0, 0, this.world.width, this.world.height);
     // ADD IMAGES
     this.add.image(0, 0, 'universe').setOrigin(0).setScale(2.5);
-    // REMOVE
-    this.missile = this.add.image(0, 0, 'missile').setVisible(false);
     // GRAPHICS
     this.graphics = this.add.graphics();
     // KEYS
@@ -71,7 +68,7 @@ class Game extends Phaser.Scene
       shipSettings.SPEED,
       new LightRadar(
         radarDefaultSettings,
-        new LightRadarRenderer(this.missile!, this),
+        new LightRadarRenderer(this),
         'rws',
         shipSettings.LOADOUT
       ),
@@ -96,13 +93,13 @@ class Game extends Phaser.Scene
     // TARGETS (ENEMIES) & ASTEROIDS
     const target1 = new Target(
       this, 
-      350,
-      300,
+      2000,
+      2000,
       120,
       2,
       new LightRadar(
         radarDefaultSettings,
-        new LightRadarRenderer(this.missile!, this),
+        new LightRadarRenderer(this),
         'rws',
         targetSettings.LOADOUT
       ),
@@ -114,8 +111,8 @@ class Game extends Phaser.Scene
     const asteroid1 = new Asteroid(
       this, 
       { 
-        x: 500,
-        y: 450 
+        x: 1800,
+        y: 2000 
       }, 
       120,
       1
@@ -189,8 +186,8 @@ class Game extends Phaser.Scene
     }
 
     // Update interface
-    if (this.player?.radar && this.interfaceRenderer) {
-      this.interfaceRenderer.updateButtonColors(this.player.radar);
+    if (this.player?.radar && this.interfaceRenderer && this.player) {
+      this.interfaceRenderer.update(this.player.radar, this.player);
     }
   }
 

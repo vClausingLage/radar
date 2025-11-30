@@ -12,7 +12,7 @@ export const shipSettings = {
     DIRECTION: 270,
     START_POSITION: { 
         x: 2100, 
-        y: 2400
+        y: 2370
     },
     LOADOUT: {
         'AIM-177': {
