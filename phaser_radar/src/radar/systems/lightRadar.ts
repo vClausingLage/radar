@@ -407,6 +407,9 @@ export class LightRadar {
                     });
                 }
                 
+                // destroy missile
+                m.destroy();
+                
                 // Remove the missile and target
                 this.activeMissiles = this.activeMissiles.filter(missile => missile !== m);
                 // targets = targets.filter(t => t !== target);

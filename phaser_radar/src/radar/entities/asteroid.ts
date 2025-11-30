@@ -6,12 +6,10 @@ export class Asteroid extends Phaser.Physics.Arcade.Sprite {
         this.position = position;
         this.direction = direction;
         this.speed = speed;
-        // this.setScale(IMAGE_SCALE);
         this.setPosition(this.position.x, this.position.y);
         this.setAngle(this.direction);
         this.scene.add.existing(this);
         this.scene.physics.add.existing(this);
-        // this.body?.setSize(this.size, this.size);
         this.setVelocity(
             this.speed * Math.cos(Phaser.Math.DegToRad(this.direction)),
             this.speed * Math.sin(Phaser.Math.DegToRad(this.direction))

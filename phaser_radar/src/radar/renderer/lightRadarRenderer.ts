@@ -150,32 +150,10 @@ export class LightRadarRenderer {
     }
 
     renderMissiles(missiles: Missile[], graphics: Phaser.GameObjects.Graphics) {
-        // Remove sprites for missiles that no longer exist
-        // REFACTOR!
-        // const currentMissiles = new Set(missiles);
-        // for (const [missile, sprite] of this.missileSprites.entries()) {
-        //     if (!currentMissiles.has(missile)) {
-        //         sprite.destroy();
-        //         this.missileSprites.delete(missile);
-        //     }
-        // }
-
-        // Update or create sprites for active missiles
         missiles.forEach(m => {
-            if (graphics.scene) {
-                // let missileSprite = this.missileSprites.get(missile);
-                
-                // if (!missileSprite) {
-                //     // Create new sprite for this missile
-                //     missileSprite = graphics.scene.add.sprite(missile.position.x, missile.position.y, this.missileImage.texture.key);
-                //     // missileSprite.setScale(IMAGE_SCALE);
-                //     this.missileSprites.set(missile, missileSprite);
-                // }
-                
-                // Update sprite position and rotation
-                // missileSprite.setPosition(missile.position.x, missile.position.y);
-                // missileSprite.setAngle(Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x)));
-            }
+            // Update sprite position and rotation
+            m.setPosition(m.position.x, m.position.y);
+            m.setAngle(Phaser.Math.RadToDeg(Math.atan2(m.direction.y, m.direction.x)));
         });
     }
 

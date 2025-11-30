@@ -2,7 +2,7 @@ import { Vector2 } from "./types"
 
 // GAME
 export const IMAGE_SCALE = 1
-export const CAMERA_ZOOM = .5
+export const CAMERA_ZOOM = .8
 
 // PLAYER SHIP
 export const shipSettings = {

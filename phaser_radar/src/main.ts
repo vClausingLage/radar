@@ -38,6 +38,7 @@ class Game extends Phaser.Scene
     this.load.image('missile', 'missile.png');
     this.load.image('explosion', 'explosion.png');
     this.load.image('asteroid', 'asteroid.png');
+    this.load.image('flares', 'flares.png');
   }
 
   create()
@@ -247,40 +248,54 @@ class Game extends Phaser.Scene
   debugRenderer() {
     if (!this.graphics) return;
 
+    // Particle effects test
+        // const wisp = this.add.particles(2400, 2400, 'flares',
+        // {
+        //     color: [ 0x96e0da, 0x937ef3 ],
+        //     colorEase: 'quart.out',
+        //     lifespan: 120,
+        //     angle: { min: -100, max: -80 },
+        //     scale: { start: .08, end: 0, ease: 'sine.in' },
+        //     speed: { min: 250, max: 350 },
+        //     advance: 400,
+        //     blendMode: 'ADD'
+        // });
+        
+
       // Draw player ship bounds
-      if (this.player) {
-        const c = this.player.getCircle();
-        this.graphics.lineStyle(2, 0x00ff00, 1);
-        this.graphics.strokeCircle(
-        c!.x,
-        c!.y,
-        c!.radius
-        );
+      // if (this.player) {
+      //   const c = this.player.getCircle();
+      //   this.graphics.lineStyle(2, 0x00ff00, 1);
+      //   this.graphics.strokeCircle(
+      //   c!.x,
+      //   c!.y,
+      //   c!.radius
+      //   );
       }
 
       // Draw target bounds
-      this.targets.forEach(t => {
-        const c = t.getCircle();
-        this.graphics!.lineStyle(2, 0xff0000, 1);
-        this.graphics!.strokeCircle(
-        c!.x,
-        c!.y,
-        c!.radius
-        );
-      });
+      // this.targets.forEach(t => {
+      //   const c = t.getCircle();
+      //   this.graphics!.lineStyle(2, 0xff0000, 1);
+      //   this.graphics!.strokeCircle(
+      //   c!.x,
+      //   c!.y,
+      //   c!.radius
+      //   );
+      // });
 
       // Draw asteroid bounds
-      this.asteroids.forEach(a => {
-        const c = a.getCircle();
-        this.graphics!.lineStyle(2, 0xffff00, 1);
-        this.graphics!.strokeCircle(
-        c!.x,
-        c!.y,
-        c!.radius
-        );
-      });
+      // this.asteroids.forEach(a => {
+      //   const c = a.getCircle();
+      //   this.graphics!.lineStyle(2, 0xffff00, 1);
+      //   this.graphics!.strokeCircle(
+      //   c!.x,
+      //   c!.y,
+      //   c!.radius
+      //   );
+      // });
   }
-}
+// }
 
 const config = {
     type: Phaser.AUTO,
