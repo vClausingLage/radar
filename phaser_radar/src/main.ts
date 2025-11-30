@@ -94,10 +94,10 @@ class Game extends Phaser.Scene
     // TARGETS (ENEMIES) & ASTEROIDS
     const target1 = new Target(
       this, 
-      2000,
-      2000,
+      2200,
+      1800,
       120,
-      2,
+      3,
       new LightRadar(
         radarDefaultSettings,
         new LightRadarRenderer(this),

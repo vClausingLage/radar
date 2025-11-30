@@ -23,11 +23,11 @@ export class LightRadarRenderer {
         this.info?.destroy();
         
         if (activeMissile) {
-            this.text = this.scene.add.text(20, 30, `Active Missile: ${activeMissile}`, { color: '#00ff00' }).setScrollFactor(0);
+            this.text = this.scene.add.text(0, 0, `Active Missile: ${activeMissile}`, { color: '#00ff00' }).setScrollFactor(0);
         } else {
-            this.text = this.scene.add.text(20, 30, "No Active Missile", { color: '#ff0000' }).setScrollFactor(0);
+            this.text = this.scene.add.text(0, 0, "No Active Missile", { color: '#ff0000' }).setScrollFactor(0);
         }
-        this.info = this.scene.add.text(20, 50, "Press 'Q' to change missile loadout", { color: '#ffffff' }).setScrollFactor(0);
+        this.info = this.scene.add.text(0, 20, "Press 'Q' to change missile loadout", { color: '#ffffff' }).setScrollFactor(0);
     }
     
     renderScanAzimuth(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, range: number) {
@@ -45,7 +45,7 @@ export class LightRadarRenderer {
         graphics.strokePath();
         // Display range text
         this.rangeText?.destroy();
-        this.rangeText = this.scene.add.text(endX - 20, endY + 25, `${range} \nbla`, { color: '#00ff00' }).setRotation(Phaser.Math.DegToRad(endAngle + 90));
+        this.rangeText = this.scene.add.text(endX, endY, `${range} \n${endAngle}\n${endY}`, { color: '#00ff00' }).setRotation(Phaser.Math.DegToRad(endAngle + 90));
     }
 
     renderRwsContacts(graphics: Phaser.GameObjects.Graphics, t: Target, distance: number) {

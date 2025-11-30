@@ -42,7 +42,7 @@ export class LightRadar {
         this.mode = mode
         switch (mode) {
             case 'rws':
-                this.radarOptions.azimuth = 60
+                this.radarOptions.azimuth = 45
                 break
             case 'stt':
                 break

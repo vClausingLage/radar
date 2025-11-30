@@ -6,12 +6,12 @@ export const CAMERA_ZOOM = .8
 
 // PLAYER SHIP
 export const shipSettings = {
-    SPEED: 2,
+    SPEED: 3,
     ROTATION_SPEED: 16,
     SIZE: 0.5,
     DIRECTION: 270,
     START_POSITION: { 
-        x: 2100, 
+        x: 2000, 
         y: 2370
     },
     LOADOUT: {
@@ -28,7 +28,7 @@ export const shipSettings = {
 
 // RADAR
 export const radarModule = {
-    RANGE: 450,
+    RANGE: 600,
     SCAN_SPEED: 0.04,
 }
 export const radarDefaultSettings = {
@@ -51,7 +51,6 @@ export const targetSettings = {
             active: false
         },
     },
-    SIZE: 0.5,
 }
 
 // MISSILES
