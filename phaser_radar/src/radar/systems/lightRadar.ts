@@ -114,7 +114,7 @@ export class LightRadar {
                     const endAngle: number = middleAngle + this.radarOptions.azimuth
                     const scanDuration = this.radarOptions.range * this.radarOptions.scanSpeed * (endAngle - startAngle)
 
-                    this.renderer.renderScanAzimuth(graphics, this.radarOptions.position, this.radarOptions.range, startAngle, endAngle, this.radarOptions.range)
+                    this.renderer.renderScanAzimuth(graphics, this.radarOptions.position, this.radarOptions.range, startAngle, endAngle, this.radarOptions.range, this.activeMissiles)
 
                     if (this.lastScanTime >= scanDuration) {
                         this.radarScan(startAngle, endAngle, targets, asteroids, graphics)
@@ -127,7 +127,7 @@ export class LightRadar {
                 const startAngle: number = middleAngle - this.radarOptions.azimuth
                 const endAngle: number = middleAngle + this.radarOptions.azimuth
 
-                this.renderer.renderScanAzimuth(graphics, this.radarOptions.position, this.radarOptions.range, startAngle, endAngle, this.radarOptions.range)
+                this.renderer.renderScanAzimuth(graphics, this.radarOptions.position, this.radarOptions.range, startAngle, endAngle, this.radarOptions.range, this.activeMissiles)
                 if (this.tracks.length <= 0) {
                     console.error('No tracks found')
                     this.sttTrack = null
@@ -304,6 +304,7 @@ export class LightRadar {
                     missile.age += 1;
                     return true;
                 }
+                missile.destroy();
                 return false;
             });
             this.missileUpdateDelta = 0

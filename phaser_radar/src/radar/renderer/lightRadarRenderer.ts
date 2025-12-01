@@ -30,7 +30,7 @@ export class LightRadarRenderer {
         this.info = this.scene.add.text(0, 20, "Press 'Q' to change missile loadout", { color: '#ffffff' }).setScrollFactor(0);
     }
     
-    renderScanAzimuth(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, range: number) {
+    renderScanAzimuth(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, range: number, activeMissiles: Missile[]) {
         graphics.lineStyle(1, 0x00ff00, 0.5);
         const startX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(startAngle));
         const startY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(startAngle));
@@ -45,7 +45,7 @@ export class LightRadarRenderer {
         graphics.strokePath();
         // Display range text
         this.rangeText?.destroy();
-        this.rangeText = this.scene.add.text(endX, endY, `${range} \n${endAngle}\n${endY}`, { color: '#00ff00' }).setRotation(Phaser.Math.DegToRad(endAngle + 90));
+        this.rangeText = this.scene.add.text(endX, endY, `${range} \n${endAngle}\n${endY}\n${activeMissiles?.length ? activeMissiles[0].active : ''}`, { color: '#00ff00' }).setRotation(Phaser.Math.DegToRad(endAngle + 90));
     }
 
     renderRwsContacts(graphics: Phaser.GameObjects.Graphics, t: Target, distance: number) {

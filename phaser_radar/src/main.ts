@@ -96,7 +96,7 @@ class Game extends Phaser.Scene
       this, 
       2200,
       1800,
-      120,
+      200,
       3,
       new LightRadar(
         radarDefaultSettings,
