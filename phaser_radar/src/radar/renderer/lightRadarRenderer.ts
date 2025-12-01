@@ -45,7 +45,7 @@ export class LightRadarRenderer {
         graphics.strokePath();
         // Display range text
         this.rangeText?.destroy();
-        this.rangeText = this.scene.add.text(endX, endY, `${range} \n${endAngle}\n${endY}\n${activeMissiles?.length ? activeMissiles[0].active : ''}`, { color: '#00ff00' }).setRotation(Phaser.Math.DegToRad(endAngle + 90));
+        this.rangeText = this.scene.add.text(endX, endY, `\n ${range}\n ${activeMissiles?.length && activeMissiles[0].age > 0 ? activeMissiles[0].age : ''}`, { color: '#00ff00' }).setRotation(Phaser.Math.DegToRad(endAngle + 90));
     }
 
     renderRwsContacts(graphics: Phaser.GameObjects.Graphics, t: Target, distance: number) {
