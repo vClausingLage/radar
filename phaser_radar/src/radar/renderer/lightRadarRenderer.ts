@@ -6,46 +6,42 @@ import { Target } from "../entities/ship";
 
 export class LightRadarRenderer {
 
-    private text: Phaser.GameObjects.Text | undefined;
-    private info: Phaser.GameObjects.Text | undefined;
     private rangeText: Phaser.GameObjects.Text | undefined;
-    private activeMissileCache: string | undefined;
+    private activeLoadout: Phaser.GameObjects.Text | undefined;
 
     constructor(public scene: Phaser.Scene) {}
-
-    renderHud(activeMissile: string | undefined) {
-        //! use cache if no changes in active missile
-        if (this.activeMissileCache === activeMissile) {
-            return;
-        }
-
-        this.text?.destroy();
-        this.info?.destroy();
-        
-        if (activeMissile) {
-            this.text = this.scene.add.text(0, 0, `Active Missile: ${activeMissile}`, { color: '#00ff00' }).setScrollFactor(0);
-        } else {
-            this.text = this.scene.add.text(0, 0, "No Active Missile", { color: '#ff0000' }).setScrollFactor(0);
-        }
-        this.info = this.scene.add.text(0, 20, "Press 'Q' to change missile loadout", { color: '#ffffff' }).setScrollFactor(0);
-    }
     
-    renderScanAzimuth(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, range: number, activeMissiles: Missile[]) {
+    renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, range: number, activeMissiles: Missile[], loadout: string | undefined) {
+        const endX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(endAngle));
+        const endY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(endAngle));
+        
+        if (!this.activeLoadout) {
+            this.activeLoadout = this.scene.add.text(endX, endY, "\n\n\n No Active Missile", { color: '#00ff00' }).setRotation(Phaser.Math.DegToRad(endAngle + 90));
+        }
+        if (!this.rangeText) {
+            this.rangeText = this.scene.add.text(endX, endY, `\n ${range}\n ${activeMissiles?.length && activeMissiles[0].age > 0 ? activeMissiles[0].age : ''}`, { color: '#00ff00' }).setRotation(Phaser.Math.DegToRad(endAngle + 90));
+        }
+
         graphics.lineStyle(1, 0x00ff00, 0.5);
         const startX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(startAngle));
         const startY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(startAngle));
         graphics.lineBetween(radarPosition.x, radarPosition.y, startX, startY);
         
-        const endX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(endAngle));
-        const endY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(endAngle));
         graphics.lineBetween(radarPosition.x, radarPosition.y, endX, endY);
         // Draw arc
         graphics.beginPath();
         graphics.arc(radarPosition.x, radarPosition.y, radarRange, Phaser.Math.DegToRad(startAngle), Phaser.Math.DegToRad(endAngle), false);
         graphics.strokePath();
-        // Display range text
-        this.rangeText?.destroy();
-        this.rangeText = this.scene.add.text(endX, endY, `\n ${range}\n ${activeMissiles?.length && activeMissiles[0].age > 0 ? activeMissiles[0].age : ''}`, { color: '#00ff00' }).setRotation(Phaser.Math.DegToRad(endAngle + 90));
+
+        this.rangeText.setPosition(endX, endY);
+        this.rangeText.setRotation(Phaser.Math.DegToRad(endAngle + 90));
+        this.activeLoadout?.setPosition(endX, endY);
+        this.activeLoadout?.setRotation(Phaser.Math.DegToRad(endAngle + 90));
+        if (loadout) {
+            this.activeLoadout.setText(`\n\n\n ${loadout}`);
+        } else {
+            this.activeLoadout.setText(`\n\n\n No Active Missile`);
+        }
     }
 
     renderRwsContacts(graphics: Phaser.GameObjects.Graphics, t: Target, distance: number) {

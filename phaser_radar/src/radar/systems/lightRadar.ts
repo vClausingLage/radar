@@ -99,7 +99,7 @@ export class LightRadar {
     }
 
     update(delta: number, angle: number, targets: Target[], asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
-        const activeMissile = Object.keys(this.loadout).find(key => this.loadout[key as keyof Loadout]?.active);
+        const activeLoadout = Object.keys(this.loadout).find(key => this.loadout[key as keyof Loadout]?.active);
         if (!this.radarOptions.isScanning) {
             // do nothing
         } else {
@@ -194,8 +194,7 @@ export class LightRadar {
         this.updateMissiles(delta, targets, asteroids)
 
         this.renderer.renderMissiles(this.activeMissiles, graphics)
-        this.renderer.renderScanAzimuth(graphics, this.radarOptions.position, this.radarOptions.range, angle - this.radarOptions.azimuth, angle + this.radarOptions.azimuth, this.radarOptions.range, this.activeMissiles)
-        this.renderer.renderHud(activeMissile)
+        this.renderer.renderRadarScanInterface(graphics, this.radarOptions.position, this.radarOptions.range, angle - this.radarOptions.azimuth, angle + this.radarOptions.azimuth, this.radarOptions.range, this.activeMissiles, activeLoadout)
     }
 
     getScanArea(angle: number): { startAngle: number, endAngle: number } | null {

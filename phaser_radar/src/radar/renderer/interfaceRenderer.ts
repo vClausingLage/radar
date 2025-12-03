@@ -93,12 +93,4 @@ export class InterfaceRenderer {
         this.updateButtonColors(radar);
         this.updateLayout(ship);
     }
-
-    destroy() {
-        this.sttBtn?.destroy();
-        this.rwsBtn?.destroy();
-        this.twsBtn?.destroy();
-        this.emconBtn?.destroy();
-        this.shootBtn?.destroy();
-    }
 }
