@@ -2,8 +2,8 @@ import Phaser from "phaser";
 import { LightRadar } from "./radar/systems/lightRadar";
 import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer";
 import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer";
-import { PlayerShip, Target } from "./radar/entities/ship";
-import { Asteroid } from "./radar/entities/asteroid";
+import { createShipFactory } from "./radar/entities/shipFactory";
+import { createAsteroidFactory } from "./radar/entities/asteroidFactory";
 import { AiUnitController } from "./controller/aiUnitController";
 import { CAMERA_ZOOM, shipSettings, radarDefaultSettings, targetSettings } from "./settings";
 
@@ -15,12 +15,12 @@ class Game extends Phaser.Scene
   };
   private canvas?: HTMLCanvasElement = this.sys?.game?.canvas ?? undefined;
   private graphics?: Phaser.GameObjects.Graphics;
-  private player?: PlayerShip;
+  private player?: Phaser.Physics.Arcade.Sprite;
   private interfaceRenderer?: InterfaceRenderer;
   private turn = 0;
   private aiUpdateTimer?: Phaser.Time.TimerEvent;
-  private targets: Target[] = [];
-  private asteroids: Asteroid[] = [];
+  private targets: any[] = [];
+  private asteroids: any[] = [];
 
   constructor()
   {
@@ -43,6 +43,10 @@ class Game extends Phaser.Scene
 
   create()
   {
+    // Register factories
+    createShipFactory(this);
+    createAsteroidFactory(this);
+
     // WORLD
     this.physics.world.setBounds(0, 0, this.world.width, this.world.height);
     // ADD IMAGES
@@ -56,13 +60,12 @@ class Game extends Phaser.Scene
     this.input.keyboard?.on('keyup-D',   () => this.turn = 0);
     this.input.keyboard?.on('keydown-Q', () => {
       if (this.player) {
-        this.player.radar.setLoadout();
+        (this.player as any).radar.setLoadout();
       }
     });
 
-    // PLAYER SHIP
-    this.player = new PlayerShip(
-      this,
+    // PLAYER SHIP using factory
+    this.player = this.add.playerShip(
       shipSettings.START_POSITION.x,
       shipSettings.START_POSITION.y,
       shipSettings.DIRECTION,
@@ -74,26 +77,19 @@ class Game extends Phaser.Scene
         shipSettings.LOADOUT
       ),
       shipSettings.LOADOUT
-    )
-    // make ship position radar position
-    if (this.player) {
-      const shipPosition = this.player.getWorldPoint();
-      this.player?.radar?.setPosition({ x: shipPosition.x, y: shipPosition.y});
-    }
+    ) as any;
 
     // CAMERA
-    // set camera bounds to world bounds
     this.cameras.main.setBounds(0, 0, this.world.width, this.world.height);
     this.cameras.main.startFollow(this.player);
     this.cameras.main.setZoom(CAMERA_ZOOM);
     
     // INTERFACE
     this.interfaceRenderer = new InterfaceRenderer(this);
-    this.interfaceRenderer.createInterface(this.player?.radar, this.player);
+    this.interfaceRenderer.createInterface((this.player as any)?.radar, this.player);
 
-    // TARGETS (ENEMIES) & ASTEROIDS
-    const target1 = new Target(
-      this, 
+    // TARGETS using factory
+    const target1 = this.add.target(
       2200,
       1800,
       200,
@@ -106,15 +102,13 @@ class Game extends Phaser.Scene
       ),
       targetSettings.LOADOUT,
       1,
-      new AiUnitController(),
-    );
+      new AiUnitController()
+    ) as any;
     this.targets.push(target1);
-    const asteroid1 = new Asteroid(
-      this, 
-      { 
-        x: 1800,
-        y: 2000 
-      }, 
+
+    // ASTEROIDS using factory
+    const asteroid1 = this.add.asteroid(
+      { x: 1800, y: 2000 },
       120,
       1
     );
@@ -122,7 +116,7 @@ class Game extends Phaser.Scene
 
     console.log('asteroids', this.asteroids);
     
-    this.player?.radar?.start();
+    (this.player as any)?.radar?.start();
   }
 
   // update time , delta

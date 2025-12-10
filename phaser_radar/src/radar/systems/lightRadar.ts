@@ -8,7 +8,6 @@ import { normalizeAngle } from '../../math'
 import { IMAGE_SCALE } from '../../settings'
 
 export class LightRadar {
-
     private lastScanTime = 0
     private missileUpdateDelta = 0
     private activeMissiles: Missile[] = []
