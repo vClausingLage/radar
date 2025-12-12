@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import StartMenu from "./scenes/startMenu";
 import { LightRadar } from "./radar/systems/lightRadar";
 import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer";
 import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer";
@@ -25,7 +26,8 @@ class Game extends Phaser.Scene
 
   constructor()
   {
-    super();
+    // Use an explicit key so StartMenu can start this scene by name
+    super('Main');
     console.info(this.canvas);
   }
   
@@ -295,14 +297,14 @@ class Game extends Phaser.Scene
 // }
 
 const config = {
-    type: Phaser.AUTO,
-    scene: Game,
-    physics: {
-        default: 'arcade',
-        arcade: {
-            gravity: { x: 0, y: 0 }
-        }
-    },
+  type: Phaser.AUTO,
+  scene: [StartMenu, Game],
+  physics: {
+    default: 'arcade',
+    arcade: {
+      gravity: { x: 0, y: 0 }
+    }
+  },
 };
 
 new Phaser.Game(config);
