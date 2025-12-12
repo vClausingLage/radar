@@ -6,6 +6,7 @@ import { createShipFactory } from "./radar/entities/shipFactory";
 import { createAsteroidFactory } from "./radar/entities/asteroidFactory";
 import { AiUnitController } from "./controller/aiUnitController";
 import { CAMERA_ZOOM, shipSettings, radarDefaultSettings, targetSettings } from "./settings";
+import { PlayerShip, Target } from "./radar/entities/ship";
 
 class Game extends Phaser.Scene
 {
@@ -15,11 +16,11 @@ class Game extends Phaser.Scene
   };
   private canvas?: HTMLCanvasElement = this.sys?.game?.canvas ?? undefined;
   private graphics?: Phaser.GameObjects.Graphics;
-  private player?: Phaser.Physics.Arcade.Sprite;
+  private player?: PlayerShip;
   private interfaceRenderer?: InterfaceRenderer;
   private turn = 0;
   private aiUpdateTimer?: Phaser.Time.TimerEvent;
-  private targets: any[] = [];
+  private targets: Target[] = [];
   private asteroids: any[] = [];
 
   constructor()
@@ -46,7 +47,7 @@ class Game extends Phaser.Scene
     // Register factories
     // use this doumentation https://docs.phaser.io/phaser/concepts/gameobjects/factories
 
-    Phaser.GameObjects.GameObjectFactory.register('bla')
+    // Phaser.GameObjects.GameObjectFactory.register('bla')
 
     createShipFactory(this);
     createAsteroidFactory(this);
@@ -70,6 +71,7 @@ class Game extends Phaser.Scene
 
     // PLAYER SHIP using factory
     this.player = this.add.playerShip(
+      this,
       shipSettings.START_POSITION.x,
       shipSettings.START_POSITION.y,
       shipSettings.DIRECTION,
@@ -80,8 +82,7 @@ class Game extends Phaser.Scene
         'rws',
         shipSettings.LOADOUT
       ),
-      shipSettings.LOADOUT
-    ) as any;
+    ) as PlayerShip;
 
     // CAMERA
     this.cameras.main.setBounds(0, 0, this.world.width, this.world.height);
@@ -94,6 +95,7 @@ class Game extends Phaser.Scene
 
     // TARGETS using factory
     const target1 = this.add.target(
+      this,
       2200,
       1800,
       200,
@@ -104,10 +106,9 @@ class Game extends Phaser.Scene
         'rws',
         targetSettings.LOADOUT
       ),
-      targetSettings.LOADOUT,
       1,
       new AiUnitController()
-    ) as any;
+    ) as Target;
     this.targets.push(target1);
 
     // ASTEROIDS using factory
