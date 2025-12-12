@@ -71,7 +71,6 @@ class Game extends Phaser.Scene
 
     // PLAYER SHIP using factory
     this.player = this.add.playerShip(
-      this,
       shipSettings.START_POSITION.x,
       shipSettings.START_POSITION.y,
       shipSettings.DIRECTION,
@@ -95,7 +94,6 @@ class Game extends Phaser.Scene
 
     // TARGETS using factory
     const target1 = this.add.target(
-      this,
       2200,
       1800,
       200,
