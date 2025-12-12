@@ -5,9 +5,6 @@ export default class StartMenu extends Phaser.Scene {
         super('StartMenu');
     }
 
-    preload() {
-    }
-
     create() {
         // Title
         this.add.text(this.scale.width / 2, 100, 'RADAR GAME', {
@@ -24,7 +21,7 @@ export default class StartMenu extends Phaser.Scene {
         }).setOrigin(0.5).setInteractive();
 
         startButton.on('pointerdown', () => {
-            this.scene.start('Main');
+            this.scene.start('Game');
         });
 
         startButton.on('pointerover', () => {

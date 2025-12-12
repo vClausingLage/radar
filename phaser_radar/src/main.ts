@@ -27,7 +27,7 @@ class Game extends Phaser.Scene
   constructor()
   {
     // Use an explicit key so StartMenu can start this scene by name
-    super('Main');
+    super('Game');
     console.info(this.canvas);
   }
   
