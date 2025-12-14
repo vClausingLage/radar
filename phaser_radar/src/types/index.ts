@@ -1,4 +1,4 @@
-import { Missiles } from '../radar/entities/missiles'
+import { Missiles } from '../entities/missiles'
 
 export type Vector2 = {
     x: number

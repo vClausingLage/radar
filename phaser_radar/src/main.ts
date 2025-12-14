@@ -3,11 +3,11 @@ import StartMenu from "./scenes/startMenu";
 import { LightRadar } from "./radar/systems/lightRadar";
 import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer";
 import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer";
-import { createShipFactory } from "./radar/entities/shipFactory";
-import { createAsteroidFactory } from "./radar/entities/asteroidFactory";
+import { createShipFactory } from "./entities/shipFactory";
+import { createAsteroidFactory } from "./entities/asteroidFactory";
+import { PlayerShip, Target } from "./entities/ship";
 import { AiUnitController } from "./controller/aiUnitController";
 import { CAMERA_ZOOM, shipSettings, radarDefaultSettings, targetSettings } from "./settings";
-import { PlayerShip, Target } from "./radar/entities/ship";
 
 class Game extends Phaser.Scene
 {

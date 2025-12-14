@@ -4,12 +4,23 @@ export class InterfaceRenderer {
     private sttBtn?: Phaser.GameObjects.Text;
     private rwsBtn?: Phaser.GameObjects.Text;
     private twsBtn?: Phaser.GameObjects.Text;
-    private emconBtn?: Phaser.GameObjects.Text;
     private shootBtn?: Phaser.GameObjects.Text;
 
     constructor(private scene: Phaser.Scene) {}
 
     createInterface(radar: LightRadar, ship: Phaser.Physics.Arcade.Image) {
+        // TWS BTN
+        this.twsBtn = this.scene.add.text(0, 0, 'TWS', { 
+            font: '22px Courier', 
+            color: '#000',
+            backgroundColor: '#ffdb4d',
+            padding: { x: 10, y: 5 } 
+        })
+        .setInteractive()
+        .setOrigin(0)
+        .on('pointerdown', () => {
+            radar.setMode('tws');
+        });
         // STT BTN
         this.sttBtn = this.scene.add.text(0, 0, 'STT', { 
             font: '22px Courier',
@@ -56,6 +67,7 @@ export class InterfaceRenderer {
         const mode = radar.getMode();
         if (this.sttBtn) this.sttBtn.setBackgroundColor(mode === 'stt' ? '#ff0000' : '#ffdb4d');
         if (this.rwsBtn) this.rwsBtn.setBackgroundColor(mode === 'rws' ? '#00ff00' : '#ffdb4d');
+        if (this.twsBtn) this.twsBtn.setBackgroundColor(mode === 'tws' ? '#00ff00' : '#ffdb4d');
         if (this.shootBtn) this.shootBtn.setBackgroundColor(mode === 'stt' ? '#ed9209' : '#ffdb4d');
     }
 
@@ -84,7 +96,11 @@ export class InterfaceRenderer {
         this.sttBtn.setPosition(rowLeft, topY);
         this.rwsBtn.setPosition(rowLeft + sttW + spacingX, topY);
 
-        const shootY = topY + this.sttBtn.height + spacingY;
+        const twsY = topY + this.sttBtn.height + spacingY;
+        const twsX = shipX - (this.twsBtn!.width / 2);
+        this.twsBtn!.setPosition(twsX, twsY);
+
+        const shootY = twsY + this.twsBtn!.height + spacingY;
         const shootX = shipX - (this.shootBtn.width / 2);
         this.shootBtn.setPosition(shootX, shootY);
     }

@@ -1,8 +1,8 @@
 import { RadarOptions, Loadout } from '../../types'
 import { Track } from '../data/track'
-import { Asteroid } from '../entities/asteroid'
-import { Target } from '../entities/ship'
-import { ActiveRadarMissile, Missile, SARHMissile } from '../entities/missiles'
+import { Asteroid } from '../../entities/asteroid'
+import { Target } from '../../entities/ship'
+import { ActiveRadarMissile, Missile, SARHMissile } from '../../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
 import { normalizeAngle } from '../../math'
 import { IMAGE_SCALE } from '../../settings'
@@ -46,7 +46,7 @@ export class LightRadar {
             case 'stt':
                 break
             case 'tws':
-                this.radarOptions.azimuth = 30
+                this.radarOptions.azimuth = 20
                 break
             case 'tws-auto':
                 this.radarOptions.azimuth = 15
@@ -104,7 +104,7 @@ export class LightRadar {
         } else {
             if (this.mode === 'emcon') {
             }
-            if (this.mode === 'rws') {
+            if (this.mode === 'rws' || this.mode === 'tws') {
                 if (angle !== undefined) {
                     // calculations
                     this.lastScanTime += delta
@@ -489,6 +489,11 @@ export class LightRadar {
     }
 
     radarScan(startAngle: number, endAngle: number, targets: Target[], asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
+
+        // TODO
+        // THIS MUST BE REFACTORED TO DO AN ACTUAL RADAR SCAN
+        // TODO
+
         // clear tracks
         this.tracks = []
         this.sttTrack = null
