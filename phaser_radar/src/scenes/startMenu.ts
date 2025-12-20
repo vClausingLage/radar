@@ -76,6 +76,26 @@ export default class StartMenu extends Phaser.Scene {
         radarDocButton.on('pointerout', () => {
             radarDocButton.setStyle({ backgroundColor: '#000000' });
         });
+
+        // Story button
+        const storyButton = this.add.text(this.scale.width / 2, this.scale.height / 2 + 240, 'Story', {
+            fontSize: '32px',
+            color: '#ffffff',
+            backgroundColor: '#000000',
+            padding: { x: 20, y: 10 }
+        }).setOrigin(0.5).setInteractive();
+
+        storyButton.on('pointerdown', () => {
+            this.showStory();
+        });
+
+        storyButton.on('pointerover', () => {
+            storyButton.setStyle({ backgroundColor: '#333333' });
+        });
+
+        storyButton.on('pointerout', () => {
+            storyButton.setStyle({ backgroundColor: '#000000' });
+        });
     }
 
     showHowTo() {
@@ -132,6 +152,28 @@ export default class StartMenu extends Phaser.Scene {
             radarDocText.destroy();
             flag.destroy();
             dummyText.destroy();
+        });
+    }
+
+    showStory() {
+        const storyText = this.add.text(this.scale.width / 2, this.scale.height / 2, 
+            'STORY:\n\n\n' +
+            'You are Gologg Ringlbatzz\n\n' +
+            'a truly non-woke battleneck\n\n' +
+            'steeled in a thousand slaughters\n\n' +
+            'unbeaten by the weak and pussyish\n\n' +
+            'mighty commander of the Star of the Fleet\n\n' +
+            '\n\n\n' +
+            'Click here to close', {
+            fontSize: '24px',
+            color: '#ffffff',
+            backgroundColor: '#000000',
+            padding: { x: 30, y: 20 },
+            align: 'center'
+        }).setOrigin(0.5).setInteractive();
+
+        storyText.on('pointerdown', () => {
+            storyText.destroy();
         });
     }
 }

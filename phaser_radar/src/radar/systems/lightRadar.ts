@@ -98,13 +98,12 @@ export class LightRadar {
     }
 
     update(delta: number, angle: number, targets: Target[], asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
-        const activeLoadout = Object.keys(this.loadout).find(key => this.loadout[key as keyof Loadout]?.active);
         if (!this.radarOptions.isScanning) {
             // do nothing
         } else {
             if (this.mode === 'emcon') {
             }
-            if (this.mode === 'rws' || this.mode === 'tws') {
+            if (this.mode === 'rws') {
                 if (angle !== undefined) {
                     // calculations
                     this.lastScanTime += delta
@@ -115,6 +114,21 @@ export class LightRadar {
 
                     if (this.lastScanTime >= scanDuration) {
                         this.radarScan(startAngle, endAngle, targets, asteroids, graphics)
+                    }
+                }
+            }
+
+            if (this.mode === 'tws') {
+                if (angle !== undefined) {
+                    // calculations
+                    this.lastScanTime += delta
+                    const middleAngle: number = angle
+                    const startAngle: number = middleAngle - this.radarOptions.azimuth
+                    const endAngle: number = middleAngle + this.radarOptions.azimuth
+                    const scanDuration = this.radarOptions.range * this.radarOptions.scanSpeed * (endAngle - startAngle)
+
+                    if (this.lastScanTime >= scanDuration) {
+                        this.radarTwsScan(startAngle, endAngle, targets, asteroids, graphics)
                     }
                 }
             }
@@ -588,6 +602,16 @@ export class LightRadar {
         this.renderer.renderAsteroids(asteroidsInRange, graphics)
         
         this.lastScanTime = 0
+    }
+
+    radarTwsScan(startAngle: number, endAngle: number, targets: Target[], asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
+        // clear tracks
+        this.tracks = []
+        this.sttTrack = null
+
+        const { targetsInRange, asteroidsInRange } = this.filterTargetsAndAsteroidsInScanArea(startAngle, endAngle, targets, asteroids)
+
+        
     }
 
     updateEnemiesInMain(): number | null {
