@@ -4,6 +4,7 @@ export interface BaseMissile {
     age: number;
     turnSpeed: number;
     warhead: 'high-explosive' | 'fragmentation';
+    targetId?: number;
     position: {
         x: number;
         y: number;
@@ -26,6 +27,7 @@ export class SARHMissile extends Phaser.GameObjects.Sprite implements BaseMissil
     turnSpeed = 0.7;
     age: number = 0;
     warhead: 'high-explosive' | 'fragmentation' = 'high-explosive';
+    targetId?: number;
     position: { x: number; y: number; };
     direction: { x: number; y: number; };
     
@@ -45,6 +47,7 @@ export class ActiveRadarMissile extends Phaser.GameObjects.Sprite implements Bas
     turnSpeed = 0.8;
     age: number = 0;
     warhead: 'high-explosive' | 'fragmentation' = 'fragmentation';
+    targetId?: number;
     position: { x: number; y: number; };
     direction: { x: number; y: number; };
     

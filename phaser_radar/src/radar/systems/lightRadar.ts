@@ -11,6 +11,7 @@ export class LightRadar {
     private lastScanTime = 0
     private missileUpdateDelta = 0
     private activeMissiles: Missile[] = []
+    private twsTargetIndex = 0
 
     constructor(
         private radarOptions: RadarOptions,
@@ -230,7 +231,10 @@ export class LightRadar {
         if (this.mode === 'stt' && this.sttTrack) {
             target = this.sttTrack
         } else if (this.mode === 'tws' && this.tracks.length > 0) {
-            // select target
+            // Cycle through available tracks: 0, 1, 2, 0, 1, 2...
+            target = this.tracks[this.twsTargetIndex]
+            // Move to next target for next shot
+            this.twsTargetIndex = (this.twsTargetIndex + 1) % this.tracks.length
         } else {
             console.error('No target to shoot at')
             return
@@ -282,6 +286,7 @@ export class LightRadar {
                     Math.cos(Phaser.Math.DegToRad(angle)),
                     Math.sin(Phaser.Math.DegToRad(angle))
                 )
+                sarhMissile.targetId = target.id;
                 this.activeMissiles.push(sarhMissile);
                 break;
             case 'AIM-220':
@@ -292,6 +297,7 @@ export class LightRadar {
                     Math.cos(Phaser.Math.DegToRad(angle)),
                     Math.sin(Phaser.Math.DegToRad(angle))
                 );
+                activeRadarMissile.targetId = target.id;
                 this.activeMissiles.push(activeRadarMissile);
                 break;
             default:
@@ -605,13 +611,136 @@ export class LightRadar {
     }
 
     radarTwsScan(startAngle: number, endAngle: number, targets: Target[], asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
-        // clear tracks
-        this.tracks = []
         this.sttTrack = null
+        const MAX_TWS_TRACKS = 3
 
         const { targetsInRange, asteroidsInRange } = this.filterTargetsAndAsteroidsInScanArea(startAngle, endAngle, targets, asteroids)
 
+        const targetCircles = targetsInRange.map(t => t.getCircle());
+        const asteroidCircles = asteroidsInRange.map(a => a.getCircle());
+        const allCircles = [...targetCircles, ...asteroidCircles];
+
+        const radarPosition = {
+            x: this.radarOptions.position.x,
+            y: this.radarOptions.position.y
+        }
+
+        // Build list of valid targets (not obstructed)
+        const validTargets: Array<{ target: Target, distance: number, hasCollision: boolean }> = [];
+
+        for (const t of targetsInRange) {
+            const c = t.getCircle();
+            const cardinalPoints = [
+                { x: c.right, y: c.y },
+                { x: c.left, y: c.y },
+                { x: c.x, y: c.top },
+                { x: c.x, y: c.bottom }
+            ];
+
+            let unobstructedLines = 0;
+
+            for (const point of cardinalPoints) {
+                const line = new Phaser.Geom.Line(
+                    radarPosition.x,
+                    radarPosition.y,
+                    point.x,
+                    point.y
+                );
+                
+                let lineHasObstruction = false;
+                
+                for (const otherCircle of allCircles) {
+                    if (otherCircle.x === c.x && otherCircle.y === c.y && otherCircle.radius === c.radius) continue;
+                    
+                    if (Phaser.Geom.Intersects.LineToCircle(line, otherCircle)) {
+                        lineHasObstruction = true;
+                        break;
+                    }
+                }
+                
+                if (!lineHasObstruction) {
+                    unobstructedLines++;
+                }
+            }
+
+            const hasCollision = unobstructedLines === 0;
+            const dx = t.x - this.radarOptions.position.x;
+            const dy = t.y - this.radarOptions.position.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (!hasCollision) {
+                validTargets.push({ target: t, distance, hasCollision });
+            }
+        }
+
+        // Update existing tracks or add new ones
+        const updatedTracks: Track[] = [];
+        const usedTargetIds = new Set<number>();
+
+        // First, try to update existing tracks with targets still in range
+        for (const track of this.tracks) {
+            const matchingTarget = validTargets.find(vt => vt.target.id === track.id);
+            
+            if (matchingTarget) {
+                // Update existing track
+                updatedTracks.push({
+                    id: matchingTarget.target.id,
+                    pos: { x: matchingTarget.target.x, y: matchingTarget.target.y },
+                    dist: matchingTarget.distance,
+                    dir: matchingTarget.target.getDirection(),
+                    speed: matchingTarget.target.getSpeed(),
+                    age: track.age + 1,
+                    lastUpdate: 0,
+                    confidence: Math.min(track.confidence + 0.1, 1.0),
+                });
+                usedTargetIds.add(matchingTarget.target.id);
+            }
+        }
+
+        // Add new targets to empty slots (up to MAX_TWS_TRACKS total)
+        if (updatedTracks.length < MAX_TWS_TRACKS) {
+            // Sort unused targets by distance
+            const unusedTargets = validTargets
+                .filter(vt => !usedTargetIds.has(vt.target.id))
+                .sort((a, b) => a.distance - b.distance);
+
+            for (const vt of unusedTargets) {
+                if (updatedTracks.length >= MAX_TWS_TRACKS) break;
+
+                updatedTracks.push({
+                    id: vt.target.id,
+                    pos: { x: vt.target.x, y: vt.target.y },
+                    dist: vt.distance,
+                    dir: vt.target.getDirection(),
+                    speed: vt.target.getSpeed(),
+                    age: 0,
+                    lastUpdate: 0,
+                    confidence: 0.5,
+                });
+            }
+        }
+
+        this.tracks = updatedTracks;
+
+        // Reset target index if it exceeds current track count
+        if (this.twsTargetIndex >= this.tracks.length && this.tracks.length > 0) {
+            this.twsTargetIndex = 0;
+        }
+
+        // Render tracks
+        for (const track of this.tracks) {
+            const targetObj = targetsInRange.find(t => t.id === track.id);
+            if (targetObj) {
+                this.renderer.renderRwsContacts(graphics, targetObj, track.dist);
+            }
+        }
+
+        // Render asteroids
+        this.renderer.renderAsteroids(asteroidsInRange, graphics);
         
+        console.log('TWS Tracks:', this.tracks.map(t => ({ id: t.id, dist: Math.round(t.dist) })));
+        
+        this.lastScanTime = 0;
     }
 
     updateEnemiesInMain(): number | null {
@@ -643,15 +772,25 @@ export class LightRadar {
     }
 
     trackInDirectionOfTarget(m: Missile): { targetDirX: number, targetDirY: number } | null {
+        // Find the track this missile is targeting
+        let targetTrack: Track | null = null;
+        
         if (this.mode === 'stt' && this.sttTrack) {
-            // console.info("Calculating lead for missile towards STT target")
-            const angleRad = Phaser.Math.DegToRad(this.sttTrack.dir);
+            targetTrack = this.sttTrack;
+        } else if (this.mode === 'tws' && m.targetId !== undefined) {
+            // Find the track with matching ID
+            targetTrack = this.tracks.find(track => track.id === m.targetId) || null;
+        }
+        
+        if (targetTrack) {
+            // console.info("Calculating lead for missile towards target")
+            const angleRad = Phaser.Math.DegToRad(targetTrack.dir);
             // 1. Calculate relative position and velocity
             const targetVelocity = {
-                x: Math.cos(angleRad) * this.sttTrack.speed,
-                y: Math.sin(angleRad) * this.sttTrack.speed
+                x: Math.cos(angleRad) * targetTrack.speed,
+                y: Math.sin(angleRad) * targetTrack.speed
             };
-            const targetPos = this.sttTrack?.pos!;
+            const targetPos = targetTrack?.pos!;
             // const targetVelocity = this.sttTrack?.dir!
             const relPos = {
                 x: targetPos.x - m.position.x,

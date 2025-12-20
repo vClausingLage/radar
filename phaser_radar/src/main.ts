@@ -95,9 +95,9 @@ class Game extends Phaser.Scene
 
     // TARGETS using factory
     const target1 = this.add.target(
-      2200,
-      1800,
-      200,
+      2050,
+      2150,
+      340,
       3,
       new LightRadar(
         radarDefaultSettings,
@@ -108,7 +108,22 @@ class Game extends Phaser.Scene
       1,
       new AiUnitController()
     ) as Target;
+    const target2 = this.add.target(
+      2000,
+      2200,
+      150,
+      2,
+      new LightRadar(
+        radarDefaultSettings,
+        new LightRadarRenderer(this),
+        'rws',
+        targetSettings.LOADOUT
+      ),
+      2,
+      new AiUnitController()
+    ) as Target;
     this.targets.push(target1);
+    this.targets.push(target2);
 
     // ASTEROIDS using factory
     const asteroid1 = this.add.asteroid(
