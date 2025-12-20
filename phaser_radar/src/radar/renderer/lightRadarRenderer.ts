@@ -1,8 +1,9 @@
 import { Vector2 } from "../../types";
 import { Track } from "../data/track";
-import { Asteroid } from "../entities/asteroid";
-import { Missile } from "../entities/missiles";
-import { Target } from "../entities/ship";
+import { Asteroid } from "../../entities/asteroid";
+import { Missile } from "../../entities/missiles";
+import { Target } from "../../entities/ship";
+import { Loadout } from "../../types"
 
 export class LightRadarRenderer {
 
@@ -11,7 +12,7 @@ export class LightRadarRenderer {
 
     constructor(public scene: Phaser.Scene) {}
     
-    renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, range: number, activeMissiles: Missile[], loadout: string | undefined) {
+    renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, range: number, activeMissiles: Missile[], loadout: Loadout) {
         const endX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(endAngle));
         const endY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(endAngle));
         
@@ -38,7 +39,14 @@ export class LightRadarRenderer {
         this.activeLoadout?.setPosition(endX, endY);
         this.activeLoadout?.setRotation(Phaser.Math.DegToRad(endAngle + 90));
         if (loadout) {
-            this.activeLoadout.setText(`\n\n\n ${loadout}`);
+            let loadoutText = '';
+            for (const missileType in loadout) {
+                const missileData = loadout[missileType as keyof Loadout];
+                if (missileData.active) {
+                    loadoutText += `${missileType}\n ${missileData.load} `;
+                }
+            }
+            this.activeLoadout.setText(`\n\n\n ${loadoutText}`);
         } else {
             this.activeLoadout.setText(`\n\n\n No Active Missile`);
         }

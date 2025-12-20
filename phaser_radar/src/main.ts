@@ -48,7 +48,6 @@ class Game extends Phaser.Scene
   {
     // Register factories
     // use this doumentation https://docs.phaser.io/phaser/concepts/gameobjects/factories
-
     // Phaser.GameObjects.GameObjectFactory.register('bla')
 
     createShipFactory(this);

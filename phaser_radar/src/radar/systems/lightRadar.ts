@@ -193,7 +193,7 @@ export class LightRadar {
         this.updateMissiles(delta, targets, asteroids)
 
         this.renderer.renderMissiles(this.activeMissiles, graphics)
-        this.renderer.renderRadarScanInterface(graphics, this.radarOptions.position, this.radarOptions.range, angle - this.radarOptions.azimuth, angle + this.radarOptions.azimuth, this.radarOptions.range, this.activeMissiles, activeLoadout)
+        this.renderer.renderRadarScanInterface(graphics, this.radarOptions.position, this.radarOptions.range, angle - this.radarOptions.azimuth, angle + this.radarOptions.azimuth, this.radarOptions.range, this.activeMissiles, this.loadout)
     }
 
     getScanArea(angle: number): { startAngle: number, endAngle: number } | null {
