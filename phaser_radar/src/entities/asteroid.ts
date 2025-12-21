@@ -1,4 +1,4 @@
-import { Vector2 } from "../../types"
+import { Vector2 } from "../types"
 
 export class Asteroid extends Phaser.Physics.Arcade.Sprite {
     constructor(scene: Phaser.Scene, position: Vector2, direction: number, speed: number) {

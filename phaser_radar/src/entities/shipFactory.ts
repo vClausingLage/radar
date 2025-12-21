@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { PlayerShip, Target } from './ship';
-import { LightRadar } from '../systems/lightRadar';
-import { AiUnitController } from '../../controller/aiUnitController';
+import { LightRadar } from '../radar/systems/lightRadar';
+import { AiUnitController } from '../controller/aiUnitController';
 
 declare global {
   namespace Phaser.GameObjects {

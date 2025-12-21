@@ -1,5 +1,5 @@
-import { LightRadar } from "../systems/lightRadar";
-import { AiUnitController } from "../../controller/aiUnitController";
+import { LightRadar } from "../radar/systems/lightRadar";
+import { AiUnitController } from "../controller/aiUnitController";
 // import { PhysicsController } from "../../controller/physicsController";
 
 abstract class Ship extends Phaser.Physics.Arcade.Sprite {

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { Asteroid } from './asteroid';
-import { Vector2 } from '../../types';
+import { Vector2 } from '../types';
 
 declare global {
   namespace Phaser.GameObjects {
@@ -16,8 +16,10 @@ export const createAsteroidFactory = (scene: Phaser.Scene) => {
     direction: number,
     speed: number
   ) {
-    const asteroid = new Asteroid(this.scene, position, direction, speed);
+    const asteroid = new Asteroid(scene, position, direction, speed);
+    // @ts-ignore
     this.displayList.add(asteroid);
+    // @ts-ignore
     this.updateList.add(asteroid);
     return asteroid;
   });

@@ -207,7 +207,7 @@ export class LightRadar {
         // update missiles
         this.updateMissiles(delta, targets, asteroids)
 
-        this.renderer.renderMissiles(this.activeMissiles, graphics)
+        this.renderer.renderMissiles(this.activeMissiles)
         this.renderer.renderRadarScanInterface(graphics, this.radarOptions.position, this.radarOptions.range, angle - this.radarOptions.azimuth, angle + this.radarOptions.azimuth, this.radarOptions.range, this.activeMissiles, this.loadout)
     }
 
@@ -605,7 +605,7 @@ export class LightRadar {
         // THIS RENDERER SHOULD USE 
         // TERRAIN RADAR LIKE RENDERING FOR ASTEROIDS
         // NOT IMPLEMENTED
-        this.renderer.renderAsteroids(asteroidsInRange, graphics)
+        this.renderer.renderAsteroids(asteroidsInRange)
         
         this.lastScanTime = 0
     }
@@ -736,7 +736,7 @@ export class LightRadar {
         }
 
         // Render asteroids
-        this.renderer.renderAsteroids(asteroidsInRange, graphics);
+        this.renderer.renderAsteroids(asteroidsInRange);
         
         console.log('TWS Tracks:', this.tracks.map(t => ({ id: t.id, dist: Math.round(t.dist) })));
         

@@ -1,5 +1,5 @@
 import { Track } from "../radar/data/track";
-import { Missile } from "../radar/entities/missiles";
+import { Missile } from "../entities/missiles";
 import { Vector2 } from "../types";
 
 export function distanceBetweenPoints(

@@ -153,7 +153,7 @@ export class LightRadarRenderer {
         }
     }
 
-    renderMissiles(missiles: Missile[], graphics: Phaser.GameObjects.Graphics) {
+    renderMissiles(missiles: Missile[]) {
         missiles.forEach(m => {
             // Update sprite position and rotation
             m.setPosition(m.position.x, m.position.y);
@@ -161,7 +161,7 @@ export class LightRadarRenderer {
         });
     }
 
-    renderAsteroids(asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics) {
-        
+    renderAsteroids(asteroids: Asteroid[]) {
+        console.log('Rendering asteroids:', asteroids);
     }
 }
