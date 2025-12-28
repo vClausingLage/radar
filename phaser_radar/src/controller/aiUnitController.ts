@@ -2,10 +2,11 @@ import { Vector2 } from '../types';
 
 export class AiUnitController {
     constructor(
-                private position: Vector2 | null = null,
-                private direction: number | null = null,
-                private sttTracked: boolean = false,
-                private radarTracked: boolean = false
+        private turnRate: number | null = null,
+        private position: Vector2 | null = null,
+        private direction: number | null = null,
+        private sttTracked: boolean = false,
+        private radarTracked: boolean = false
     ) {}
 
     setPosition(position: Vector2) {
@@ -23,9 +24,12 @@ export class AiUnitController {
     setRadarTracked(radarTracked: boolean) {
         this.radarTracked = radarTracked;
     }
+    setTurnRate(turnRate: number) {
+        this.turnRate = turnRate;
+    }
 
     update() {
-        
+        console.log(this.turnRate);
     }
     
     destroy() {

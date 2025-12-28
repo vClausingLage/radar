@@ -1,10 +1,7 @@
 import { LightRadar } from "../radar/systems/lightRadar";
 import { AiUnitController } from "../controller/aiUnitController";
-// import { PhysicsController } from "../../controller/physicsController";
 
 abstract class Ship extends Phaser.Physics.Arcade.Sprite {
-    // private physicsController: PhysicsController;
-
     constructor(
         public scene: Phaser.Scene, 
         public x: number, 
@@ -12,8 +9,6 @@ abstract class Ship extends Phaser.Physics.Arcade.Sprite {
         private direction: number,
         private speed: number, 
         public radar: LightRadar,
-        // isRadarTracked: boolean = false,
-        // isSttTracked: boolean = false,
     ) {
         super(scene, x, y, 'ship');
         
@@ -26,7 +21,6 @@ abstract class Ship extends Phaser.Physics.Arcade.Sprite {
         );
         this.radar.setMode('rws');
         this.angle = this.direction;
-        // this.physicsController = new PhysicsController();
     }
 
     getCircle() {
@@ -67,9 +61,10 @@ export class Target extends Ship {
         y: number, 
         direction: number,
         speed: number, 
+        type: 'cruiser' | 'cargo',
         radar: LightRadar, 
         public id: number, 
-        public controller: AiUnitController, 
+        public controller: AiUnitController
     ) {
         super(scene, x, y, direction, speed, radar);
         this.setVisible(false);

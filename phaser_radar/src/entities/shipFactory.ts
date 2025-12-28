@@ -7,7 +7,7 @@ declare global {
   namespace Phaser.GameObjects {
     interface GameObjectFactory {
       playerShip(x: number, y: number, direction: number, speed: number, radar: LightRadar): PlayerShip;
-      target(x: number, y: number, direction: number, speed: number, radar: LightRadar, id: number, controller: AiUnitController): Target;
+      target(x: number, y: number, direction: number, speed: number, type: 'cruiser' | 'cargo', radar: LightRadar, id: number): Target;
     }
   }
 }
@@ -33,11 +33,18 @@ export const createShipFactory = (_scene: Phaser.Scene) => {
     y: number,
     direction: number,
     speed: number,
+    type: 'cruiser' | 'cargo',
     radar: LightRadar,
     id: number,
-    controller: AiUnitController
   ) {
-    const target = new Target(this.scene, x, y, direction, speed, radar, id, controller);
+    const controller = new AiUnitController();
+    if (type === 'cargo') {
+      controller.setTurnRate(2);
+    }
+    if (type === 'cruiser') {
+      controller.setTurnRate(5);
+    }
+    const target = new Target(this.scene, x, y, direction, speed, type, radar, id, controller);
     target.addToDisplayList();
     target.addToUpdateList();
     return target;

@@ -99,6 +99,7 @@ class Game extends Phaser.Scene
       2150,
       340,
       3,
+      'cargo',
       new LightRadar(
         radarDefaultSettings,
         new LightRadarRenderer(this),
@@ -106,13 +107,13 @@ class Game extends Phaser.Scene
         targetSettings.LOADOUT
       ),
       1,
-      new AiUnitController()
     ) as Target;
     const target2 = this.add.target(
       2000,
       2200,
       150,
       2,
+      'cargo',
       new LightRadar(
         radarDefaultSettings,
         new LightRadarRenderer(this),
@@ -120,7 +121,6 @@ class Game extends Phaser.Scene
         targetSettings.LOADOUT
       ),
       2,
-      new AiUnitController()
     ) as Target;
     this.targets.push(target1);
     this.targets.push(target2);
