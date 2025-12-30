@@ -12,7 +12,7 @@ declare global {
   }
 }
 
-export const createShipFactory = (_scene: Phaser.Scene) => {
+export const createPlayerShipFactory = (_scene: Phaser.Scene) => {
   Phaser.GameObjects.GameObjectFactory.register('playerShip', function(
     this: Phaser.GameObjects.GameObjectFactory,
     x: number,

@@ -3,10 +3,10 @@ import StartMenu from "./scenes/startMenu";
 import { LightRadar } from "./radar/systems/lightRadar";
 import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer";
 import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer";
-import { createShipFactory } from "./entities/shipFactory";
+import { createPlayerShipFactory } from "./entities/shipFactory";
 import { createAsteroidFactory } from "./entities/asteroidFactory";
 import { PlayerShip, Target } from "./entities/ship";
-import { AiUnitController } from "./controller/aiUnitController";
+import { PlayerController } from "./controller/playerController";
 import { CAMERA_ZOOM, shipSettings, radarDefaultSettings, targetSettings } from "./settings";
 
 class Game extends Phaser.Scene
@@ -18,15 +18,14 @@ class Game extends Phaser.Scene
   private canvas?: HTMLCanvasElement = this.sys?.game?.canvas ?? undefined;
   private graphics?: Phaser.GameObjects.Graphics;
   private player?: PlayerShip;
+  private playerController?: PlayerController;
   private interfaceRenderer?: InterfaceRenderer;
-  private turn = 0;
   private aiUpdateTimer?: Phaser.Time.TimerEvent;
   private targets: Target[] = [];
   private asteroids: any[] = [];
 
   constructor()
   {
-    // Use an explicit key so StartMenu can start this scene by name
     super('Game');
     console.info(this.canvas);
   }
@@ -50,7 +49,7 @@ class Game extends Phaser.Scene
     // use this doumentation https://docs.phaser.io/phaser/concepts/gameobjects/factories
     // Phaser.GameObjects.GameObjectFactory.register('bla')
 
-    createShipFactory(this);
+    createPlayerShipFactory(this);
     createAsteroidFactory(this);
 
     // WORLD
@@ -59,16 +58,6 @@ class Game extends Phaser.Scene
     this.add.image(0, 0, 'universe').setOrigin(0).setScale(2.5);
     // GRAPHICS
     this.graphics = this.add.graphics();
-    // KEYS
-    this.input.keyboard?.on('keydown-A', () => this.turn = -1);
-    this.input.keyboard?.on('keyup-A',   () => this.turn = 0);
-    this.input.keyboard?.on('keydown-D', () => this.turn = 1);
-    this.input.keyboard?.on('keyup-D',   () => this.turn = 0);
-    this.input.keyboard?.on('keydown-Q', () => {
-      if (this.player) {
-        (this.player as any).radar.setLoadout();
-      }
-    });
 
     // PLAYER SHIP using factory
     this.player = this.add.playerShip(
@@ -83,6 +72,9 @@ class Game extends Phaser.Scene
         shipSettings.LOADOUT
       ),
     ) as PlayerShip;
+
+    // PLAYER CONTROLLER
+    this.playerController = new PlayerController(this, this.player);
 
     // CAMERA
     this.cameras.main.setBounds(0, 0, this.world.width, this.world.height);
@@ -143,14 +135,10 @@ class Game extends Phaser.Scene
   {
     this.graphics?.clear();
     this.debugRenderer();
-    this.player?.setAngularVelocity(this.turn * shipSettings.ROTATION_SPEED);
-    // Move ship in the direction it's facing
-    if (this.player) {
-      const angleRad = Phaser.Math.DegToRad(this.player.angle);
-      const velocityX = Math.cos(angleRad) * shipSettings.SPEED;
-      const velocityY = Math.sin(angleRad) * shipSettings.SPEED;
-      this.player.setVelocity(velocityX, velocityY);
-    }
+    
+    // Update player controller
+    this.playerController?.update(shipSettings.SPEED);
+    
     this.player?.radar?.setPosition(this.player?.getWorldPoint() || { x: 0, y: 0 });
 
     // move targets & asteroids
