@@ -12,7 +12,7 @@ export class LightRadarRenderer {
 
     constructor(public scene: Phaser.Scene) {}
     
-    renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, range: number, activeMissiles: Missile[], loadout: Loadout) {
+    renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, range: number, activeMissiles: Missile[], loadout: Loadout): void {
         const endX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(endAngle));
         const endY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(endAngle));
         
@@ -52,7 +52,7 @@ export class LightRadarRenderer {
         }
     }
 
-    renderRwsContacts(graphics: Phaser.GameObjects.Graphics, t: Target, distance: number) {
+    renderRwsContacts(graphics: Phaser.GameObjects.Graphics, t: Target, distance: number): void {
         // Draw green rectangle at target position on separate graphics object
         const rectGraphics = graphics.scene?.add.graphics();
         if (rectGraphics) {
@@ -102,7 +102,7 @@ export class LightRadarRenderer {
         }
     }
 
-    renderStt(track: Track, graphics: Phaser.GameObjects.Graphics) {
+    renderStt(track: Track, graphics: Phaser.GameObjects.Graphics): void {
         const rectGraphics = graphics.scene?.add.graphics();
         if (rectGraphics) {
             rectGraphics.fillStyle(0xff0000, 0.7)
@@ -153,7 +153,7 @@ export class LightRadarRenderer {
         }
     }
 
-    renderMissiles(missiles: Missile[]) {
+    renderMissiles(missiles: Missile[]): void {
         missiles.forEach(m => {
             // Update sprite position and rotation
             m.setPosition(m.position.x, m.position.y);
@@ -161,7 +161,7 @@ export class LightRadarRenderer {
         });
     }
 
-    renderAsteroids(asteroids: Asteroid[]) {
+    renderAsteroids(asteroids: Asteroid[]): void {
         console.log('Rendering asteroids:', asteroids);
     }
 }

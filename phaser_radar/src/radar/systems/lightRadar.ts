@@ -1,4 +1,4 @@
-import { RadarOptions, Loadout } from '../../types'
+import { RadarOptions, Loadout, Vector2 } from '../../types'
 import { Track } from '../data/track'
 import { Asteroid } from '../../entities/asteroid'
 import { Target } from '../../entities/ship'
@@ -23,22 +23,22 @@ export class LightRadar {
         private destroyedTarget: Target | null = null,
     ) {}
 
-    getPosition() {
+    getPosition(): Vector2 {
         return this.radarOptions.position
     }
-    setPosition({x, y}: {x: number, y: number}) {
+    setPosition({x, y}: Vector2 | Phaser.Math.Vector2): void {
         this.radarOptions.position.x = x
         this.radarOptions.position.y = y
     }
 
-    getRange() {
+    getRange(): number {
         return this.radarOptions.range
     }
 
-    getMode() {
+    getMode(): string {
         return this.mode
     }
-    setMode(mode: string) {
+    setMode(mode: string): void {
         this.mode = mode
         switch (mode) {
             case 'rws':
@@ -61,17 +61,17 @@ export class LightRadar {
         }
     }
     
-    getTracks() {
+    getTracks(): Track[] {
         return this.tracks
     }
-    setTracks(tracks: Track[]) {
+    setTracks(tracks: Track[]): void {
         this.tracks = tracks
     }
 
-    getLoadout() {
+    getLoadout(): Loadout {
         return this.loadout
     }
-    setLoadout() {
+    setLoadout(): void {
         // Find current active weapon and set the next one active
         const loadoutKeys = Object.keys(this.loadout) as (keyof Loadout)[];
         if (loadoutKeys.length > 0) {
@@ -91,10 +91,10 @@ export class LightRadar {
         }
     }
 
-    start() {
+    start(): void {
         this.radarOptions.isScanning = true
     }
-    stop() {
+    stop(): void {
         this.radarOptions.isScanning = false
     }
 
@@ -368,7 +368,7 @@ export class LightRadar {
         }
     }
 
-    checkCollisionWithAsteroid(m: Missile, asteroids: Asteroid[]) {
+    checkCollisionWithAsteroid(m: Missile, asteroids: Asteroid[]): void {
         for (const asteroid of asteroids) {
             const dxAsteroid = m.position.x - asteroid.position.x;
             const dyAsteroid = m.position.y - asteroid.position.y;
@@ -389,7 +389,7 @@ export class LightRadar {
         }
     }
 
-    checkCollisionWithTarget(m: Missile, targets: Target[]) {
+    checkCollisionWithTarget(m: Missile, targets: Target[]): void {
         for (const target of targets) {
             const dxTarget = m.position.x - target.x;
             const dyTarget = m.position.y - target.y;

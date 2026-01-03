@@ -5,12 +5,12 @@ export default class StartMenu extends Phaser.Scene {
         super('StartMenu');
     }
 
-    preload() {
+    preload(): void {
         this.load.image('flag', 'pr_flag.svg');
 
     }
 
-    create() {
+    create(): void {
         // Title
         this.add.text(this.scale.width / 2, 100, 'RADAR GAME', {
             fontSize: '48px',
@@ -98,7 +98,7 @@ export default class StartMenu extends Phaser.Scene {
         });
     }
 
-    showHowTo() {
+    showHowTo(): void {
         const howToText = this.add.text(this.scale.width / 2, this.scale.height / 2, 
             'CONTROLS:\n\n\n' +
             '- W / S left, right\n\n' +
@@ -120,7 +120,7 @@ export default class StartMenu extends Phaser.Scene {
         });
     }
 
-    showRadarDoc() {
+    showRadarDoc(): void {
         const flag = this.add.image(this.scale.width / 2, this.scale.height / 2, 'flag').setOrigin(0.5);
         const radarDocText = this.add.text(this.scale.width / 2, this.scale.height / 2,
             'Radar Documentation:\n\n' +
@@ -155,7 +155,7 @@ export default class StartMenu extends Phaser.Scene {
         });
     }
 
-    showStory() {
+    showStory(): void {
         const storyText = this.add.text(this.scale.width / 2, this.scale.height / 2, 
             'STORY:\n\n\n' +
             'You are Gologg Ringlbatzz\n\n' +

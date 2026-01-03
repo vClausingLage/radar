@@ -9,32 +9,31 @@ export class AiUnitController {
         private radarTracked: boolean = false
     ) {}
 
-    setPosition(position: Vector2) {
+    setPosition(position: Vector2):void {
         this.position = position;
     }
 
-    setDirection(direction: number) {
+    setDirection(direction: number): void {
         this.direction = direction;
     }
 
-    setSttTracked(sttTracked: boolean) {
+    setSttTracked(sttTracked: boolean): void {
         this.sttTracked = sttTracked;
     }
 
-    setRadarTracked(radarTracked: boolean) {
+    setRadarTracked(radarTracked: boolean): void {
         this.radarTracked = radarTracked;
     }
-    setTurnRate(turnRate: number) {
+    setTurnRate(turnRate: number): void {
         this.turnRate = turnRate;
     }
 
-    update() {
+    update(): void {
         console.log(this.turnRate);
     }
     
-    destroy() {
+    destroy(): void {
         console.log(this.position, this.direction, this.sttTracked, this.radarTracked);
-        // Clean up resources if needed
         console.log('AI Unit Controller destroyed');
     }
 }

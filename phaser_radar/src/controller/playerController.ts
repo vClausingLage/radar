@@ -11,7 +11,7 @@ export class PlayerController {
     this.setupControls();
   }
   
-  private setupControls() {
+  private setupControls(): void {
     this.scene.input.keyboard?.on('keydown-A', () => this.turn = -1);
     this.scene.input.keyboard?.on('keyup-A', () => this.turn = 0);
     this.scene.input.keyboard?.on('keydown-D', () => this.turn = 1);
@@ -21,7 +21,7 @@ export class PlayerController {
     });
   }
   
-  update(speed: number) {
+  update(speed: number): void {
     this.ship.setAngularVelocity(this.turn * speed);
     const angleRad = Phaser.Math.DegToRad(this.ship.angle);
     this.ship.setVelocity(

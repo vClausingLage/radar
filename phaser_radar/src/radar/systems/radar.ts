@@ -22,47 +22,47 @@
 //         private tracks: Track[] = [],
 //     ) {}
 
-//     setPulseDir(direction: Vector2) {
+//     setPulseDir(direction: Vector2): void {
 //         this.radarOptions.pulseDir = direction
 //     }
 
-//     setPosition(pos: Vector2) {
+//     setPosition(pos: Vector2): void {
 //         this.radarOptions.position = pos
 //     }
 
-//     setRange(r: number) {
+//     setRange(r: number): void {
 //         this.radarOptions.range = r
 //     }
 
-//     setSensitivity(s: number) {
+//     setSensitivity(s: number): void {
 //         this.radarOptions.sensitivity = s
 //     }
 
-//     addTarget(target: Target) {
+//     addTarget(target: Target): void {
 //         this.targets.push(target)
 //     }
 
-//     getTargets() {
+//     getTargets(): void {
 //         return this.targets
 //     }
 
-//     getTracks() {
+//     getTracks(): void {
 //         return this.tracks
 //     }
 
-//     setTracks(tracks: Track[]) {
+//     setTracks(tracks: Track[]): void {
 //         this.tracks = tracks
 //     }
 
-//     getMemory() {
+//     getMemory(): Memory {
 //         return this.memory
 //     }
 
-//     setMode(mode: Mode) {
+//     setMode(mode: Mode): void {
 //         this.mode = mode
 //     }
 
-//     getMode() {
+//     getMode(): string {
 //         return this.mode
 //     }
 
@@ -115,7 +115,7 @@
 //         return this.findTargetByCircle(d)
 //     }
 
-//     processReturnSignal(rs: ReturnSignal | null) {
+//     processReturnSignal(rs: ReturnSignal | null): void {
 //         // collect returns and remove old ones
 //         if (rs) {
 //             this.memory[this.step] = rs
@@ -196,7 +196,7 @@
 //         return correlatedTracks.filter(track => track.confidence >= this.CONFIDENCE_THRESHOLD);
 //     }
 
-//     generateTracks() {
+//     generateTracks(): void {
 //         // loop all return signals and cluster them
 //         let buffer = []
 //         let tracksBuffer: Track[] = []
@@ -284,7 +284,7 @@
 //         }
 //     } 
 
-//     start() {
+//     start(): void {
 //         this.radarOptions.isScanning = true
 //         this.radarBeam.setTo(
 //             this.radarOptions.position?.x,
@@ -294,11 +294,11 @@
 //         )
 //     }
 
-//     stop() {
+//     stop(): void {
 //         this.radarOptions.isScanning = false
 //     }
 
-//     render() {}
+//     render(): void {}
 
 //     private formatBearing(angle: number): string {
 //         // Convert angle to degrees and ensure it's between 0 and 360
@@ -321,7 +321,7 @@
 //         };
 //     }
 
-//     update() {
+//     update(): void {
 //         if (!this.radarOptions.isScanning) {
 //             return
 //         }

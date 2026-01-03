@@ -8,7 +8,7 @@ export class InterfaceRenderer {
 
     constructor(private scene: Phaser.Scene) {}
 
-    createInterface(radar: LightRadar, ship: Phaser.Physics.Arcade.Image) {
+    createInterface(radar: LightRadar, ship: Phaser.Physics.Arcade.Image): void {
         // TWS BTN
         this.twsBtn = this.scene.add.text(0, 0, 'TWS', { 
             font: '22px Courier', 
@@ -63,15 +63,18 @@ export class InterfaceRenderer {
         this.updateLayout(ship);
     }
 
-    updateButtonColors(radar: LightRadar) {
+    updateButtonColors(radar: LightRadar): void {
         const mode = radar.getMode();
+        const tracks = radar.getTracks();
+        const isTWSActive = mode === 'tws';
+        const hasTracks = tracks.length > 0;
         if (this.sttBtn) this.sttBtn.setBackgroundColor(mode === 'stt' ? '#ff0000' : '#ffdb4d');
         if (this.rwsBtn) this.rwsBtn.setBackgroundColor(mode === 'rws' ? '#00ff00' : '#ffdb4d');
         if (this.twsBtn) this.twsBtn.setBackgroundColor(mode === 'tws' ? '#00ff00' : '#ffdb4d');
-        if (this.shootBtn) this.shootBtn.setBackgroundColor(mode === 'stt' ? '#ed9209' : '#ffdb4d');
+        if (this.shootBtn) this.shootBtn.setBackgroundColor(mode === 'stt' || (isTWSActive && hasTracks) ? '#ed9209' : '#ffdb4d');
     }
 
-    updateLayout(ship: Phaser.Physics.Arcade.Image) {
+    updateLayout(ship: Phaser.Physics.Arcade.Image): void {
         if (!this.sttBtn || !this.rwsBtn || !this.shootBtn) return;
         const shipX = ship.x;
         const shipY = ship.y;
@@ -105,7 +108,7 @@ export class InterfaceRenderer {
         this.shootBtn.setPosition(shootX, shootY);
     }
 
-    update(radar: LightRadar, ship: Phaser.Physics.Arcade.Image) {
+    update(radar: LightRadar, ship: Phaser.Physics.Arcade.Image): void {
         this.updateButtonColors(radar);
         this.updateLayout(ship);
     }

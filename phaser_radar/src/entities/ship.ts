@@ -23,7 +23,7 @@ abstract class Ship extends Phaser.Physics.Arcade.Sprite {
         this.angle = this.direction;
     }
 
-    getCircle() {
+    getCircle(): Phaser.Geom.Circle {
         return new Phaser.Geom.Circle(this.x, this.y, ((this.body?.width || 0) / 2) - 10);
     }
 

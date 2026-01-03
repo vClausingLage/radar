@@ -246,7 +246,7 @@ class Game extends Phaser.Scene
     });
   }
 
-  debugRenderer() {
+  debugRenderer(): void {
     if (!this.graphics) return;
 
     // Particle effects test
