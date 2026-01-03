@@ -4,7 +4,7 @@ import { Asteroid } from '../../entities/asteroid'
 import { Target } from '../../entities/ship'
 import { ActiveRadarMissile, Missile, SARHMissile } from '../../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
-import { normalizeAngle } from '../../math'
+import { Math as MathUtils } from '../../math'
 import { IMAGE_SCALE } from '../../settings'
 
 export class LightRadar {
@@ -175,9 +175,9 @@ export class LightRadar {
                 const dy = this.sttTrack.pos.y - this.radarOptions.position.y
                 const distanceToTrack = Math.sqrt(dx * dx + dy * dy)
 
-                let angleToTrack = normalizeAngle(Phaser.Math.RadToDeg(Math.atan2(dy, dx)))
-                const normalizedStartAngle = normalizeAngle(startAngle);
-                const normalizedEndAngle = normalizeAngle(endAngle);
+                let angleToTrack = MathUtils.normalizeAngle(Phaser.Math.RadToDeg(Math.atan2(dy, dx)))
+                const normalizedStartAngle = MathUtils.normalizeAngle(startAngle);
+                const normalizedEndAngle = MathUtils.normalizeAngle(endAngle);
 
                 let isTrackInAngle = false;
                 
@@ -457,9 +457,9 @@ export class LightRadar {
             let angleToTarget = Phaser.Math.RadToDeg(Math.atan2(dy, dx))
 
             // Normalize angles to be within -180 to 180 range
-            angleToTarget = normalizeAngle(angleToTarget);
-            const normalizedStartAngle = normalizeAngle(startAngle);
-            const normalizedEndAngle = normalizeAngle(endAngle);
+            angleToTarget = MathUtils.normalizeAngle(angleToTarget);
+            const normalizedStartAngle = MathUtils.normalizeAngle(startAngle);
+            const normalizedEndAngle = MathUtils.normalizeAngle(endAngle);
 
             let isInAngle = false;
             

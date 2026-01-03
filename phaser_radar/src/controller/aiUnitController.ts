@@ -30,6 +30,8 @@ export class AiUnitController {
 
     update(): void {
         console.log(this.turnRate);
+
+        console.log('rdr tracked', this.radarTracked, 'stt', this.sttTracked);
     }
     
     destroy(): void {
