@@ -1,5 +1,6 @@
 import { LightRadar } from "../radar/systems/lightRadar";
 import { AiUnitController } from "../controller/aiUnitController";
+import { Vector2 } from "../types";
 
 abstract class Ship extends Phaser.Physics.Arcade.Sprite {
     constructor(
@@ -39,6 +40,9 @@ abstract class Ship extends Phaser.Physics.Arcade.Sprite {
         }
         return this.angle
     }
+    getPosition(): Vector2 {
+        return { x: this.x, y: this.y };
+    }
 }
 
 export class PlayerShip extends Ship {
@@ -68,5 +72,6 @@ export class Target extends Ship {
     ) {
         super(scene, x, y, direction, speed, radar);
         this.setVisible(false);
+        this.setScale(.5);
     }
 }

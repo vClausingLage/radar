@@ -12,6 +12,7 @@ export class LightRadar {
     private missileUpdateDelta = 0
     private activeMissiles: Missile[] = []
     private twsTargetIndex = 0
+    public events: Phaser.Events.EventEmitter
 
     constructor(
         private radarOptions: RadarOptions,
@@ -21,7 +22,9 @@ export class LightRadar {
         private tracks: Track[] = [],
         private sttTrack: Track | null = null,
         private destroyedTarget: Target | null = null,
-    ) {}
+    ) {
+        this.events = new Phaser.Events.EventEmitter();
+    }
 
     getPosition(): Vector2 {
         return this.radarOptions.position
@@ -206,6 +209,9 @@ export class LightRadar {
         }
         // update missiles
         this.updateMissiles(delta, targets, asteroids)
+
+        // Emit tracking events
+        this.emitTrackingEvents();
 
         this.renderer.renderMissiles(this.activeMissiles)
         this.renderer.renderRadarScanInterface(graphics, this.radarOptions.position, this.radarOptions.range, angle - this.radarOptions.azimuth, angle + this.radarOptions.azimuth, this.radarOptions.range, this.activeMissiles, this.loadout)
@@ -867,5 +873,15 @@ export class LightRadar {
             };
         }
         return null;    
+    }
+
+    private emitTrackingEvents(): void {
+        // Emit STT tracking event (always emit, with null when not tracking)
+        const sttTargetId = this.sttTrack ? this.sttTrack.id : null;
+        this.events.emit('stt-track', sttTargetId);
+        
+        // Emit radar tracking events (always emit, with empty array when no tracks)
+        const trackedIds = this.tracks.map(track => track.id);
+        this.events.emit('radar-track', trackedIds);
     }
 }

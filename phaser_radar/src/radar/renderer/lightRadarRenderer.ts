@@ -164,4 +164,11 @@ export class LightRadarRenderer {
     renderAsteroids(asteroids: Asteroid[]): void {
         console.log('Rendering asteroids:', asteroids);
     }
+
+    destroy(): void {
+        this.rangeText?.destroy();
+        this.activeLoadout?.destroy();
+        this.rangeText = undefined;
+        this.activeLoadout = undefined;
+    }
 }

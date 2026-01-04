@@ -51,6 +51,7 @@ export const targetSettings = {
             active: false
         },
     },
+    SHIP_SCALE: 0.5
 }
 
 // MISSILES

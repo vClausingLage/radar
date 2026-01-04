@@ -88,7 +88,7 @@ class Game extends Phaser.Scene
     // TARGETS using factory
     const target1 = this.add.target(
       2050,
-      2150,
+      2500,
       340,
       3,
       'cargo',
@@ -99,6 +99,7 @@ class Game extends Phaser.Scene
         targetSettings.LOADOUT
       ),
       1,
+      this.player?.radar
     ) as Target;
     const target2 = this.add.target(
       2000,
@@ -113,6 +114,7 @@ class Game extends Phaser.Scene
         targetSettings.LOADOUT
       ),
       2,
+      this.player?.radar
     ) as Target;
     this.targets.push(target1);
     this.targets.push(target2);
@@ -130,7 +132,6 @@ class Game extends Phaser.Scene
     (this.player as any)?.radar?.start();
   }
 
-  // update time , delta
   update(_: number, delta: number)
   {
     this.graphics?.clear();
@@ -138,10 +139,9 @@ class Game extends Phaser.Scene
     
     // Update player controller
     this.playerController?.update(shipSettings.SPEED);
-    
     this.player?.radar?.setPosition(this.player?.getWorldPoint() || { x: 0, y: 0 });
 
-    // move targets & asteroids
+    // check for collisions
     this.checkCollisions();
 
     // radar scan
@@ -150,40 +150,21 @@ class Game extends Phaser.Scene
     // update targets
     const destroyedEnemyId = this.player?.radar?.updateEnemiesInMain();
     if (destroyedEnemyId !== undefined) {
-      // Find and remove the target with the specified id
       this.targets = this.targets.filter(target => target.id !== destroyedEnemyId);
-    }
-    const trackedEnemyId = this.player?.radar?.alertTargetBeingTracked();
-    if (trackedEnemyId !== null) {
-      this.targets.forEach(t => {
-        if (t.id === trackedEnemyId) {
-          t.controller.setSttTracked(true);
-        } else {
-          t.controller.setSttTracked(false);
-        }
-      })
-    }
-    const rwrAlertIds = this.player?.radar?.alertRwr();
-    if (rwrAlertIds !== null && rwrAlertIds !== undefined && rwrAlertIds.length > 0) {
-      this.targets.forEach(t => {
-        if (rwrAlertIds?.includes(t.id)) {
-          t.controller.setRadarTracked(true);
-        } else {
-          t.controller.setRadarTracked(false);
-        }
-      })
     }
 
     // Update target AI controllers once per second
     if (!this.aiUpdateTimer) {
       this.aiUpdateTimer = this.time.addEvent({
-      delay: 1000,
-      callback: () => {
-        this.targets.forEach(t => {
-        t.controller.update();
-        });
-      },
-      loop: true
+        delay: 1000,
+        callback: () => {
+          this.targets.forEach(t => {
+            t.controller.setPosition(t.getPosition());
+            t.controller.setDirection(t.getDirection());
+            t.controller.update();
+          });
+        },
+        loop: true
       });
     }
 
@@ -191,6 +172,30 @@ class Game extends Phaser.Scene
     if (this.player?.radar && this.interfaceRenderer && this.player) {
       this.interfaceRenderer.update(this.player.radar, this.player);
     }
+  }
+
+  private destroyPlayer(): void {
+    if (!this.player) return;
+
+    this.player.setVisible(false);
+    this.player.setActive(false);
+    this.player.disableBody(true, true);
+    this.player?.radar?.stop();
+    
+    // Clean up renderers
+    this.interfaceRenderer?.destroy();
+    this.graphics?.destroy();
+    
+    // Destroy targets and asteroids
+    this.targets.forEach(target => target.destroy());
+    this.asteroids.forEach(asteroid => asteroid.destroy());
+    
+    // Show game over message
+    const cam = this.cameras.main;
+    this.add.text(cam.centerX, cam.centerY, 'SHIP DESTROYED', {
+      font: '32px Courier',
+      color: '#ff0000'
+    }).setOrigin(0.5, 0.5).setScrollFactor(0);
   }
 
   // TO DO 
@@ -207,18 +212,9 @@ class Game extends Phaser.Scene
       const collider = Phaser.Geom.Intersects.CircleToCircle(playerCircle, targetCircle);
       if (collider && this.player) {
         console.warn('Collision detected between player and target ID:', t.id);
-        this.player.setVisible(false);
-        this.player.setActive(false);
-        this.player.disableBody(true, true);
-        this.player?.radar?.stop();
-        this.targets.forEach(target => target.destroy());
-        this.asteroids.forEach(asteroid => asteroid.destroy());
-        const cam = this.cameras.main;
-        this.add.text(cam.centerX, cam.centerY, 'SHIP DESTROYED', {
-          font: '32px Courier',
-          color: '#ff0000'
-        }).setOrigin(0.5, 0.5).setScrollFactor(0);
+        this.destroyPlayer();
       }
+
     });
 
     // asteroids
@@ -231,17 +227,7 @@ class Game extends Phaser.Scene
       const collider = Phaser.Geom.Intersects.CircleToCircle(playerCircle, asteroidCircle);
       if (collider && this.player) {
         console.warn('Collision detected between player and asteroid');
-        this.player.setVisible(false);
-        this.player.setActive(false);
-        this.player.disableBody(true, true);
-        this.player?.radar?.stop();
-        this.targets.forEach(target => target.destroy());
-        this.asteroids.forEach(asteroid => asteroid.destroy());
-        const cam = this.cameras.main;
-        this.add.text(cam.centerX, cam.centerY, 'SHIP DESTROYED', {
-          font: '32px Courier',
-          color: '#ff0000'
-        }).setOrigin(0.5, 0.5).setScrollFactor(0);
+        this.destroyPlayer();
       }
     });
   }
@@ -264,26 +250,26 @@ class Game extends Phaser.Scene
         
 
       // Draw player ship bounds
-      // if (this.player) {
-      //   const c = this.player.getCircle();
-      //   this.graphics.lineStyle(2, 0x00ff00, 1);
-      //   this.graphics.strokeCircle(
-      //   c!.x,
-      //   c!.y,
-      //   c!.radius
-      //   );
+      if (this.player) {
+        const c = this.player.getCircle();
+        this.graphics.lineStyle(2, 0x00ff00, 1);
+        this.graphics.strokeCircle(
+        c!.x,
+        c!.y,
+        c!.radius
+        );
       }
 
       // Draw target bounds
-      // this.targets.forEach(t => {
-      //   const c = t.getCircle();
-      //   this.graphics!.lineStyle(2, 0xff0000, 1);
-      //   this.graphics!.strokeCircle(
-      //   c!.x,
-      //   c!.y,
-      //   c!.radius
-      //   );
-      // });
+      this.targets.forEach(t => {
+        const c = t.getCircle();
+        this.graphics!.lineStyle(2, 0xff0000, 1);
+        this.graphics!.strokeCircle(
+        c!.x,
+        c!.y,
+        c!.radius
+        );
+      });
 
       // Draw asteroid bounds
       // this.asteroids.forEach(a => {
@@ -296,7 +282,7 @@ class Game extends Phaser.Scene
       //   );
       // });
   }
-// }
+}
 
 const config = {
   type: Phaser.AUTO,
