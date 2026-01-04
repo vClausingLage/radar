@@ -5,19 +5,22 @@ export class Math {
         return angle;
     }
 
-    static getRelativeAngle(sourceAngle: number, targetAngle: number): 'hot' | 'cold' | 'flanking_left' | 'flanking_right' {
+    static getRelativeAngle(sourceAngle: number, targetAngle: number): {
+        aspect: 'hot' | 'cold' | 'flanking_left' | 'flanking_right',
+        angle: number
+     } {
         let relativeAngle = targetAngle - sourceAngle;
         relativeAngle = this.normalizeAngle(relativeAngle);
         
         // Determine aspect based on 90-degree quarters
         if (relativeAngle >= -45 && relativeAngle <= 45) {
-            return 'hot';
+            return { aspect: 'hot', angle: relativeAngle };
         } else if (relativeAngle > 45 && relativeAngle <= 135) {
-            return 'flanking_right';
+            return { aspect: 'flanking_right', angle: relativeAngle };
         } else if (relativeAngle > 135 || relativeAngle < -135) {
-            return 'cold';
+            return { aspect: 'cold', angle: relativeAngle };
         } else {
-            return 'flanking_left';
+            return { aspect: 'flanking_left', angle: relativeAngle };
         }
     }
 }
