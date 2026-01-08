@@ -2,7 +2,7 @@ import { LightRadar } from "../radar/systems/lightRadar";
 import { AiUnitController } from "../controller/aiUnitController";
 import { Vector2 } from "../types";
 
-abstract class Ship extends Phaser.Physics.Arcade.Sprite {
+export abstract class Ship extends Phaser.Physics.Arcade.Sprite {
     constructor(
         public scene: Phaser.Scene, 
         public x: number, 
@@ -74,4 +74,5 @@ export class Target extends Ship {
         this.setVisible(false);
         this.setScale(.5);
     }
+    public turnRate: number = 90; // deg/sec default for AI turning
 }

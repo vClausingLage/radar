@@ -7,6 +7,7 @@ import { createPlayerShipFactory } from "./entities/shipFactory";
 import { createAsteroidFactory } from "./entities/asteroidFactory";
 import { PlayerShip, Target } from "./entities/ship";
 import { PlayerController } from "./controller/playerController";
+import { AiUnitController } from "./controller/aiUnitController";
 import { CAMERA_ZOOM, shipSettings, radarDefaultSettings, targetSettings } from "./settings";
 
 class Game extends Phaser.Scene
@@ -73,6 +74,9 @@ class Game extends Phaser.Scene
       ),
     ) as PlayerShip;
 
+    // Attach radar to its owning ship
+    this.player.radar.attachTo(this.player);
+
     // PLAYER CONTROLLER
     this.playerController = new PlayerController(this, this.player);
 
@@ -82,8 +86,8 @@ class Game extends Phaser.Scene
     this.cameras.main.setZoom(CAMERA_ZOOM);
     
     // INTERFACE
-    this.interfaceRenderer = new InterfaceRenderer(this);
-    this.interfaceRenderer.createInterface((this.player as any)?.radar, this.player);
+    this.interfaceRenderer = new InterfaceRenderer(this, this.player.radar);
+    this.interfaceRenderer.createInterface(this.player);
 
     // TARGETS using factory
     const target1 = this.add.target(
@@ -94,28 +98,39 @@ class Game extends Phaser.Scene
       'cargo',
       new LightRadar(
         radarDefaultSettings,
-        new LightRadarRenderer(this),
+        null,
         'rws',
         targetSettings.LOADOUT
       ),
       1,
-      this.player?.radar
     ) as Target;
+    target1.radar.attachTo(target1);
+    
+    // Pass the AI's radar to its controller
+    target1.controller = new AiUnitController(
+      target1.turnRate,
+      target1.getPosition(),
+      target1.getDirection(),
+      target1.id,
+      this.player?.radar || null,
+      target1.radar || null,
+    );
+    
     const target2 = this.add.target(
       2000,
-      2200,
+      2000,
       150,
       2,
       'cargo',
       new LightRadar(
         radarDefaultSettings,
-        new LightRadarRenderer(this),
+        null,
         'rws',
         targetSettings.LOADOUT
       ),
       2,
-      this.player?.radar
     ) as Target;
+    target2.radar.attachTo(target2);
     this.targets.push(target1);
     this.targets.push(target2);
 
@@ -139,13 +154,50 @@ class Game extends Phaser.Scene
     
     // Update player controller
     this.playerController?.update(shipSettings.SPEED);
-    this.player?.radar?.setPosition(this.player?.getWorldPoint() || { x: 0, y: 0 });
+    // Keep radar position exactly at the player's world position
+    this.player?.radar?.setPosition(this.player?.getPosition() || { x: 0, y: 0 });
 
     // check for collisions
     this.checkCollisions();
 
-    // radar scan
-    this.player?.radar?.update(delta, this.player?.angle || 0, this.targets, this.asteroids, this.graphics!);
+    // radar scan (pass all ships; radar excludes its owner internally)
+    const allShips = [this.player!, ...this.targets];
+    this.player?.radar?.update(delta, this.player?.angle || 0, allShips, this.asteroids, this.graphics!);
+
+    // Update AI continuous (every frame)
+    this.targets.forEach(t => {
+      t.controller.setPosition(t.getPosition());
+      t.controller.setDirection(t.getDirection());
+      const newDirection = t.controller.updateContinuous(delta);
+      t.setAngle(newDirection);
+      
+      // Update AI radar position and scan
+      if (t.radar) {
+        t.radar.setPosition(t.getPosition());
+        t.radar.update(delta, newDirection, allShips, this.asteroids, this.graphics!);
+      }
+    });
+
+    // Update target AI strategic decisions once per second
+    if (!this.aiUpdateTimer) {
+      this.aiUpdateTimer = this.time.addEvent({
+        delay: 1000,
+        callback: () => {
+          this.targets.forEach(t => {
+            t.controller.updateStrategic();
+          });
+        },
+        loop: true
+      });
+    }
+
+    // Check if player is being tracked
+    const playerTrackedByRadar = this.targets.some(t => 
+      t.radar?.getTracks().length > 0
+    );
+    const playerLockedByStt = this.targets.some(t => 
+      t.radar?.getMode() === 'stt'
+    );
 
     // update targets
     const destroyedEnemyId = this.player?.radar?.updateEnemiesInMain();
@@ -153,24 +205,10 @@ class Game extends Phaser.Scene
       this.targets = this.targets.filter(target => target.id !== destroyedEnemyId);
     }
 
-    // Update target AI controllers once per second
-    if (!this.aiUpdateTimer) {
-      this.aiUpdateTimer = this.time.addEvent({
-        delay: 1000,
-        callback: () => {
-          this.targets.forEach(t => {
-            t.controller.setPosition(t.getPosition());
-            t.controller.setDirection(t.getDirection());
-            t.controller.update();
-          });
-        },
-        loop: true
-      });
-    }
-
-    // Update interface
+    // Update interface with warnings
     if (this.player?.radar && this.interfaceRenderer && this.player) {
-      this.interfaceRenderer.update(this.player.radar, this.player);
+      this.interfaceRenderer.update(this.player);
+      this.interfaceRenderer.updateWarnings(playerTrackedByRadar, playerLockedByStt);
     }
   }
 

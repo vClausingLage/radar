@@ -1,7 +1,7 @@
 import { RadarOptions, Loadout, Vector2 } from '../../types'
 import { Track } from '../data/track'
 import { Asteroid } from '../../entities/asteroid'
-import { Target } from '../../entities/ship'
+import { Ship, Target } from '../../entities/ship'
 import { ActiveRadarMissile, Missile, SARHMissile } from '../../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
 import { Math as MathUtils } from '../../math'
@@ -13,10 +13,11 @@ export class LightRadar {
     private activeMissiles: Missile[] = []
     private twsTargetIndex = 0
     public events: Phaser.Events.EventEmitter
+    private owner: Ship | null = null
 
     constructor(
         private radarOptions: RadarOptions,
-        private renderer: LightRadarRenderer,
+        private renderer: LightRadarRenderer | null,
         private mode: string = 'rws',
         private loadout: Loadout,
         private tracks: Track[] = [],
@@ -24,6 +25,11 @@ export class LightRadar {
         private destroyedTarget: Target | null = null,
     ) {
         this.events = new Phaser.Events.EventEmitter();
+    }
+
+    // Attach radar to its owning ship so we can exclude it from scans
+    attachTo(owner: Ship): void {
+        this.owner = owner
     }
 
     getPosition(): Vector2 {
@@ -101,7 +107,11 @@ export class LightRadar {
         this.radarOptions.isScanning = false
     }
 
-    update(delta: number, angle: number, targets: Target[], asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
+    update(delta: number, angle: number, ships: Array<Ship | Target>, asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
+        // Derive targets by excluding the owning ship, if set (always available for missiles)
+        const targets: Target[] = (ships || [])
+            .filter(s => (this.owner ? s !== this.owner : true)) as Target[]
+
         if (!this.radarOptions.isScanning) {
             // do nothing
         } else {
@@ -202,7 +212,7 @@ export class LightRadar {
                 this.lastScanTime += delta
                 if (this.lastScanTime >= 1000) {
                     console.log('STT Track:', this.sttTrack.pos)
-                    this.renderer.renderStt(this.sttTrack, graphics)
+                    this.renderer?.renderStt(this.sttTrack, graphics)
                     this.lastScanTime = 0
                 }
             }
@@ -213,8 +223,8 @@ export class LightRadar {
         // Emit tracking events
         this.emitTrackingEvents();
 
-        this.renderer.renderMissiles(this.activeMissiles)
-        this.renderer.renderRadarScanInterface(graphics, this.radarOptions.position, this.radarOptions.range, angle - this.radarOptions.azimuth, angle + this.radarOptions.azimuth, this.radarOptions.range, this.activeMissiles, this.loadout)
+        this.renderer?.renderMissiles(this.activeMissiles)
+        this.renderer?.renderRadarScanInterface(graphics, this.radarOptions.position, this.radarOptions.range, angle - this.radarOptions.azimuth, angle + this.radarOptions.azimuth, this.radarOptions.range, this.activeMissiles, this.loadout)
     }
 
     getScanArea(angle: number): { startAngle: number, endAngle: number } | null {
@@ -251,8 +261,11 @@ export class LightRadar {
             return
         }
                 
-        const missileStartX = this.radarOptions.position.x
-        const missileStartY = this.radarOptions.position.y 
+        // Spawn slightly ahead to avoid zero-distance issues
+        const spawnOffset = 20
+        const angleRad = Phaser.Math.DegToRad(angle || 0)
+        const missileStartX = this.radarOptions.position.x + Math.cos(angleRad) * spawnOffset
+        const missileStartY = this.radarOptions.position.y + Math.sin(angleRad) * spawnOffset 
 
         const distance = Math.sqrt(
             (target.pos.x - missileStartX) ** 2 +
@@ -260,8 +273,18 @@ export class LightRadar {
         );
 
         if (distance === 0) {
-            console.error('Target is at current location, missile not fired.')
-            return 
+            // Fallback: nudge start point a bit and continue
+            const nudge = 1
+            const adjX = missileStartX + Math.cos(angleRad) * nudge
+            const adjY = missileStartY + Math.sin(angleRad) * nudge
+            const newDistance = Math.sqrt(
+                (target.pos.x - adjX) ** 2 +
+                (target.pos.y - adjY) ** 2
+            )
+            if (newDistance === 0) {
+                console.error('Target is at current location, missile not fired.')
+                return
+            }
         }
 
         // DECREASE MISSILE LOADOUT
@@ -286,7 +309,7 @@ export class LightRadar {
         switch (activeWeaponType) {
             case 'AIM-177':
                 const sarhMissile = new SARHMissile(
-                    this.renderer.scene!,
+                    this.renderer?.scene!,
                     missileStartX,
                     missileStartY,
                     Math.cos(Phaser.Math.DegToRad(angle)),
@@ -297,7 +320,7 @@ export class LightRadar {
                 break;
             case 'AIM-220':
                 const activeRadarMissile = new ActiveRadarMissile(
-                    this.renderer.scene!,
+                    this.renderer?.scene!,
                     missileStartX,
                     missileStartY,
                     Math.cos(Phaser.Math.DegToRad(angle)),
@@ -396,19 +419,22 @@ export class LightRadar {
     }
 
     checkCollisionWithTarget(m: Missile, targets: Target[]): void {
-        for (const target of targets) {
-            const dxTarget = m.position.x - target.x;
-            const dyTarget = m.position.y - target.y;
-            const distanceToTarget = Math.sqrt(dxTarget * dxTarget + dyTarget * dyTarget);
-            
-            // Define proximity detection radius (missile + target size for more realistic collision)
-            const proximityThreshold = 3 + (target.body?.width! / 2);
-            
-            if (distanceToTarget <= proximityThreshold) {
+        // Only consider the missile's intended target to avoid instant detonation on others
+        const target = m.targetId !== undefined ? targets.find(t => t.id === m.targetId) : undefined;
+        if (!target) return;
+
+        const dxTarget = m.position.x - target.x;
+        const dyTarget = m.position.y - target.y;
+        const distanceToTarget = Math.sqrt(dxTarget * dxTarget + dyTarget * dyTarget);
+        
+        // Define proximity detection radius (missile + target size for more realistic collision)
+        const proximityThreshold = 3 + (target.body?.width! / 2);
+        
+        if (distanceToTarget <= proximityThreshold) {
                 console.info(`Missile hit target at position: ${target.x}, ${target.y}`);
 
                 // Create an explosion sprite at the target's position
-                if (this.renderer.scene) {
+                if (this.renderer?.scene) {
                     const explosion = this.renderer.scene.add.sprite(
                         target.x,
                         target.y,
@@ -449,9 +475,6 @@ export class LightRadar {
                     !(track.pos.x === target.x && track.pos.y === target.y)
                 );
                 
-                // Stop checking other targets since this missile is already destroyed
-                break;
-            }
         }
     }
 
@@ -599,7 +622,7 @@ export class LightRadar {
                     confidence: 0,
                 }]
                 
-                this.renderer.renderRwsContacts(graphics, t, distance)
+                this.renderer?.renderRwsContacts(graphics, t, distance)
             }
         }
         
@@ -611,7 +634,7 @@ export class LightRadar {
         // THIS RENDERER SHOULD USE 
         // TERRAIN RADAR LIKE RENDERING FOR ASTEROIDS
         // NOT IMPLEMENTED
-        this.renderer.renderAsteroids(asteroidsInRange)
+        this.renderer?.renderAsteroids(asteroidsInRange)
         
         this.lastScanTime = 0
     }
@@ -737,12 +760,12 @@ export class LightRadar {
         for (const track of this.tracks) {
             const targetObj = targetsInRange.find(t => t.id === track.id);
             if (targetObj) {
-                this.renderer.renderRwsContacts(graphics, targetObj, track.dist);
+                this.renderer?.renderRwsContacts(graphics, targetObj, track.dist);
             }
         }
 
         // Render asteroids
-        this.renderer.renderAsteroids(asteroidsInRange);
+        this.renderer?.renderAsteroids(asteroidsInRange);
         
         console.log('TWS Tracks:', this.tracks.map(t => ({ id: t.id, dist: Math.round(t.dist) })));
         
