@@ -1,24 +1,36 @@
 import { LightRadar } from "../radar/systems/lightRadar";
 import { AiUnitController } from "../controller/aiUnitController";
 import { Vector2 } from "../types";
+import { PlayerController } from "../controller/playerController";
 
 export abstract class Ship extends Phaser.Physics.Arcade.Sprite {
-    constructor(
-        public scene: Phaser.Scene, 
-        public x: number, 
-        public y: number, 
-        private direction: number,
-        private speed: number, 
-        public radar: LightRadar,
-    ) {
-        super(scene, x, y, 'ship');
-        
-        this.radar = radar;
+    private direction: number;
+    private speed: number;
+    public radar: LightRadar;
+
+    constructor(params: {
+        scene: Phaser.Scene;
+        x: number;
+        y: number;
+        direction: number;
+        speed: number;
+        radar: LightRadar;
+    }) {
+        super(params.scene, params.x, params.y, 'ship');
+        this.scene = params.scene;
+        this.x = params.x;
+        this.y = params.y;
+        this.direction = params.direction;
+        this.speed = params.speed;
+        this.radar = params.radar;
         this.scene.add.existing(this);
         this.scene.physics.add.existing(this);
-        this.body?.velocity.set(
-            Math.cos(Phaser.Math.DegToRad(direction)) * this.speed, 
-            Math.sin(Phaser.Math.DegToRad(direction)) * this.speed
+        if (!this.body) {
+            throw new Error('Body of Ship is undefined');
+        }
+        this.body.velocity.set(
+            Math.cos(Phaser.Math.DegToRad(this.direction)) * this.speed, 
+            Math.sin(Phaser.Math.DegToRad(this.direction)) * this.speed
         );
         this.radar.setMode('rws');
         this.angle = this.direction;
@@ -29,11 +41,9 @@ export abstract class Ship extends Phaser.Physics.Arcade.Sprite {
     }
 
     getSpeed(): number {
-        if (!this.body || !this.body.velocity) {
-            throw new Error('Velocity of Target is undefined');
-        }
-        return this.body.velocity.length()
+        return this.speed;
     }
+    
     getDirection(): number {
         if (this.angle === undefined) {
             throw new Error('Direction of Target is undefined');
@@ -46,33 +56,41 @@ export abstract class Ship extends Phaser.Physics.Arcade.Sprite {
 }
 
 export class PlayerShip extends Ship {
-    constructor(
-        scene: Phaser.Scene, 
-        x: number, 
-        y: number, 
-        direction: number, 
-        speed: number, 
-        radar: LightRadar, 
-    ) {
-        super(scene, x, y, direction, speed, radar);
+    public controller?: PlayerController;
+
+    constructor(params: {
+        scene: Phaser.Scene;
+        x: number;
+        y: number;
+        direction: number;
+        speed: number;
+        radar: LightRadar;
+    }) {
+        super(params);
     }
 }
 
 export class Target extends Ship {
-    constructor(
-        scene: Phaser.Scene, 
-        x: number, 
-        y: number, 
-        direction: number,
-        speed: number, 
-        type: 'cruiser' | 'cargo',
-        radar: LightRadar, 
-        public id: number, 
-        public controller: AiUnitController
-    ) {
-        super(scene, x, y, direction, speed, radar);
+    public id: number;
+    public controller?: AiUnitController;
+
+    constructor(params: {
+        scene: Phaser.Scene;
+        x: number;
+        y: number;
+        direction: number;
+        speed: number;
+        radar: LightRadar;
+        shipType: 'cruiser' | 'cargo';
+        id: number;
+    }) {
+        super(params);
+        this.id = params.id;
         this.setVisible(false);
         this.setScale(.5);
     }
-    public turnRate: number = 90; // deg/sec default for AI turning
+
+    setController(controller: AiUnitController) {
+        this.controller = controller;
+    }
 }

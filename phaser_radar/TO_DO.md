@@ -4,19 +4,23 @@
 
 AIM :: DO AN ACTUAL RADAR SCAN IN STEPS RATHER THAN ALL AT ONCE (SEE lightRadar.ts)
 
+- DI
+- update missile size
+- ship -> bring radar from constructor to factory
+- prevent shooting sarh missiles in tws without stt
+- remove unneccesary constructor props ship, controller
 - ADD RWR ALERTS FOR ENEMIES THAT ARE RADAR TRACKED
-- PHYSICS CONTROLLER FOR COLLISIONS
 - VISIBILITY ON SHIP CLASSES TO PRIVATE / PROTECTED
-- LOADOUT SHOULD ONLY BE IN SHIP NOT RADAR
 - ASTEROID RENDERER
 - VISIBILITY OF THINGS NEAR SHIP (SHIPS; ASTEROIDS) => ~ 250 UNITS?
-- TARGETS 'IN RANGE MUST BE IF 2 OF 4 CARD POINTS ARE IN MIN/MAX ANGLE
+- TARGETS IN RANGE MUST BE IF 2 OF 4 CARD POINTS ARE IN MIN/MAX ANGLE
 
 # RADAR
 
 - noise
-- disatance
-- cross section
+- distance -> exponential falloff
+- target size
+- cross section -> side / front
 
 # TWS
 
@@ -25,7 +29,7 @@ AIM :: DO AN ACTUAL RADAR SCAN IN STEPS RATHER THAN ALL AT ONCE (SEE lightRadar.
 - Logic for target history: how to correlate new radar returns with existing tracks
 - target prorization by distance
 - ADD TWS MODE
-  - ADD POSSIBILITY FOR RADAR TO SAVE TRACKS / TARGETS
+- ADD POSSIBILITY FOR RADAR TO SAVE TRACKS / TARGETS
 - azimuth
 - range
 - wake up point missile

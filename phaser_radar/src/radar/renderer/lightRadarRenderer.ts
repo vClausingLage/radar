@@ -20,7 +20,7 @@ export class LightRadarRenderer {
             this.activeLoadout = this.scene.add.text(endX, endY, "\n\n\n No Active Missile", { color: '#00ff00' }).setRotation(Phaser.Math.DegToRad(endAngle + 90));
         }
         if (!this.rangeText) {
-            this.rangeText = this.scene.add.text(endX, endY, `\n ${range}\n ${activeMissiles?.length && activeMissiles[0].age > 0 ? activeMissiles[0].age : ''}`, { color: '#00ff00' }).setRotation(Phaser.Math.DegToRad(endAngle + 90));
+            this.rangeText = this.scene.add.text(endX, endY, `\n ${range}\n ${activeMissiles?.length && activeMissiles[0].missileAge > 0 ? activeMissiles[0].missileAge : ''}`, { color: '#00ff00' }).setRotation(Phaser.Math.DegToRad(endAngle + 90));
         }
 
         graphics.lineStyle(1, 0x00ff00, 0.5);
@@ -154,15 +154,15 @@ export class LightRadarRenderer {
     }
 
     renderMissiles(missiles: Missile[]): void {
+        // Physics updates position; keep rotation consistent if needed
         missiles.forEach(m => {
-            // Update sprite position and rotation
-            m.setPosition(m.position.x, m.position.y);
             m.setAngle(Phaser.Math.RadToDeg(Math.atan2(m.direction.y, m.direction.x)));
         });
     }
 
     renderAsteroids(asteroids: Asteroid[]): void {
-        console.log('Rendering asteroids:', asteroids);
+        // Currently unused: reserved for terrain-like rendering pass
+        void asteroids;
     }
 
     destroy(): void {

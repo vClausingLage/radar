@@ -1,6 +1,6 @@
 import { PlayerShip } from "../entities/ship";
+import { playerShipSettings } from "../settings";
 
-// controller/playerController.ts
 export class PlayerController {
   private turn = 0;
   
@@ -12,9 +12,9 @@ export class PlayerController {
   }
   
   private setupControls(): void {
-    this.scene.input.keyboard?.on('keydown-A', () => this.turn = -1);
+    this.scene.input.keyboard?.on('keydown-A', () => this.turn = -playerShipSettings.TURN_SPEED);
     this.scene.input.keyboard?.on('keyup-A', () => this.turn = 0);
-    this.scene.input.keyboard?.on('keydown-D', () => this.turn = 1);
+    this.scene.input.keyboard?.on('keydown-D', () => this.turn = playerShipSettings.TURN_SPEED);
     this.scene.input.keyboard?.on('keyup-D', () => this.turn = 0);
     this.scene.input.keyboard?.on('keydown-Q', () => {
       this.ship.radar.setLoadout();

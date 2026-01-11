@@ -5,9 +5,9 @@ export const IMAGE_SCALE = 1
 export const CAMERA_ZOOM = .8
 
 // PLAYER SHIP
-export const shipSettings = {
+export const playerShipSettings = {
     SPEED: 3,
-    ROTATION_SPEED: 16,
+    TURN_SPEED: 5,
     SIZE: 0.5,
     DIRECTION: 270,
     START_POSITION: { 
@@ -40,7 +40,7 @@ export const radarDefaultSettings = {
 }
 
 // TARGETS
-export const targetSettings = {
+export const targetShipSettings = {
     LOADOUT: {
         'AIM-177': {
             load: 2,

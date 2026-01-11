@@ -5,22 +5,21 @@ import { Vector2 } from '../types';
 declare global {
   namespace Phaser.GameObjects {
     interface GameObjectFactory {
-      asteroid(position: Vector2, direction: number, speed: number): Asteroid;
+      asteroid(params: { position: Vector2; direction: number; speed: number }): Asteroid;
     }
   }
 }
 
 export const createAsteroidFactory = (scene: Phaser.Scene) => {
   Phaser.GameObjects.GameObjectFactory.register('asteroid', function(
-    position: Vector2,
-    direction: number,
-    speed: number
+    params: { position: Vector2; direction: number; speed: number }
   ) {
-    const asteroid = new Asteroid(scene, position, direction, speed);
-    // @ts-ignore
-    this.displayList.add(asteroid);
-    // @ts-ignore
-    this.updateList.add(asteroid);
+    const asteroid = new Asteroid({ scene, ...params });
+    if (!asteroid.body) throw new Error('Asteroid body is undefined');
+    asteroid.body.onCollide = true;
+    (scene as any).asteroidGroup?.add(asteroid);
+    asteroid.addToDisplayList();
+    asteroid.addToUpdateList();
     return asteroid;
   });
 };

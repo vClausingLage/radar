@@ -6,9 +6,8 @@ import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer";
 import { createPlayerShipFactory } from "./entities/shipFactory";
 import { createAsteroidFactory } from "./entities/asteroidFactory";
 import { PlayerShip, Target } from "./entities/ship";
-import { PlayerController } from "./controller/playerController";
-import { AiUnitController } from "./controller/aiUnitController";
-import { CAMERA_ZOOM, shipSettings, radarDefaultSettings, targetSettings } from "./settings";
+import { CAMERA_ZOOM, playerShipSettings, radarDefaultSettings, targetShipSettings } from "./settings";
+import { createMissileFactory } from "./entities/missileFactory";
 
 class Game extends Phaser.Scene
 {
@@ -19,15 +18,17 @@ class Game extends Phaser.Scene
   private canvas?: HTMLCanvasElement = this.sys?.game?.canvas ?? undefined;
   private graphics?: Phaser.GameObjects.Graphics;
   private player?: PlayerShip;
-  private playerController?: PlayerController;
   private interfaceRenderer?: InterfaceRenderer;
-  private aiUpdateTimer?: Phaser.Time.TimerEvent;
   private targets: Target[] = [];
   private asteroids: any[] = [];
+  private shipGroup!: Phaser.Physics.Arcade.Group;
+  private asteroidGroup!: Phaser.Physics.Arcade.Group;
+  private missileGroup!: Phaser.Physics.Arcade.Group;
 
   constructor()
   {
     super('Game');
+    // return undefined canvas initially
     console.info(this.canvas);
   }
   
@@ -52,33 +53,38 @@ class Game extends Phaser.Scene
 
     createPlayerShipFactory(this);
     createAsteroidFactory(this);
+    createMissileFactory(this);
 
     // WORLD
     this.physics.world.setBounds(0, 0, this.world.width, this.world.height);
+    // Groups for collisions
+    this.shipGroup = this.physics.add.group();
+    this.asteroidGroup = this.physics.add.group();
+    this.missileGroup = this.physics.add.group();
     // ADD IMAGES
     this.add.image(0, 0, 'universe').setOrigin(0).setScale(2.5);
     // GRAPHICS
     this.graphics = this.add.graphics();
 
     // PLAYER SHIP using factory
-    this.player = this.add.playerShip(
-      shipSettings.START_POSITION.x,
-      shipSettings.START_POSITION.y,
-      shipSettings.DIRECTION,
-      shipSettings.SPEED,
-      new LightRadar(
-        radarDefaultSettings,
-        new LightRadarRenderer(this),
-        'rws',
-        shipSettings.LOADOUT
-      ),
-    ) as PlayerShip;
-
+    this.player = this.add.playerShip({
+      x: playerShipSettings.START_POSITION.x,
+      y: playerShipSettings.START_POSITION.y,
+      direction: playerShipSettings.DIRECTION,
+      speed: playerShipSettings.SPEED,
+      radar: new LightRadar({
+        scene: this,
+        settings: radarDefaultSettings,
+        renderer: new LightRadarRenderer(this),
+        mode: 'rws',
+        loadout: playerShipSettings.LOADOUT
+      }),
+    });
     // Attach radar to its owning ship
-    this.player.radar.attachTo(this.player);
-
+    // this.player.radar.attachTo(this.player);
+    this.shipGroup.add(this.player);
     // PLAYER CONTROLLER
-    this.playerController = new PlayerController(this, this.player);
+    // this.playerController = new PlayerController(this, this.player);
 
     // CAMERA
     this.cameras.main.setBounds(0, 0, this.world.width, this.world.height);
@@ -89,62 +95,77 @@ class Game extends Phaser.Scene
     this.interfaceRenderer = new InterfaceRenderer(this, this.player.radar);
     this.interfaceRenderer.createInterface(this.player);
 
+    // Colliders
+    // Ship vs Asteroid: destroy ship
+      this.physics.add.collider(this.shipGroup, this.asteroidGroup, (shipObj) => {
+      const ship = shipObj as PlayerShip | Target;
+      if (ship === this.player) {
+        this.destroyPlayer();
+      } else {
+        ship.destroy();
+      }
+    });
+
+    // Ship vs Ship: destroy both
+    this.physics.add.collider(this.shipGroup, this.shipGroup, (objA, objB) => {
+      const shipA = objA as PlayerShip | Target;
+      const shipB = objB as PlayerShip | Target;
+      if (shipA === this.player) {
+        this.destroyPlayer();
+      } else {
+        shipA.destroy();
+      }
+      if (shipB === this.player) {
+        this.destroyPlayer();
+      } else {
+        shipB.destroy();
+      }
+    });
+
+    // Missile vs Asteroid: destroy missile
+    this.physics.add.collider(this.missileGroup, this.asteroidGroup, (missileObj) => {
+      const missile = missileObj as Phaser.Physics.Arcade.Sprite;
+      missile.destroy();
+    });
+
+    // Missile vs Ship: destroy both
+    this.physics.add.collider(this.missileGroup, this.shipGroup, (missileObj, shipObj) => {
+      const missile = missileObj as Phaser.Physics.Arcade.Sprite;
+      const ship = shipObj as PlayerShip | Target;
+      missile.destroy();
+      if (ship === this.player) {
+        this.destroyPlayer();
+      } else {
+        ship.destroy();
+      }
+    });
+
     // TARGETS using factory
-    const target1 = this.add.target(
-      2050,
-      2500,
-      340,
-      3,
-      'cargo',
-      new LightRadar(
-        radarDefaultSettings,
-        null,
-        'rws',
-        targetSettings.LOADOUT
-      ),
-      1,
-    ) as Target;
-    target1.radar.attachTo(target1);
-    
-    // Pass the AI's radar to its controller
-    target1.controller = new AiUnitController(
-      target1.turnRate,
-      target1.getPosition(),
-      target1.getDirection(),
-      target1.id,
-      this.player?.radar || null,
-      target1.radar || null,
-    );
-    
-    const target2 = this.add.target(
-      2000,
-      2000,
-      150,
-      2,
-      'cargo',
-      new LightRadar(
-        radarDefaultSettings,
-        null,
-        'rws',
-        targetSettings.LOADOUT
-      ),
-      2,
-    ) as Target;
-    target2.radar.attachTo(target2);
+    const target1 = this.add.target({
+      x: 2000,
+      y: 2000,
+      direction: 340,
+      speed: 3,
+      type: 'cargo',
+      radar: new LightRadar({
+        scene: this,
+        settings: radarDefaultSettings,
+        renderer: null,
+        mode: 'rws',
+        loadout: targetShipSettings.LOADOUT
+      }),
+      id: 1,
+    });
     this.targets.push(target1);
-    this.targets.push(target2);
 
     // ASTEROIDS using factory
-    const asteroid1 = this.add.asteroid(
-      { x: 1800, y: 2000 },
-      120,
-      1
-    );
+    const asteroid1 = this.add.asteroid({
+      position: { x: 1800, y: 2000 },
+      direction: 120,
+      speed: 1
+    });
     this.asteroids.push(asteroid1);
-
-    console.log('asteroids', this.asteroids);
-    
-    (this.player as any)?.radar?.start();
+    this.asteroidGroup.add(asteroid1);
   }
 
   update(_: number, delta: number)
@@ -153,62 +174,55 @@ class Game extends Phaser.Scene
     this.debugRenderer();
     
     // Update player controller
-    this.playerController?.update(shipSettings.SPEED);
-    // Keep radar position exactly at the player's world position
-    this.player?.radar?.setPosition(this.player?.getPosition() || { x: 0, y: 0 });
+    this?.player?.controller?.update(playerShipSettings.SPEED);
 
-    // check for collisions
-    this.checkCollisions();
-
-    // radar scan (pass all ships; radar excludes its owner internally)
+    // Radar scan (pass all ships; radar excludes its owner internally)
     const allShips = [this.player!, ...this.targets];
-    this.player?.radar?.update(delta, this.player?.angle || 0, allShips, this.asteroids, this.graphics!);
+    allShips.forEach(ship => {
+      ship.radar.update(delta, ship.getDirection(), allShips, this.asteroids, this.graphics!);
+    });
 
     // Update AI continuous (every frame)
     this.targets.forEach(t => {
-      t.controller.setPosition(t.getPosition());
-      t.controller.setDirection(t.getDirection());
-      const newDirection = t.controller.updateContinuous(delta);
-      t.setAngle(newDirection);
-      
-      // Update AI radar position and scan
-      if (t.radar) {
-        t.radar.setPosition(t.getPosition());
-        t.radar.update(delta, newDirection, allShips, this.asteroids, this.graphics!);
-      }
+      t.controller?.updateContinuous();
+
+    
+      // Update AI radar scan; radar self-syncs to owner
+      // if (t.radar) {
+      //   t.radar.update(delta, newDirection, allShips, this.asteroids, this.graphics!);
+      // }
     });
 
-    // Update target AI strategic decisions once per second
-    if (!this.aiUpdateTimer) {
-      this.aiUpdateTimer = this.time.addEvent({
-        delay: 1000,
-        callback: () => {
-          this.targets.forEach(t => {
-            t.controller.updateStrategic();
-          });
-        },
-        loop: true
-      });
-    }
+    // // Update target AI strategic decisions once per second
+    // if (!this.aiUpdateTimer) {
+    //   this.aiUpdateTimer = this.time.addEvent({
+    //     delay: 1000,
+    //     callback: () => {
+    //       this.targets.forEach(t => {
+    //         t.controller.updateStrategic();
+    //       });
+    //     },
+    //     loop: true
+    //   });
+    // }
 
-    // Check if player is being tracked
-    const playerTrackedByRadar = this.targets.some(t => 
-      t.radar?.getTracks().length > 0
-    );
-    const playerLockedByStt = this.targets.some(t => 
-      t.radar?.getMode() === 'stt'
-    );
+    // // Check if player is being tracked
+    // const playerTrackedByRadar = this.targets.some(t => 
+    //   t.radar?.getTracks().length > 0
+    // );
+    // const playerLockedByStt = this.targets.some(t => 
+    //   t.radar?.getMode() === 'stt'
+    // );
 
-    // update targets
-    const destroyedEnemyId = this.player?.radar?.updateEnemiesInMain();
-    if (destroyedEnemyId !== undefined) {
-      this.targets = this.targets.filter(target => target.id !== destroyedEnemyId);
-    }
+    // // update targets
+    // const destroyedEnemyId = this.player?.radar?.updateEnemiesInMain();
+    // if (destroyedEnemyId !== undefined) {
+    //   this.targets = this.targets.filter(target => target.id !== destroyedEnemyId);
+    // }
 
     // Update interface with warnings
     if (this.player?.radar && this.interfaceRenderer && this.player) {
       this.interfaceRenderer.update(this.player);
-      this.interfaceRenderer.updateWarnings(playerTrackedByRadar, playerLockedByStt);
     }
   }
 
@@ -234,40 +248,6 @@ class Game extends Phaser.Scene
       font: '32px Courier',
       color: '#ff0000'
     }).setOrigin(0.5, 0.5).setScrollFactor(0);
-  }
-
-  // TO DO 
-  // this method must be moved to a controller
-  // collision checks could be done in a extra physics controller
-  private checkCollisions() {
-    // targets
-    this.targets.forEach(t => {
-      const playerCircle = this.player?.getCircle();
-      const targetCircle = t.getCircle();
-      if (!playerCircle || !targetCircle) return;
-      playerCircle.radius = Math.max(0, playerCircle.radius);
-      targetCircle.radius = Math.max(0, targetCircle.radius);
-      const collider = Phaser.Geom.Intersects.CircleToCircle(playerCircle, targetCircle);
-      if (collider && this.player) {
-        console.warn('Collision detected between player and target ID:', t.id);
-        this.destroyPlayer();
-      }
-
-    });
-
-    // asteroids
-    this.asteroids.forEach(a => {
-      const playerCircle = this.player?.getCircle();
-      const asteroidCircle = a.getCircle();
-      if (!playerCircle || !asteroidCircle) return;
-      playerCircle.radius = Math.max(0, playerCircle.radius);
-      asteroidCircle.radius = Math.max(0, asteroidCircle.radius);
-      const collider = Phaser.Geom.Intersects.CircleToCircle(playerCircle, asteroidCircle);
-      if (collider && this.player) {
-        console.warn('Collision detected between player and asteroid');
-        this.destroyPlayer();
-      }
-    });
   }
 
   debugRenderer(): void {
@@ -302,6 +282,18 @@ class Game extends Phaser.Scene
       this.targets.forEach(t => {
         const c = t.getCircle();
         this.graphics!.lineStyle(2, 0xff0000, 1);
+        this.graphics!.strokeCircle(
+        c!.x,
+        c!.y,
+        c!.radius
+        );
+      });
+
+      // Draw missile bounds
+      this.missileGroup.getChildren().forEach(missileObj => {
+        const missile = missileObj as Phaser.Physics.Arcade.Sprite;
+        const c = new Phaser.Geom.Circle(missile.x, missile.y, (missile.body?.width || 0) / 2);
+        this.graphics!.lineStyle(2, 0x0000ff, 1);
         this.graphics!.strokeCircle(
         c!.x,
         c!.y,
