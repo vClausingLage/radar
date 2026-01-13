@@ -9,6 +9,7 @@ import { PlayerShip, Target } from "./entities/ship";
 import { CAMERA_ZOOM, playerShipSettings, radarDefaultSettings, targetShipSettings } from "./settings";
 import { createMissileFactory } from "./entities/missileFactory";
 import { CollisionRegistrar } from "./physics/collisionRegistrar";
+import { PhysicsRenderer } from "./physics/renderer/physicsRenderer";
 
 class Game extends Phaser.Scene
 {
@@ -25,6 +26,7 @@ class Game extends Phaser.Scene
   private shipGroup!: Phaser.Physics.Arcade.Group;
   private asteroidGroup!: Phaser.Physics.Arcade.Group;
   private missileGroup!: Phaser.Physics.Arcade.Group;
+  private physicsRenderer!: PhysicsRenderer;
 
   constructor()
   {
@@ -62,6 +64,7 @@ class Game extends Phaser.Scene
     this.shipGroup = this.physics.add.group();
     this.asteroidGroup = this.physics.add.group();
     this.missileGroup = this.physics.add.group();
+    this.physicsRenderer = new PhysicsRenderer(this);
     // ADD IMAGES
     this.add.image(0, 0, 'universe').setOrigin(0).setScale(2.5);
     // GRAPHICS
@@ -104,6 +107,7 @@ class Game extends Phaser.Scene
         shipGroup: this.shipGroup,
         asteroidGroup: this.asteroidGroup,
         missileGroup: this.missileGroup,
+        physicsRenderer: this.physicsRenderer,
         destroyPlayer: () => this.destroyPlayer()
       }).register();
     }

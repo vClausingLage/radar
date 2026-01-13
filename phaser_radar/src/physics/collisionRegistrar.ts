@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { PlayerShip, Target } from "../entities/ship";
+import { PhysicsRenderer } from "./renderer/physicsRenderer";
 
 export type CollisionDependencies = {
   scene: Phaser.Scene;
@@ -7,6 +8,7 @@ export type CollisionDependencies = {
   shipGroup: Phaser.Physics.Arcade.Group;
   asteroidGroup: Phaser.Physics.Arcade.Group;
   missileGroup: Phaser.Physics.Arcade.Group;
+  physicsRenderer: PhysicsRenderer;
   destroyPlayer: () => void;
 };
 
@@ -42,6 +44,8 @@ export class CollisionRegistrar {
   }
 
   private handleShipDestruction(ship: PlayerShip | Target): void {
+    this.deps.physicsRenderer.spawnExplosion(ship.x, ship.y);
+
     if (ship === this.deps.player) {
       this.deps.destroyPlayer();
       return;

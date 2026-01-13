@@ -198,7 +198,7 @@ export class LightRadar {
                     this.sttTrack.dist = Math.sqrt(dx * dx + dy * dy);
                 } else {
                     // Target not found or destroyed, switch back to RWS
-                    console.error('Tracked target not found or destroyed');
+                    console.info('Tracked target not found or destroyed');
                     this.sttTrack = null;
                     this.mode = 'rws';
                     return;
@@ -282,7 +282,7 @@ export class LightRadar {
         }
                 
         // Spawn far enough ahead to avoid collision with launching ship
-        const spawnOffset = 80
+        const spawnOffset = 100
         const angleRad = Phaser.Math.DegToRad(angle || 0)
         const missileStartX = this.radarOptions.position.x + Math.cos(angleRad) * spawnOffset
         const missileStartY = this.radarOptions.position.y + Math.sin(angleRad) * spawnOffset 
