@@ -8,6 +8,7 @@ import { createAsteroidFactory } from "./entities/asteroidFactory";
 import { PlayerShip, Target } from "./entities/ship";
 import { CAMERA_ZOOM, playerShipSettings, radarDefaultSettings, targetShipSettings } from "./settings";
 import { createMissileFactory } from "./entities/missileFactory";
+import { CollisionRegistrar } from "./physics/collisionRegistrar";
 
 class Game extends Phaser.Scene
 {
@@ -96,49 +97,16 @@ class Game extends Phaser.Scene
     this.interfaceRenderer.createInterface(this.player);
 
     // Colliders
-    // Ship vs Asteroid: destroy ship
-      this.physics.add.collider(this.shipGroup, this.asteroidGroup, (shipObj) => {
-      const ship = shipObj as PlayerShip | Target;
-      if (ship === this.player) {
-        this.destroyPlayer();
-      } else {
-        ship.destroy();
-      }
-    });
-
-    // Ship vs Ship: destroy both
-    this.physics.add.collider(this.shipGroup, this.shipGroup, (objA, objB) => {
-      const shipA = objA as PlayerShip | Target;
-      const shipB = objB as PlayerShip | Target;
-      if (shipA === this.player) {
-        this.destroyPlayer();
-      } else {
-        shipA.destroy();
-      }
-      if (shipB === this.player) {
-        this.destroyPlayer();
-      } else {
-        shipB.destroy();
-      }
-    });
-
-    // Missile vs Asteroid: destroy missile
-    this.physics.add.collider(this.missileGroup, this.asteroidGroup, (missileObj) => {
-      const missile = missileObj as Phaser.Physics.Arcade.Sprite;
-      missile.destroy();
-    });
-
-    // Missile vs Ship: destroy both
-    this.physics.add.collider(this.missileGroup, this.shipGroup, (missileObj, shipObj) => {
-      const missile = missileObj as Phaser.Physics.Arcade.Sprite;
-      const ship = shipObj as PlayerShip | Target;
-      missile.destroy();
-      if (ship === this.player) {
-        this.destroyPlayer();
-      } else {
-        ship.destroy();
-      }
-    });
+    if (this.player) {
+      new CollisionRegistrar({
+        scene: this,
+        player: this.player,
+        shipGroup: this.shipGroup,
+        asteroidGroup: this.asteroidGroup,
+        missileGroup: this.missileGroup,
+        destroyPlayer: () => this.destroyPlayer()
+      }).register();
+    }
 
     // TARGETS using factory
     const target1 = this.add.target({
@@ -186,7 +154,6 @@ class Game extends Phaser.Scene
     this.targets.forEach(t => {
       t.controller?.updateContinuous();
 
-    
       // Update AI radar scan; radar self-syncs to owner
       // if (t.radar) {
       //   t.radar.update(delta, newDirection, allShips, this.asteroids, this.graphics!);
