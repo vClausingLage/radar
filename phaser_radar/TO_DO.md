@@ -21,6 +21,9 @@ AIM :: DO AN ACTUAL RADAR SCAN IN STEPS RATHER THAN ALL AT ONCE (SEE lightRadar.
 - distance -> exponential falloff
 - target size
 - cross section -> side / front
+- radar range = 80% of RWR range
+- Ping Signal RWR If detected by RWS to target
+
 
 # TWS
 
@@ -34,3 +37,11 @@ AIM :: DO AN ACTUAL RADAR SCAN IN STEPS RATHER THAN ALL AT ONCE (SEE lightRadar.
 - range
 - wake up point missile
 - missile radar
+
+Missile Radar
+Missile Behaviour
+A/G Radar / ground, buildings etc
+
+Konversationen einbauen
+RIO Nachrichten einbauen
+New Radar Contact BRA xxx xxx hot cold flanking
