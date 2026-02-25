@@ -78,7 +78,7 @@ class Game extends Phaser.Scene
       speed: playerShipSettings.SPEED,
       radar: new LightRadar({
         scene: this,
-        settings: radarDefaultSettings,
+        settings: { ...radarDefaultSettings, position: { x: 0, y: 0 } },
         renderer: new LightRadarRenderer(this),
         mode: 'rws',
         loadout: playerShipSettings.LOADOUT
@@ -121,7 +121,7 @@ class Game extends Phaser.Scene
       type: 'cargo',
       radar: new LightRadar({
         scene: this,
-        settings: radarDefaultSettings,
+        settings: { ...radarDefaultSettings, position: { x: 0, y: 0 } },
         renderer: null,
         mode: 'rws',
         loadout: targetShipSettings.LOADOUT
@@ -143,6 +143,10 @@ class Game extends Phaser.Scene
   update(_: number, delta: number)
   {
     this.graphics?.clear();
+    
+    // Remove destroyed targets from the array
+    this.targets = this.targets.filter(t => t.active);
+    
     this.debugRenderer();
     
     // Update player controller

@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { PlayerShip, Target } from "../entities/ship";
 import { PhysicsRenderer } from "./renderer/physicsRenderer";
+import type { Missile } from "../entities/missiles";
 
 export type CollisionDependencies = {
   scene: Phaser.Scene;
@@ -36,8 +37,14 @@ export class CollisionRegistrar {
     });
 
     scene.physics.add.collider(missileGroup, shipGroup, (missileObj, shipObj) => {
-      const missile = missileObj as Phaser.Physics.Arcade.Sprite;
+      const missile = missileObj as Missile;
       const ship = shipObj as PlayerShip | Target;
+      
+      // Skip collision if the ship is the missile's owner (don't hit yourself)
+      if (missile.owner === ship) {
+        return;
+      }
+      
       missile.destroy();
       this.handleShipDestruction(ship);
     });
@@ -51,6 +58,7 @@ export class CollisionRegistrar {
       return;
     }
 
+    ship.setActive(false);
     ship.destroy();
   }
 }

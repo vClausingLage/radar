@@ -231,7 +231,6 @@ export class LightRadar {
 
                 this.lastScanTime += delta
                 if (this.lastScanTime >= 1000) {
-                    console.log('STT Track:', this.sttTrack.pos)
                     this.renderer?.renderStt(this.sttTrack, graphics)
                     this.lastScanTime = 0
                 }
@@ -281,8 +280,8 @@ export class LightRadar {
             return
         }
                 
-        // Spawn far enough ahead to avoid collision with launching ship
-        const spawnOffset = 100
+        // Spawn just ahead of ship - collision with owner will be filtered
+        const spawnOffset = 20
         const angleRad = Phaser.Math.DegToRad(angle || 0)
         const missileStartX = this.radarOptions.position.x + Math.cos(angleRad) * spawnOffset
         const missileStartY = this.radarOptions.position.y + Math.sin(angleRad) * spawnOffset 
@@ -333,7 +332,8 @@ export class LightRadar {
                     x: missileStartX,
                     y: missileStartY,
                     dirX: Math.cos(Phaser.Math.DegToRad(angle)),
-                    dirY: Math.sin(Phaser.Math.DegToRad(angle))
+                    dirY: Math.sin(Phaser.Math.DegToRad(angle)),
+                    owner: this.owner || undefined
                 });
                 // Assign target in TWS so the missile can track the intended contact
                 if (this.mode === 'tws' && target) {
@@ -346,7 +346,8 @@ export class LightRadar {
                     x: missileStartX,
                     y: missileStartY,
                     dirX: Math.cos(Phaser.Math.DegToRad(angle)),
-                    dirY: Math.sin(Phaser.Math.DegToRad(angle))
+                    dirY: Math.sin(Phaser.Math.DegToRad(angle)),
+                    owner: this.owner || undefined
                 });
                 if (this.mode === 'tws' && target) {
                     activeRadarMissile.targetId = target.id;
@@ -566,9 +567,7 @@ export class LightRadar {
         
         // sort tracks by distance
         this.tracks.sort((a, b) => a.dist - b.dist)
-        
-        console.log('Targets in range:', this.owner, this.tracks)
-        
+                
         // THIS RENDERER SHOULD USE 
         // TERRAIN RADAR LIKE RENDERING FOR ASTEROIDS
         // NOT IMPLEMENTED
@@ -704,9 +703,7 @@ export class LightRadar {
 
         // Render asteroids
         this.renderer?.renderAsteroids(asteroidsInRange);
-        
-        console.log('TWS Tracks:', this.tracks.map(t => ({ id: t.id, dist: Math.round(t.dist) })));
-        
+                
         this.lastScanTime = 0;
     }
 

@@ -53,8 +53,9 @@ export const createPlayerShipFactory = (_scene: Phaser.Scene) => {
       controller.setTurnRate(5);
     }
     target.controller = controller;
-    // target.radar.attachTo(target);
-    // target.radar.start();
+    // Target radars are not started - only player radar is active
+    target.radar.attachTo(target);
+    target.radar.start();
     return target;
   });
 };

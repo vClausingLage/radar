@@ -1,9 +1,12 @@
+import type { Ship } from './ship';
+
 export interface BaseMissile {
     direction: {
         x: number;
         y: number;
     };
     targetId?: number;
+    owner?: Ship; // Reference to the ship that fired this missile
     missileType: string;
     missileGuidance: string;
     missileBurnTime: number;
@@ -18,6 +21,7 @@ export type Missile = SARHMissile | ActiveRadarMissile;
 export class SARHMissile extends Phaser.Physics.Arcade.Sprite implements BaseMissile {
     direction: { x: number; y: number; };
     targetId?: number;
+    owner?: Ship;
     missileType: 'AIM-177' = 'AIM-177';
     missileGuidance: 'semi-active' = 'semi-active';
     missileBurnTime = 14;
@@ -49,6 +53,7 @@ export class SARHMissile extends Phaser.Physics.Arcade.Sprite implements BaseMis
 export class ActiveRadarMissile extends Phaser.Physics.Arcade.Sprite implements BaseMissile {
     direction: { x: number; y: number; };
     targetId?: number;
+    owner?: Ship;
     missileType: 'AIM-220' = 'AIM-220';
     missileGuidance: 'active' = 'active';
     missileBurnTime = 14;
