@@ -99,6 +99,9 @@ export default class StartMenu extends Phaser.Scene {
     }
 
     showHowTo(): void {
+        const width = Math.min(this.scale.width * 0.9, 600);
+        const background = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x000000, 1).setInteractive();
+        
         const howToText = this.add.text(this.scale.width / 2, this.scale.height / 2, 
             'CONTROLS:\n\n\n' +
             '- W / S left, right\n\n' +
@@ -110,19 +113,26 @@ export default class StartMenu extends Phaser.Scene {
             'Click here to close', {
             fontSize: '24px',
             color: '#ffffff',
-            backgroundColor: '#000000',
             padding: { x: 30, y: 20 },
-            align: 'center'
+            align: 'center',
+            wordWrap: { width }
         }).setOrigin(0.5).setInteractive();
 
-        howToText.on('pointerdown', () => {
+        const closeModal = () => {
             howToText.destroy();
-        });
+            background.destroy();
+        };
+
+        howToText.on('pointerdown', closeModal);
+        background.on('pointerdown', closeModal);
     }
 
     showRadarDoc(): void {
-        const flag = this.add.image(this.scale.width / 2, this.scale.height / 2, 'flag').setOrigin(0.5);
-        const radarDocText = this.add.text(this.scale.width / 2, this.scale.height / 2,
+        const width = Math.min(this.scale.width * 0.9, 600);
+        const background = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x000000, 1).setInteractive();
+        
+        const flag = this.add.image(this.scale.width / 2 - 130, this.scale.height / 2 - 40, 'flag').setOrigin(0.5);
+        const radarDocText = this.add.text(this.scale.width / 2, this.scale.height / 2 + 50,
             'Radar Documentation:\n\n' +
             '道可道 非常道。名可名 非常名。\n無名天地之始 有名萬物之母。\n故常無欲 以觀其妙 常有欲 以觀其徼。\n此兩者 同出而異名 同謂之玄。玄之又玄 衆妙之門。\n' +
             '天下皆知美之為美 斯惡已。\n皆知善之為善 斯不善已。\n故有無相生 難易相成 長短相較 高下相傾 音聲相和 前後相隨。\n是以聖人處無為之事 行不言之教 萬物作焉而不辭 生而不有。\n為而不恃 功成而弗居。夫唯弗居 是以不去。\n\n\n' +
@@ -130,10 +140,11 @@ export default class StartMenu extends Phaser.Scene {
             fontSize: '24px',
             color: '#ffffff',
             padding: { x: 30, y: 20 },
-            align: 'center'
+            align: 'center',
+            wordWrap: { width }
         }).setOrigin(0.5).setInteractive();
 
-        const dummyText = this.add.text(this.scale.width / 2, this.scale.height / 2 + 250, 
+        const dummyText = this.add.text(this.scale.width / 2, this.scale.height - 100, 
             '...a crap, radar is made in China...', {
             fontSize: '18px',
             color: '#ffffff',
@@ -148,14 +159,21 @@ export default class StartMenu extends Phaser.Scene {
             delay: 1500
         });
 
-        radarDocText.on('pointerdown', () => {
+        const closeModal = () => {
             radarDocText.destroy();
             flag.destroy();
             dummyText.destroy();
-        });
+            background.destroy();
+        };
+
+        radarDocText.on('pointerdown', closeModal);
+        background.on('pointerdown', closeModal);
     }
 
     showStory(): void {
+        const width = Math.min(this.scale.width * 0.9, 600);
+        const background = this.add.rectangle(this.scale.width / 2, this.scale.height / 2, this.scale.width, this.scale.height, 0x000000, 1).setInteractive();
+        
         const storyText = this.add.text(this.scale.width / 2, this.scale.height / 2, 
             'STORY:\n\n\n' +
             'You are Gologg Ringlbatzz\n\n' +
@@ -167,13 +185,17 @@ export default class StartMenu extends Phaser.Scene {
             'Click here to close', {
             fontSize: '24px',
             color: '#ffffff',
-            backgroundColor: '#000000',
             padding: { x: 30, y: 20 },
-            align: 'center'
+            align: 'center',
+            wordWrap: { width }
         }).setOrigin(0.5).setInteractive();
 
-        storyText.on('pointerdown', () => {
+        const closeModal = () => {
             storyText.destroy();
-        });
+            background.destroy();
+        };
+
+        storyText.on('pointerdown', closeModal);
+        background.on('pointerdown', closeModal);
     }
 }

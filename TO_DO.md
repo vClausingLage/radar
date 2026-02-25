@@ -27,11 +27,10 @@ AIM :: DO AN ACTUAL RADAR SCAN IN STEPS RATHER THAN ALL AT ONCE (SEE lightRadar.
 
 # TWS
 
-- Missile follows rarad intercept course, then activates its own radar to home in on target
+- Missile follows radar intercept course, then activates its own radar to home in on target
 - TWS to track multiple targets
 - Logic for target history: how to correlate new radar returns with existing tracks
 - target prorization by distance
-- ADD TWS MODE
 - ADD POSSIBILITY FOR RADAR TO SAVE TRACKS / TARGETS
 - azimuth
 - range
