@@ -45,7 +45,7 @@ export class SARHMissile extends Phaser.Physics.Arcade.Sprite implements BaseMis
         scene.add.existing(this);
         scene.physics.add.existing(this);
         // Set collision body size (width, height)
-        this.setSize(50, 50);
+        // this.setSize(50, 50);
         this.updateHeading(params.dirX, params.dirY);
     }
 }
@@ -74,7 +74,7 @@ export class ActiveRadarMissile extends Phaser.Physics.Arcade.Sprite implements 
         scene.add.existing(this);
         scene.physics.add.existing(this);
         // Set collision body size (width, height)
-        this.setSize(8, 8);
+        // this.setSize(8, 8);
         this.updateHeading(params.dirX, params.dirY);
     }
 }

@@ -20,6 +20,7 @@ export class LightRadar {
     private mode: string;
     private loadout: Loadout;
     private renderer: LightRadarRenderer | null;
+    private interfaceRenderer: any | null;
     public events: Phaser.Events.EventEmitter;
 
     constructor(params: {
@@ -30,6 +31,7 @@ export class LightRadar {
         loadout: Loadout;
         tracks?: Track[];
         sttTrack?: Track | null;
+        interfaceRenderer?: any | null;
     }) {
         this.scene = params.scene;
         this.tracks = params.tracks || [];
@@ -38,6 +40,7 @@ export class LightRadar {
         this.mode = params.mode || 'rws';
         this.loadout = params.loadout;
         this.renderer = params.renderer;
+        this.interfaceRenderer = params.interfaceRenderer || null;
         this.events = new Phaser.Events.EventEmitter();
     }
 
@@ -119,6 +122,10 @@ export class LightRadar {
     }
     stop(): void {
         this.radarOptions.isScanning = false
+    }
+
+    setInterfaceRenderer(renderer: any): void {
+        this.interfaceRenderer = renderer
     }
 
     update(delta: number, angle: number, ships: Array<Ship | Target>, asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
@@ -306,28 +313,37 @@ export class LightRadar {
             }
         }
 
-        // DECREASE MISSILE LOADOUT
         // Find the active weapon type in the loadout
         const activeWeaponType = Object.keys(this.loadout).find(key => 
             this.loadout[key as keyof Loadout]?.active
-        ) as keyof Loadout;       
+        ) as keyof Loadout;
 
-        // If we have an active weapon with remaining count, decrease it
-        if (activeWeaponType && this.loadout[activeWeaponType]) {
-            const activeWeapon = this.loadout[activeWeaponType];
-            
-            if (activeWeapon.load > 0) {
-                activeWeapon.load--;
-                console.info(`Fired a ${activeWeaponType}. Remaining: ${activeWeapon.load}`);
-            } else {
-                console.warn(`No ${activeWeaponType} missiles remaining`);
-                return; // Don't fire if no missiles left
-            }
+        // Check if we have the active weapon type and it has ammo
+        if (!activeWeaponType || !this.loadout[activeWeaponType]) {
+            console.error('No active weapon found');
+            return;
+        }
+
+        const activeWeapon = this.loadout[activeWeaponType];
+        if (activeWeapon.load <= 0) {
+            console.warn(`No ${activeWeaponType} missiles remaining`);
+            return;
         }
 
         switch (activeWeaponType) {
             case 'AIM-177':
-                if (this.mode === 'tws') console.log('GO STT! PREVENT SHOOTING')
+                // Semi-active radar homing missile requires STT mode
+                if (this.mode === 'tws') {
+                    console.log('GO STT! PREVENT SHOOTING');
+                    if (this.interfaceRenderer) {
+                        this.interfaceRenderer.showGoSttWarning();
+                    }
+                    return;
+                }
+                // Only decrease ammo if we actually fire
+                activeWeapon.load--;
+                console.info(`Fired a ${activeWeaponType}. Remaining: ${activeWeapon.load}`);
+                
                 const sarhMissile = this.scene.add.sarhMissile({
                     x: missileStartX,
                     y: missileStartY,
@@ -335,13 +351,13 @@ export class LightRadar {
                     dirY: Math.sin(Phaser.Math.DegToRad(angle)),
                     owner: this.owner || undefined
                 });
-                // Assign target in TWS so the missile can track the intended contact
-                if (this.mode === 'tws' && target) {
-                    sarhMissile.targetId = target.id;
-                }
                 this.activeMissiles.push(sarhMissile);
                 break;
             case 'AIM-220':
+                // Only decrease ammo if we actually fire
+                activeWeapon.load--;
+                console.info(`Fired a ${activeWeaponType}. Remaining: ${activeWeapon.load}`);
+                
                 const activeRadarMissile = this.scene.add.activeRadarMissile({
                     x: missileStartX,
                     y: missileStartY,

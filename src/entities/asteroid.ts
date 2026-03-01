@@ -26,6 +26,6 @@ export class Asteroid extends Phaser.Physics.Arcade.Sprite {
     }
 
     getCircle(): Phaser.Geom.Circle {
-        return new Phaser.Geom.Circle(this.x, this.y, ((this.body?.width || 0) / 2) - 10);
+        return new Phaser.Geom.Circle(this.x, this.y, (this.body?.width || 0) / 2);
     }
 }

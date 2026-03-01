@@ -7,6 +7,7 @@ export class InterfaceRenderer {
     private shootBtn?: Phaser.GameObjects.Text;
     private warningText?: Phaser.GameObjects.Text;
     private lockWarningText?: Phaser.GameObjects.Text;
+    private goSttWarning?: Phaser.GameObjects.Text;
     private playerRadar: LightRadar;
 
     constructor(private scene: Phaser.Scene, playerRadar: LightRadar) {
@@ -84,6 +85,15 @@ export class InterfaceRenderer {
         .setOrigin(0.5)
         .setVisible(false);
 
+        this.goSttWarning = this.scene.add.text(0, 0, 'GO STT', {
+            font: '24px Courier',
+            color: '#000000',
+            backgroundColor: '#ff0000',
+            padding: { x: 12, y: 6 }
+        })
+        .setOrigin(0.5)
+        .setVisible(false);
+
         this.updateLayout(ship);
     }
 
@@ -141,6 +151,11 @@ export class InterfaceRenderer {
             const lockWarningY = shipY - 140;
             this.lockWarningText.setPosition(shipX, lockWarningY);
         }
+
+        if (this.goSttWarning) {
+            const goSttY = shipY - 180;
+            this.goSttWarning.setPosition(shipX, goSttY);
+        }
     }
 
     updateWarnings(isTracked: boolean, isLocked: boolean): void {
@@ -172,6 +187,20 @@ export class InterfaceRenderer {
         this.updateLayout(ship);
     }
 
+    showGoSttWarning(): void {
+        if (this.goSttWarning) {
+            this.goSttWarning.setVisible(true);
+            this.goSttWarning.setAlpha(1);
+            
+            // Auto-hide after 2 seconds
+            this.scene.time.delayedCall(2000, () => {
+                if (this.goSttWarning) {
+                    this.goSttWarning.setVisible(false);
+                }
+            });
+        }
+    }
+
     destroy(): void {
         this.sttBtn?.destroy();
         this.rwsBtn?.destroy();
@@ -179,11 +208,13 @@ export class InterfaceRenderer {
         this.shootBtn?.destroy();
         this.warningText?.destroy();
         this.lockWarningText?.destroy();
+        this.goSttWarning?.destroy();
         this.sttBtn = undefined;
         this.rwsBtn = undefined;
         this.twsBtn = undefined;
         this.shootBtn = undefined;
         this.warningText = undefined;
         this.lockWarningText = undefined;
+        this.goSttWarning = undefined;
     }
 }

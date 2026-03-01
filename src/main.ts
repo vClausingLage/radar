@@ -98,6 +98,8 @@ class Game extends Phaser.Scene
     // INTERFACE
     this.interfaceRenderer = new InterfaceRenderer(this, this.player.radar);
     this.interfaceRenderer.createInterface(this.player);
+    // Connect interface renderer to radar so it can display warnings
+    this.player.radar.setInterfaceRenderer(this.interfaceRenderer);
 
     // Colliders
     if (this.player) {
@@ -128,11 +130,26 @@ class Game extends Phaser.Scene
       }),
       id: 1,
     });
-    this.targets.push(target1);
+    const target2 = this.add.target({
+      x: 2050,
+      y: 2050,
+      direction: 30,
+      speed: 2,
+      type: 'cruiser',
+      radar: new LightRadar({
+        scene: this,
+        settings: { ...radarDefaultSettings, position: { x: 0, y: 0 } },
+        renderer: null,
+        mode: 'rws',
+        loadout: targetShipSettings.LOADOUT
+      }),
+      id: 2,
+    });
+    this.targets.push(target1, target2);
 
     // ASTEROIDS using factory
     const asteroid1 = this.add.asteroid({
-      position: { x: 1800, y: 2000 },
+      position: { x: 1800, y: 2300 },
       direction: 120,
       speed: 1
     });
@@ -277,15 +294,15 @@ class Game extends Phaser.Scene
       });
 
       // Draw asteroid bounds
-      // this.asteroids.forEach(a => {
-      //   const c = a.getCircle();
-      //   this.graphics!.lineStyle(2, 0xffff00, 1);
-      //   this.graphics!.strokeCircle(
-      //   c!.x,
-      //   c!.y,
-      //   c!.radius
-      //   );
-      // });
+      this.asteroids.forEach(a => {
+        const c = a.getCircle();
+        this.graphics!.lineStyle(2, 0xffff00, 1);
+        this.graphics!.strokeCircle(
+        c!.x,
+        c!.y,
+        c!.radius
+        );
+      });
   }
 }
 

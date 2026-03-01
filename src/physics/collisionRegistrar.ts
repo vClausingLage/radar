@@ -40,7 +40,7 @@ export class CollisionRegistrar {
       const missile = missileObj as Missile;
       const ship = shipObj as PlayerShip | Target;
       
-      // Skip collision if the ship is the missile's owner (don't hit yourself)
+      // Skip collision if the ship is the missile's owner
       if (missile.owner === ship) {
         return;
       }
