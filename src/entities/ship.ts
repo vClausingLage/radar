@@ -88,6 +88,7 @@ export class PlayerShip extends Ship {
 
 export class Target extends Ship {
     public id: number;
+    public shipType: 'cruiser' | 'cargo';
     public controller?: AiUnitController;
 
     constructor(params: {
@@ -102,8 +103,21 @@ export class Target extends Ship {
     }) {
         super(params);
         this.id = params.id;
-        this.setVisible(false);
-        this.setScale(.5);
+        this.shipType = params.shipType;
+        
+        // Set sprite and physics body based on shipType
+        if (params.shipType === 'cargo') {
+            this.setTexture('cargo');
+            // Cargo sprite is 70x160 px, set rectangle body
+            this.setBodySize(70, 160);
+        } else {
+            this.setTexture('ship');
+            // Cruiser sprite is circular
+            this.setCircle((this.body?.width || 0) / 2);
+        }
+        
+        this.setVisible(true);
+        this.setScale(.7);
     }
 
     setController(controller: AiUnitController) {

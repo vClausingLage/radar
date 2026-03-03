@@ -46,6 +46,7 @@ class Game extends Phaser.Scene
     this.load.image('explosion', 'explosion.png');
     this.load.image('asteroid', 'asteroid.png');
     this.load.image('flares', 'flares.png');
+    this.load.image('cargo', 'cargo.png');
   }
 
   create()
