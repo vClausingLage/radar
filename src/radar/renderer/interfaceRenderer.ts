@@ -5,6 +5,9 @@ export class InterfaceRenderer {
     private rwsBtn?: Phaser.GameObjects.Text;
     private twsBtn?: Phaser.GameObjects.Text;
     private shootBtn?: Phaser.GameObjects.Text;
+    private speedOneThirdBtn?: Phaser.GameObjects.Text;
+    private speedTwoThirdBtn?: Phaser.GameObjects.Text;
+    private speedFullBtn?: Phaser.GameObjects.Text;
     private warningText?: Phaser.GameObjects.Text;
     private lockWarningText?: Phaser.GameObjects.Text;
     private goSttWarning?: Phaser.GameObjects.Text;
@@ -66,6 +69,47 @@ export class InterfaceRenderer {
             this.playerRadar.shoot(ship.angle || 0);
         });
 
+        // SPEED BUTTONS
+        const fullSpeed = (ship as any).getSpeed ? (ship as any).getSpeed() : 3;
+        const oneThirdSpeed = fullSpeed / 3;
+        const twoThirdSpeed = (fullSpeed * 2) / 3;
+
+        this.speedOneThirdBtn = this.scene.add.text(0, 0, '1/3', {
+            font: '22px Courier',
+            color: '#000',
+            backgroundColor: '#ffdb4d',
+            padding: { x: 10, y: 5 }
+        })
+        .setInteractive()
+        .setOrigin(0)
+        .on('pointerdown', () => {
+            (ship as any).setCurrentSpeed?.(oneThirdSpeed);
+        });
+
+        this.speedTwoThirdBtn = this.scene.add.text(0, 0, '2/3', {
+            font: '22px Courier',
+            color: '#000',
+            backgroundColor: '#ffdb4d',
+            padding: { x: 10, y: 5 }
+        })
+        .setInteractive()
+        .setOrigin(0)
+        .on('pointerdown', () => {
+            (ship as any).setCurrentSpeed?.(twoThirdSpeed);
+        });
+
+        this.speedFullBtn = this.scene.add.text(0, 0, 'FULL', {
+            font: '22px Courier',
+            color: '#000',
+            backgroundColor: '#ffdb4d',
+            padding: { x: 10, y: 5 }
+        })
+        .setInteractive()
+        .setOrigin(0)
+        .on('pointerdown', () => {
+            (ship as any).setCurrentSpeed?.(fullSpeed);
+        });
+
         // Warning texts
         this.warningText = this.scene.add.text(0, 0, 'RADAR WARNING', {
             font: '24px Courier',
@@ -97,7 +141,7 @@ export class InterfaceRenderer {
         this.updateLayout(ship);
     }
 
-    updateButtonColors(): void {
+    updateButtonColors(ship: Phaser.Physics.Arcade.Image): void {
         const mode = this.playerRadar.getMode();
         const tracks = this.playerRadar.getTracks();
         const isTWSActive = mode === 'tws';
@@ -106,6 +150,16 @@ export class InterfaceRenderer {
         if (this.rwsBtn) this.rwsBtn.setBackgroundColor(mode === 'rws' ? '#00ff00' : '#ffdb4d');
         if (this.twsBtn) this.twsBtn.setBackgroundColor(mode === 'tws' ? '#00ff00' : '#ffdb4d');
         if (this.shootBtn) this.shootBtn.setBackgroundColor(mode === 'stt' || (isTWSActive && hasTracks) ? '#ed9209' : '#ffdb4d');
+
+        // Update speed button colors
+        const fullSpeed = (ship as any).getSpeed ? (ship as any).getSpeed() : 3;
+        const oneThirdSpeed = fullSpeed / 3;
+        const twoThirdSpeed = (fullSpeed * 2) / 3;
+        const currentShipSpeed = (ship as any).getCurrentSpeed ? (ship as any).getCurrentSpeed() : fullSpeed;
+
+        if (this.speedOneThirdBtn) this.speedOneThirdBtn.setBackgroundColor(Math.abs(currentShipSpeed - oneThirdSpeed) < 0.01 ? '#00ff00' : '#ffdb4d');
+        if (this.speedTwoThirdBtn) this.speedTwoThirdBtn.setBackgroundColor(Math.abs(currentShipSpeed - twoThirdSpeed) < 0.01 ? '#00ff00' : '#ffdb4d');
+        if (this.speedFullBtn) this.speedFullBtn.setBackgroundColor(Math.abs(currentShipSpeed - fullSpeed) < 0.01 ? '#00ff00' : '#ffdb4d');
     }
 
     updateLayout(ship: Phaser.Physics.Arcade.Image): void {
@@ -118,7 +172,12 @@ export class InterfaceRenderer {
         const circle = ship.getCircle ? ship.getCircle() : null;
         const radius = circle ? circle.radius : (ship.displayHeight / 2);
 
-        const verticalOffset = radius + 16; // gap below ship
+        // Check if ship is pointing downwards (45-135 degrees)
+        const shipAngle = (ship as any).angle ?? 0;
+        const isPointingDown = shipAngle > 45 && shipAngle < 135;
+        
+        // Flip button position based on ship direction
+        const verticalOffset = (radius + 16) * (isPointingDown ? -1 : 1);
         const topY = shipY + verticalOffset;
 
         const spacingX = 12;
@@ -133,13 +192,33 @@ export class InterfaceRenderer {
         this.sttBtn.setPosition(rowLeft, topY);
         this.rwsBtn.setPosition(rowLeft + sttW + spacingX, topY);
 
-        const twsY = topY + this.sttBtn.height + spacingY;
+        const twsY = isPointingDown 
+            ? topY - this.sttBtn.height - spacingY 
+            : topY + this.sttBtn.height + spacingY;
         const twsX = shipX - (this.twsBtn!.width / 2);
         this.twsBtn!.setPosition(twsX, twsY);
 
-        const shootY = twsY + this.twsBtn!.height + spacingY;
+        const shootY = isPointingDown
+            ? twsY - this.twsBtn!.height - spacingY
+            : twsY + this.twsBtn!.height + spacingY;
         const shootX = shipX - (this.shootBtn.width / 2);
         this.shootBtn.setPosition(shootX, shootY);
+
+        // Position speed buttons to the right, stacked vertically
+        if (this.speedOneThirdBtn && this.speedTwoThirdBtn && this.speedFullBtn) {
+            const speedX = shipX + 120; // Distance to the right of ship
+            const speedTopY = topY;
+            
+            if (isPointingDown) {
+                this.speedOneThirdBtn.setPosition(speedX, speedTopY);
+                this.speedTwoThirdBtn.setPosition(speedX, speedTopY - this.speedOneThirdBtn.height - spacingY);
+                this.speedFullBtn.setPosition(speedX, speedTopY - (this.speedOneThirdBtn.height + spacingY) * 2);
+            } else {
+                this.speedOneThirdBtn.setPosition(speedX, speedTopY);
+                this.speedTwoThirdBtn.setPosition(speedX, speedTopY + this.speedOneThirdBtn.height + spacingY);
+                this.speedFullBtn.setPosition(speedX, speedTopY + (this.speedOneThirdBtn.height + spacingY) * 2);
+            }
+        }
 
         // Position warning texts above ship
         if (this.warningText) {
@@ -183,7 +262,7 @@ export class InterfaceRenderer {
     }
 
     update(ship: Phaser.Physics.Arcade.Image): void {
-        this.updateButtonColors();
+        this.updateButtonColors(ship);
         this.updateLayout(ship);
     }
 
@@ -206,6 +285,9 @@ export class InterfaceRenderer {
         this.rwsBtn?.destroy();
         this.twsBtn?.destroy();
         this.shootBtn?.destroy();
+        this.speedOneThirdBtn?.destroy();
+        this.speedTwoThirdBtn?.destroy();
+        this.speedFullBtn?.destroy();
         this.warningText?.destroy();
         this.lockWarningText?.destroy();
         this.goSttWarning?.destroy();
@@ -213,6 +295,9 @@ export class InterfaceRenderer {
         this.rwsBtn = undefined;
         this.twsBtn = undefined;
         this.shootBtn = undefined;
+        this.speedOneThirdBtn = undefined;
+        this.speedTwoThirdBtn = undefined;
+        this.speedFullBtn = undefined;
         this.warningText = undefined;
         this.lockWarningText = undefined;
         this.goSttWarning = undefined;

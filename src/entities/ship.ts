@@ -6,6 +6,7 @@ import { PlayerController } from "../controller/playerController";
 export abstract class Ship extends Phaser.Physics.Arcade.Sprite {
     private direction: number;
     private speed: number;
+    private currentSpeed: number;
     public radar: LightRadar;
 
     constructor(params: {
@@ -34,6 +35,7 @@ export abstract class Ship extends Phaser.Physics.Arcade.Sprite {
         );
         this.radar.setMode('rws');
         this.angle = this.direction;
+        this.currentSpeed = this.speed;
     }
 
     getCircle(): Phaser.Geom.Circle {
@@ -42,6 +44,20 @@ export abstract class Ship extends Phaser.Physics.Arcade.Sprite {
 
     getSpeed(): number {
         return this.speed;
+    }
+
+    getCurrentSpeed(): number {
+        return this.currentSpeed;
+    }
+
+    setCurrentSpeed(newSpeed: number): void {
+        this.currentSpeed = newSpeed;
+        if (!this.body) return;
+        const angleRad = Phaser.Math.DegToRad(this.angle);
+        this.body.velocity.set(
+            Math.cos(angleRad) * this.currentSpeed,
+            Math.sin(angleRad) * this.currentSpeed
+        );
     }
     
     getDirection(): number {

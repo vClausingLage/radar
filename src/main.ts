@@ -167,7 +167,8 @@ class Game extends Phaser.Scene
     this.debugRenderer();
     
     // Update player controller
-    this?.player?.controller?.update(playerShipSettings.SPEED);
+    const playerSpeed = this.player?.getCurrentSpeed?.() ?? playerShipSettings.SPEED;
+    this?.player?.controller?.update(playerSpeed);
 
     // Radar scan (pass all ships; radar excludes its owner internally)
     const allShips = [this.player!, ...this.targets];
