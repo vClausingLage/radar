@@ -17,7 +17,7 @@ export class InterfaceRenderer {
         this.playerRadar = playerRadar;
     }
 
-    createInterface(ship: Phaser.Physics.Arcade.Image): void {
+    createInterface(ship: Phaser.GameObjects.Sprite): void {
         // TWS BTN
         this.twsBtn = this.scene.add.text(0, 0, 'TWS', { 
             font: '22px Courier', 
@@ -141,7 +141,7 @@ export class InterfaceRenderer {
         this.updateLayout(ship);
     }
 
-    updateButtonColors(ship: Phaser.Physics.Arcade.Image): void {
+    updateButtonColors(ship: Phaser.GameObjects.Sprite): void {
         const mode = this.playerRadar.getMode();
         const tracks = this.playerRadar.getTracks();
         const isTWSActive = mode === 'tws';
@@ -162,7 +162,7 @@ export class InterfaceRenderer {
         if (this.speedFullBtn) this.speedFullBtn.setBackgroundColor(Math.abs(currentShipSpeed - fullSpeed) < 0.01 ? '#00ff00' : '#ffdb4d');
     }
 
-    updateLayout(ship: Phaser.Physics.Arcade.Image): void {
+    updateLayout(ship: Phaser.GameObjects.Sprite): void {
         if (!this.sttBtn || !this.rwsBtn || !this.shootBtn) return;
         const shipX = ship.x;
         const shipY = ship.y;
@@ -261,7 +261,7 @@ export class InterfaceRenderer {
         }
     }
 
-    update(ship: Phaser.Physics.Arcade.Image): void {
+    update(ship: Phaser.GameObjects.Sprite): void {
         this.updateButtonColors(ship);
         this.updateLayout(ship);
     }

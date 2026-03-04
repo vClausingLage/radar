@@ -6,9 +6,9 @@ import type { Missile } from "../entities/missiles";
 export type CollisionDependencies = {
   scene: Phaser.Scene;
   player: PlayerShip;
-  shipGroup: Phaser.Physics.Arcade.Group;
-  asteroidGroup: Phaser.Physics.Arcade.Group;
-  missileGroup: Phaser.Physics.Arcade.Group;
+  shipCategory: number;
+  asteroidCategory: number;
+  missileCategory: number;
   physicsRenderer: PhysicsRenderer;
   destroyPlayer: () => void;
 };
@@ -17,37 +17,72 @@ export class CollisionRegistrar {
   constructor(private readonly deps: CollisionDependencies) {}
 
   register(): void {
-    const { scene, shipGroup, asteroidGroup, missileGroup } = this.deps;
+    const { scene } = this.deps;
 
-    scene.physics.add.collider(shipGroup, asteroidGroup, (shipObj) => {
-      const ship = shipObj as PlayerShip | Target;
-      this.handleShipDestruction(ship);
-    });
+    // Matter physics uses event-based collision detection
+    scene.matter.world.on('collisionstart', (event: Phaser.Physics.Matter.Events.CollisionStartEvent) => {
+      const pairs = event.pairs;
 
-    scene.physics.add.collider(shipGroup, shipGroup, (objA, objB) => {
-      const shipA = objA as PlayerShip | Target;
-      const shipB = objB as PlayerShip | Target;
-      this.handleShipDestruction(shipA);
-      this.handleShipDestruction(shipB);
-    });
+      pairs.forEach((pair: any) => {
+        const bodyA = pair.bodyA;
+        const bodyB = pair.bodyB;
+        const gameObjectA = (bodyA as any).gameObject;
+        const gameObjectB = (bodyB as any).gameObject;
 
-    scene.physics.add.collider(missileGroup, asteroidGroup, (missileObj) => {
-      const missile = missileObj as Phaser.Physics.Arcade.Sprite;
-      missile.destroy();
-    });
+        if (!gameObjectA || !gameObjectB) return;
 
-    scene.physics.add.collider(missileGroup, shipGroup, (missileObj, shipObj) => {
-      const missile = missileObj as Missile;
-      const ship = shipObj as PlayerShip | Target;
-      
-      // Skip collision if the ship is the missile's owner
-      if (missile.owner === ship) {
-        return;
-      }
-      
-      missile.destroy();
-      this.handleShipDestruction(ship);
+        // Ship-Asteroid collision
+        if (this.isShip(gameObjectA) && this.isAsteroid(gameObjectB)) {
+          this.handleShipDestruction(gameObjectA as PlayerShip | Target);
+        } else if (this.isAsteroid(gameObjectA) && this.isShip(gameObjectB)) {
+          this.handleShipDestruction(gameObjectB as PlayerShip | Target);
+        }
+
+        // Ship-Ship collision
+        else if (this.isShip(gameObjectA) && this.isShip(gameObjectB)) {
+          this.handleShipDestruction(gameObjectA as PlayerShip | Target);
+          this.handleShipDestruction(gameObjectB as PlayerShip | Target);
+        }
+
+        // Missile-Asteroid collision
+        else if (this.isMissile(gameObjectA) && this.isAsteroid(gameObjectB)) {
+          gameObjectA.destroy();
+        } else if (this.isAsteroid(gameObjectA) && this.isMissile(gameObjectB)) {
+          gameObjectB.destroy();
+        }
+
+        // Missile-Ship collision
+        else if (this.isMissile(gameObjectA) && this.isShip(gameObjectB)) {
+          const missile = gameObjectA as Missile;
+          const ship = gameObjectB as PlayerShip | Target;
+          // Skip collision if the ship is the missile's owner
+          if (missile.owner !== ship) {
+            missile.destroy();
+            this.handleShipDestruction(ship);
+          }
+        } else if (this.isShip(gameObjectA) && this.isMissile(gameObjectB)) {
+          const missile = gameObjectB as Missile;
+          const ship = gameObjectA as PlayerShip | Target;
+          // Skip collision if the ship is the missile's owner
+          if (missile.owner !== ship) {
+            missile.destroy();
+            this.handleShipDestruction(ship);
+          }
+        }
+      });
     });
+  }
+
+  private isShip(obj: any): boolean {
+    return obj instanceof PlayerShip || obj instanceof Target;
+  }
+
+  private isAsteroid(obj: any): boolean {
+    return obj.texture?.key === 'asteroid';
+  }
+
+  private isMissile(obj: any): boolean {
+    return obj.texture?.key === 'missile';
   }
 
   private handleShipDestruction(ship: PlayerShip | Target): void {

@@ -18,14 +18,14 @@ export interface BaseMissile {
 
 export type Missile = SARHMissile | ActiveRadarMissile;
 
-export class SARHMissile extends Phaser.Physics.Arcade.Sprite implements BaseMissile {
+export class SARHMissile extends Phaser.Physics.Matter.Sprite implements BaseMissile {
     direction: { x: number; y: number; };
     targetId?: number;
     owner?: Ship;
     missileType: 'AIM-177' = 'AIM-177';
     missileGuidance: 'semi-active' = 'semi-active';
     missileBurnTime = 14;
-    missileSpeed = 33.0;
+    missileSpeed = 1;
     missileTurnSpeed = 0.7;
     missileAge: number = 0;
     missileWarhead: 'high-explosive' | 'fragmentation' = 'high-explosive';
@@ -40,24 +40,25 @@ export class SARHMissile extends Phaser.Physics.Arcade.Sprite implements BaseMis
     }
     
     constructor(scene: Phaser.Scene, params: { x: number; y: number; dirX: number; dirY: number }) {
-        super(scene, params.x, params.y, 'missile');
+        super(scene.matter.world, params.x, params.y, 'missile');
         this.direction = { x: params.dirX, y: params.dirY };
         scene.add.existing(this);
-        scene.physics.add.existing(this);
+        // Remove air friction for space physics
+        this.setFrictionAir(0);
         // Set collision body size (width, height)
         // this.setSize(50, 50);
         this.updateHeading(params.dirX, params.dirY);
     }
 }
 
-export class ActiveRadarMissile extends Phaser.Physics.Arcade.Sprite implements BaseMissile {
+export class ActiveRadarMissile extends Phaser.Physics.Matter.Sprite implements BaseMissile {
     direction: { x: number; y: number; };
     targetId?: number;
     owner?: Ship;
     missileType: 'AIM-220' = 'AIM-220';
     missileGuidance: 'active' = 'active';
     missileBurnTime = 14;
-    missileSpeed = 38.0;
+    missileSpeed = 1;
     missileTurnSpeed = 0.8;
     missileAge: number = 0;
     missileWarhead: 'high-explosive' | 'fragmentation' = 'fragmentation';
@@ -69,10 +70,11 @@ export class ActiveRadarMissile extends Phaser.Physics.Arcade.Sprite implements 
     }
     
     constructor(scene: Phaser.Scene, params: { x: number; y: number; dirX: number; dirY: number }) {
-        super(scene, params.x, params.y, 'missile');
+        super(scene.matter.world, params.x, params.y, 'missile');
         this.direction = { x: params.dirX, y: params.dirY };
         scene.add.existing(this);
-        scene.physics.add.existing(this);
+        // Remove air friction for space physics
+        this.setFrictionAir(0);
         // Set collision body size (width, height)
         // this.setSize(8, 8);
         this.updateHeading(params.dirX, params.dirY);

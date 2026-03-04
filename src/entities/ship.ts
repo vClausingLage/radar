@@ -3,7 +3,7 @@ import { AiUnitController } from "../controller/aiUnitController";
 import { Vector2 } from "../types";
 import { PlayerController } from "../controller/playerController";
 
-export abstract class Ship extends Phaser.Physics.Arcade.Sprite {
+export abstract class Ship extends Phaser.Physics.Matter.Sprite {
     private direction: number;
     private speed: number;
     private currentSpeed: number;
@@ -16,8 +16,9 @@ export abstract class Ship extends Phaser.Physics.Arcade.Sprite {
         direction: number;
         speed: number;
         radar: LightRadar;
+        texture?: string;
     }) {
-        super(params.scene, params.x, params.y, 'ship');
+        super(params.scene.matter.world, params.x, params.y, params.texture || 'ship');
         this.scene = params.scene;
         this.x = params.x;
         this.y = params.y;
@@ -25,21 +26,23 @@ export abstract class Ship extends Phaser.Physics.Arcade.Sprite {
         this.speed = params.speed;
         this.radar = params.radar;
         this.scene.add.existing(this);
-        this.scene.physics.add.existing(this);
         if (!this.body) {
             throw new Error('Body of Ship is undefined');
         }
-        this.body.velocity.set(
-            Math.cos(Phaser.Math.DegToRad(this.direction)) * this.speed, 
-            Math.sin(Phaser.Math.DegToRad(this.direction)) * this.speed
-        );
+        // Remove air friction for space physics
+        this.setFrictionAir(0);
+        // Set velocity using Matter physics
+        const velocityX = Math.cos(Phaser.Math.DegToRad(this.direction)) * this.speed;
+        const velocityY = Math.sin(Phaser.Math.DegToRad(this.direction)) * this.speed;
+        this.setVelocity(velocityX, velocityY);
         this.radar.setMode('rws');
         this.angle = this.direction;
         this.currentSpeed = this.speed;
     }
 
     getCircle(): Phaser.Geom.Circle {
-        return new Phaser.Geom.Circle(this.x, this.y, (this.body?.width || 0) / 2);
+        const radius = Math.max(this.width, this.height) / 2;
+        return new Phaser.Geom.Circle(this.x, this.y, radius);
     }
     
     getSpeed(): number {
@@ -54,7 +57,7 @@ export abstract class Ship extends Phaser.Physics.Arcade.Sprite {
         this.currentSpeed = newSpeed;
         if (!this.body) return;
         const angleRad = Phaser.Math.DegToRad(this.angle);
-        this.body.velocity.set(
+        this.setVelocity(
             Math.cos(angleRad) * this.currentSpeed,
             Math.sin(angleRad) * this.currentSpeed
         );
@@ -101,20 +104,13 @@ export class Target extends Ship {
         shipType: 'cruiser' | 'cargo';
         id: number;
     }) {
-        super(params);
+        // Pass correct texture to parent constructor
+        super({
+            ...params,
+            texture: params.shipType === 'cargo' ? 'cargo' : 'ship'
+        });
         this.id = params.id;
         this.shipType = params.shipType;
-        
-        // Set sprite and physics body based on shipType
-        if (params.shipType === 'cargo') {
-            this.setTexture('cargo');
-            // Cargo sprite is 70x160 px, set rectangle body
-            this.setBodySize(70, 160);
-        } else {
-            this.setTexture('ship');
-            // Cruiser sprite is circular
-            this.setCircle((this.body?.width || 0) / 2);
-        }
         
         this.setVisible(true);
         this.setScale(.7);

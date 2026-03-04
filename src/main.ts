@@ -23,9 +23,10 @@ class Game extends Phaser.Scene
   private interfaceRenderer?: InterfaceRenderer;
   private targets: Target[] = [];
   private asteroids: any[] = [];
-  private shipGroup!: Phaser.Physics.Arcade.Group;
-  private asteroidGroup!: Phaser.Physics.Arcade.Group;
-  private missileGroup!: Phaser.Physics.Arcade.Group;
+  // Matter physics uses collision categories instead of groups
+  private shipCategory!: number;
+  private asteroidCategory!: number;
+  private missileCategory!: number;
   private physicsRenderer!: PhysicsRenderer;
 
   constructor()
@@ -52,19 +53,16 @@ class Game extends Phaser.Scene
   create()
   {
     // Register factories
-    // use this doumentation https://docs.phaser.io/phaser/concepts/gameobjects/factories
-    // Phaser.GameObjects.GameObjectFactory.register('bla')
-
     createPlayerShipFactory(this);
     createAsteroidFactory(this);
     createMissileFactory(this);
 
     // WORLD
-    this.physics.world.setBounds(0, 0, this.world.width, this.world.height);
-    // Groups for collisions
-    this.shipGroup = this.physics.add.group();
-    this.asteroidGroup = this.physics.add.group();
-    this.missileGroup = this.physics.add.group();
+    this.matter.world.setBounds(0, 0, this.world.width, this.world.height);
+    // Collision categories for Matter physics
+    this.shipCategory = this.matter.world.nextCategory();
+    this.asteroidCategory = this.matter.world.nextCategory();
+    this.missileCategory = this.matter.world.nextCategory();
     this.physicsRenderer = new PhysicsRenderer(this);
     // ADD IMAGES
     this.add.image(0, 0, 'universe').setOrigin(0).setScale(2.5);
@@ -87,7 +85,6 @@ class Game extends Phaser.Scene
     });
     // Attach radar to its owning ship
     // this.player.radar.attachTo(this.player);
-    this.shipGroup.add(this.player);
     // PLAYER CONTROLLER
     // this.playerController = new PlayerController(this, this.player);
 
@@ -104,15 +101,16 @@ class Game extends Phaser.Scene
 
     // Colliders
     if (this.player) {
-      new CollisionRegistrar({
+      const collisionRegistrar = new CollisionRegistrar({
         scene: this,
         player: this.player,
-        shipGroup: this.shipGroup,
-        asteroidGroup: this.asteroidGroup,
-        missileGroup: this.missileGroup,
+        shipCategory: this.shipCategory,
+        asteroidCategory: this.asteroidCategory,
+        missileCategory: this.missileCategory,
         physicsRenderer: this.physicsRenderer,
-        destroyPlayer: () => this.destroyPlayer()
-      }).register();
+        destroyPlayer: () => this.destroyPlayer(),
+      });
+      collisionRegistrar.register();
     }
 
     // TARGETS using factory
@@ -120,7 +118,7 @@ class Game extends Phaser.Scene
       x: 2000,
       y: 2000,
       direction: 340,
-      speed: 3,
+      speed: .01,
       type: 'cargo',
       radar: new LightRadar({
         scene: this,
@@ -135,7 +133,7 @@ class Game extends Phaser.Scene
       x: 2100,
       y: 2050,
       direction: 30,
-      speed: 2,
+      speed: .01,
       type: 'cruiser',
       radar: new LightRadar({
         scene: this,
@@ -155,7 +153,6 @@ class Game extends Phaser.Scene
       speed: 1
     });
     this.asteroids.push(asteroid1);
-    this.asteroidGroup.add(asteroid1);
   }
 
   update(_: number, delta: number)
@@ -164,9 +161,7 @@ class Game extends Phaser.Scene
     
     // Remove destroyed targets from the array
     this.targets = this.targets.filter(t => t.active);
-    
-    this.debugRenderer();
-    
+        
     // Update player controller
     const playerSpeed = this.player?.getCurrentSpeed?.() ?? playerShipSettings.SPEED;
     this?.player?.controller?.update(playerSpeed);
@@ -225,7 +220,7 @@ class Game extends Phaser.Scene
 
     this.player.setVisible(false);
     this.player.setActive(false);
-    this.player.disableBody(true, true);
+    this.player.destroy();
     this.player?.radar?.stop();
     
     // Clean up renderers
@@ -243,102 +238,11 @@ class Game extends Phaser.Scene
       color: '#ff0000'
     }).setOrigin(0.5, 0.5).setScrollFactor(0);
   }
-
-  debugRenderer(): void {
-    if (!this.graphics) return;
-
-    // Particle effects test
-        // const wisp = this.add.particles(2400, 2400, 'flares',
-        // {
-        //     color: [ 0x96e0da, 0x937ef3 ],
-        //     colorEase: 'quart.out',
-        //     lifespan: 120,
-        //     angle: { min: -100, max: -80 },
-        //     scale: { start: .08, end: 0, ease: 'sine.in' },
-        //     speed: { min: 250, max: 350 },
-        //     advance: 400,
-        //     blendMode: 'ADD'
-        // });
-        
-
-      // Draw player ship bounds
-      if (this.player && this.player.body) {
-        this.graphics.lineStyle(2, 0x00ff00, 1);
-        this.graphics.strokeCircle(
-          this.player.body.center.x,
-          this.player.body.center.y,
-          this.player.body.width / 2
-        );
-      }
-
-      // Draw target bounds
-      this.targets.forEach(t => {
-        if (!t.body) return;
-        this.graphics!.lineStyle(2, 0xff0000, 1);
-        
-        if (t.shipType === 'cargo') {
-          // Draw rotated rectangle based on ship angle
-          const angle = Phaser.Math.DegToRad(t.angle);
-          const centerX = t.body.center.x;
-          const centerY = t.body.center.y;
-          const halfWidth = t.body.width / 2;
-          const halfHeight = t.body.height / 2;
-          
-          // Calculate corner positions relative to center
-          const corners = [
-            { x: -halfWidth, y: -halfHeight },
-            { x: halfWidth, y: -halfHeight },
-            { x: halfWidth, y: halfHeight },
-            { x: -halfWidth, y: halfHeight }
-          ];
-          
-          // Rotate and translate corners
-          const rotatedCorners = corners.map(corner => {
-            const rotX = corner.x * Math.cos(angle) - corner.y * Math.sin(angle);
-            const rotY = corner.x * Math.sin(angle) + corner.y * Math.cos(angle);
-            return new Phaser.Geom.Point(rotX + centerX, rotY + centerY);
-          });
-          
-          // Draw the rotated rectangle (strokePoints with closePathProperty = true)
-          this.graphics!.strokePoints(rotatedCorners, true);
-        } else {
-          // Circle body
-          this.graphics!.strokeCircle(
-            t.body.center.x,
-            t.body.center.y,
-            t.body.width / 2
-          );
-        }
-      });
-
-      // Draw missile bounds
-      this.missileGroup.getChildren().forEach(missileObj => {
-        const missile = missileObj as Phaser.Physics.Arcade.Sprite;
-        if (!missile.body) return;
-        this.graphics!.lineStyle(2, 0x0000ff, 1);
-        this.graphics!.strokeCircle(
-          missile.body.center.x,
-          missile.body.center.y,
-          missile.body.width / 2
-        );
-      });
-
-      // Draw asteroid bounds
-      this.asteroids.forEach(a => {
-        if (!a.body) return;
-        this.graphics!.lineStyle(2, 0xffff00, 1);
-        this.graphics!.strokeCircle(
-          a.body.center.x,
-          a.body.center.y,
-          a.body.width / 2
-        );
-      });
-  }
 }
 
 const config = {
   type: Phaser.AUTO,
-  scene: [StartMenu, Game],
+  scene: Game,
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -346,9 +250,22 @@ const config = {
     height: window.innerHeight
   },
   physics: {
-    default: 'arcade',
-    arcade: {
-      gravity: { x: 0, y: 0 }
+    default: 'matter',
+    matter: {
+      gravity: { x: 0, y: 0 },
+      debug: {
+        showBody: true,
+        showStaticBody: true,
+        showVelocity: true,
+        velocityColor: 0x00aeef,
+        showCollisions: true,
+        collisionColor: 0xf5950c,
+        renderFill: false,
+        renderLine: true,
+        lineColor: 0x28de19,
+        lineOpacity: 1,
+        lineThickness: 1
+      }
     }
   },
 };

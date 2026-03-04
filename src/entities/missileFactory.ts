@@ -18,8 +18,7 @@ export const createMissileFactory = (_scene: Phaser.Scene) => {
   ) {
     const missile = new SARHMissile(this.scene, params);
     missile.owner = params.owner;
-    (this.scene as any).missileGroup?.add(missile);
-    (missile.body as Phaser.Physics.Arcade.Body).onCollide = true;
+    // Matter physics doesn't use onCollide flag like Arcade
     missile.addToDisplayList();
     missile.addToUpdateList();
     return missile;
@@ -31,8 +30,7 @@ export const createMissileFactory = (_scene: Phaser.Scene) => {
   ) {
     const missile = new ActiveRadarMissile(this.scene, params);
     missile.owner = params.owner;
-    (this.scene as any).missileGroup?.add(missile);
-    (missile.body as Phaser.Physics.Arcade.Body).onCollide = true;
+    // Matter physics doesn't use onCollide flag like Arcade
     missile.addToDisplayList();
     missile.addToUpdateList();
     return missile;

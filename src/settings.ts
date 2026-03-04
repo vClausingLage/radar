@@ -6,8 +6,8 @@ export const CAMERA_ZOOM = .8
 
 // PLAYER SHIP
 export const playerShipSettings = {
-    SPEED: 15,
-    TURN_SPEED: 2,
+    SPEED: .1,
+    TURN_SPEED: .03,
     SIZE: 0.5,
     DIRECTION: 270,
     START_POSITION: { 
@@ -51,7 +51,9 @@ export const targetShipSettings = {
             active: false
         },
     },
-    SHIP_SCALE: 0.5
+    SHIP_SCALE: 0.5,
+    TURN_RATE_CRUISER: 0.01,
+    TURN_RATE_CARGO: 0.005,
 }
 
 // MISSILES

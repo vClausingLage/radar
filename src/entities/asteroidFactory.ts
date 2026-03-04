@@ -16,8 +16,7 @@ export const createAsteroidFactory = (scene: Phaser.Scene) => {
   ) {
     const asteroid = new Asteroid({ scene, ...params });
     if (!asteroid.body) throw new Error('Asteroid body is undefined');
-    asteroid.body.onCollide = true;
-    (scene as any).asteroidGroup?.add(asteroid);
+    // Matter physics doesn't use onCollide flag like Arcade
     asteroid.addToDisplayList();
     asteroid.addToUpdateList();
     return asteroid;
