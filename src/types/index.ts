@@ -1,5 +1,3 @@
-import { Missiles } from '../entities/missiles'
-
 export type Vector2 = {
     x: number
     y: number
@@ -18,7 +16,7 @@ export type RadarOptions = {
 export type Mode = 'stt' | 'rws' | 'tws' | 'emcon'
 
 export type Loadout = {
-    [key in Missiles]: { load: number, active: boolean }
+    [key in string]: { load: number, active: boolean }
 }
 
 // only for radar.ts

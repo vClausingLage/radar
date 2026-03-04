@@ -3,10 +3,13 @@ import { Target } from '../entities/ship';
 
 export class AiUnitController {
     constructor(
+        // @ts-ignore
         private scene: Phaser.Scene,
         private ship: Target,
         private turnRate: number = 0,
+        // @ts-ignore
         private sttTracked: boolean = false,
+        // @ts-ignore
         private radarTracked: boolean = false,
         private radar: LightRadar | null = null,
         private id: number | null = null,

@@ -6,8 +6,8 @@ export const CAMERA_ZOOM = .8
 
 // PLAYER SHIP
 export const playerShipSettings = {
-    SPEED: 3,
-    TURN_SPEED: 5,
+    SPEED: 15,
+    TURN_SPEED: 2,
     SIZE: 0.5,
     DIRECTION: 270,
     START_POSITION: { 

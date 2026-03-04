@@ -132,7 +132,7 @@ class Game extends Phaser.Scene
       id: 1,
     });
     const target2 = this.add.target({
-      x: 2050,
+      x: 2100,
       y: 2050,
       direction: 30,
       speed: 2,
@@ -262,47 +262,75 @@ class Game extends Phaser.Scene
         
 
       // Draw player ship bounds
-      if (this.player) {
-        const c = this.player.getCircle();
+      if (this.player && this.player.body) {
         this.graphics.lineStyle(2, 0x00ff00, 1);
         this.graphics.strokeCircle(
-        c!.x,
-        c!.y,
-        c!.radius
+          this.player.body.center.x,
+          this.player.body.center.y,
+          this.player.body.width / 2
         );
       }
 
       // Draw target bounds
       this.targets.forEach(t => {
-        const c = t.getCircle();
+        if (!t.body) return;
         this.graphics!.lineStyle(2, 0xff0000, 1);
-        this.graphics!.strokeCircle(
-        c!.x,
-        c!.y,
-        c!.radius
-        );
+        
+        if (t.shipType === 'cargo') {
+          // Draw rotated rectangle based on ship angle
+          const angle = Phaser.Math.DegToRad(t.angle);
+          const centerX = t.body.center.x;
+          const centerY = t.body.center.y;
+          const halfWidth = t.body.width / 2;
+          const halfHeight = t.body.height / 2;
+          
+          // Calculate corner positions relative to center
+          const corners = [
+            { x: -halfWidth, y: -halfHeight },
+            { x: halfWidth, y: -halfHeight },
+            { x: halfWidth, y: halfHeight },
+            { x: -halfWidth, y: halfHeight }
+          ];
+          
+          // Rotate and translate corners
+          const rotatedCorners = corners.map(corner => {
+            const rotX = corner.x * Math.cos(angle) - corner.y * Math.sin(angle);
+            const rotY = corner.x * Math.sin(angle) + corner.y * Math.cos(angle);
+            return new Phaser.Geom.Point(rotX + centerX, rotY + centerY);
+          });
+          
+          // Draw the rotated rectangle (strokePoints with closePathProperty = true)
+          this.graphics!.strokePoints(rotatedCorners, true);
+        } else {
+          // Circle body
+          this.graphics!.strokeCircle(
+            t.body.center.x,
+            t.body.center.y,
+            t.body.width / 2
+          );
+        }
       });
 
       // Draw missile bounds
       this.missileGroup.getChildren().forEach(missileObj => {
         const missile = missileObj as Phaser.Physics.Arcade.Sprite;
-        const c = new Phaser.Geom.Circle(missile.x, missile.y, (missile.body?.width || 0) / 2);
+        if (!missile.body) return;
         this.graphics!.lineStyle(2, 0x0000ff, 1);
         this.graphics!.strokeCircle(
-        c!.x,
-        c!.y,
-        c!.radius
+          missile.body.center.x,
+          missile.body.center.y,
+          missile.body.width / 2
         );
       });
 
       // Draw asteroid bounds
       this.asteroids.forEach(a => {
-        const c = a.getCircle();
+        if (!a.body) return;
         this.graphics!.lineStyle(2, 0xffff00, 1);
         this.graphics!.strokeCircle(
-        c!.x,
-        c!.y,
-        c!.radius
+          a.body.center.x,
+          a.body.center.y,
+          a.body.width / 2
         );
       });
   }

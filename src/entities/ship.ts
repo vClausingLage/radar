@@ -41,7 +41,7 @@ export abstract class Ship extends Phaser.Physics.Arcade.Sprite {
     getCircle(): Phaser.Geom.Circle {
         return new Phaser.Geom.Circle(this.x, this.y, (this.body?.width || 0) / 2);
     }
-
+    
     getSpeed(): number {
         return this.speed;
     }
