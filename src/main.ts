@@ -158,16 +158,21 @@ class Game extends Phaser.Scene
   update(_: number, delta: number)
   {
     this.graphics?.clear();
+
+    const player = this.player;
+    if (!player || !player.active || !player.body) {
+      return;
+    }
     
     // Remove destroyed targets from the array
     this.targets = this.targets.filter(t => t.active);
         
     // Update player controller
-    const playerSpeed = this.player?.getCurrentSpeed?.() ?? playerShipSettings.SPEED;
-    this?.player?.controller?.update(playerSpeed);
+    const playerSpeed = player.getCurrentSpeed?.() ?? playerShipSettings.SPEED;
+    player.controller?.update(playerSpeed);
 
     // Radar scan (pass all ships; radar excludes its owner internally)
-    const allShips = [this.player!, ...this.targets];
+    const allShips = [player, ...this.targets];
     allShips.forEach(ship => {
       ship.radar.update(delta, ship.getDirection(), allShips, this.asteroids, this.graphics!);
     });
@@ -210,18 +215,23 @@ class Game extends Phaser.Scene
     // }
 
     // Update interface with warnings
-    if (this.player?.radar && this.interfaceRenderer && this.player) {
-      this.interfaceRenderer.update(this.player);
+    if (player.radar && this.interfaceRenderer) {
+      this.interfaceRenderer.update(player);
     }
   }
 
   private destroyPlayer(): void {
     if (!this.player) return;
 
-    this.player.setVisible(false);
-    this.player.setActive(false);
-    this.player.destroy();
-    this.player?.radar?.stop();
+    const player = this.player;
+
+    this.cameras.main.stopFollow();
+    player.controller?.destroy();
+    player.radar?.stop();
+    player.setVisible(false);
+    player.setActive(false);
+    player.destroy();
+    this.player = undefined;
     
     // Clean up renderers
     this.interfaceRenderer?.destroy();

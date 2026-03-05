@@ -22,6 +22,21 @@ export class CollisionRegistrar {
     // Matter physics uses event-based collision detection
     scene.matter.world.on('collisionstart', (event: Phaser.Physics.Matter.Events.CollisionStartEvent) => {
       const pairs = event.pairs;
+      const destroyedThisEvent = new Set<PlayerShip | Target>();
+      const destroyedMissilesThisEvent = new Set<Missile>();
+
+      const destroyShipOnce = (ship: PlayerShip | Target): void => {
+        if (destroyedThisEvent.has(ship)) return;
+        destroyedThisEvent.add(ship);
+        this.handleShipDestruction(ship);
+      };
+
+      const destroyMissileOnce = (missile: Missile): void => {
+        if (destroyedMissilesThisEvent.has(missile)) return;
+        if (!missile.active || !missile.scene) return;
+        destroyedMissilesThisEvent.add(missile);
+        missile.destroy();
+      };
 
       pairs.forEach((pair: any) => {
         const bodyA = pair.bodyA;
@@ -33,22 +48,22 @@ export class CollisionRegistrar {
 
         // Ship-Asteroid collision
         if (this.isShip(gameObjectA) && this.isAsteroid(gameObjectB)) {
-          this.handleShipDestruction(gameObjectA as PlayerShip | Target);
+          destroyShipOnce(gameObjectA as PlayerShip | Target);
         } else if (this.isAsteroid(gameObjectA) && this.isShip(gameObjectB)) {
-          this.handleShipDestruction(gameObjectB as PlayerShip | Target);
+          destroyShipOnce(gameObjectB as PlayerShip | Target);
         }
 
         // Ship-Ship collision
         else if (this.isShip(gameObjectA) && this.isShip(gameObjectB)) {
-          this.handleShipDestruction(gameObjectA as PlayerShip | Target);
-          this.handleShipDestruction(gameObjectB as PlayerShip | Target);
+          destroyShipOnce(gameObjectA as PlayerShip | Target);
+          destroyShipOnce(gameObjectB as PlayerShip | Target);
         }
 
         // Missile-Asteroid collision
         else if (this.isMissile(gameObjectA) && this.isAsteroid(gameObjectB)) {
-          gameObjectA.destroy();
+          destroyMissileOnce(gameObjectA as Missile);
         } else if (this.isAsteroid(gameObjectA) && this.isMissile(gameObjectB)) {
-          gameObjectB.destroy();
+          destroyMissileOnce(gameObjectB as Missile);
         }
 
         // Missile-Ship collision
@@ -57,16 +72,16 @@ export class CollisionRegistrar {
           const ship = gameObjectB as PlayerShip | Target;
           // Skip collision if the ship is the missile's owner
           if (missile.owner !== ship) {
-            missile.destroy();
-            this.handleShipDestruction(ship);
+            destroyMissileOnce(missile);
+            destroyShipOnce(ship);
           }
         } else if (this.isShip(gameObjectA) && this.isMissile(gameObjectB)) {
           const missile = gameObjectB as Missile;
           const ship = gameObjectA as PlayerShip | Target;
           // Skip collision if the ship is the missile's owner
           if (missile.owner !== ship) {
-            missile.destroy();
-            this.handleShipDestruction(ship);
+            destroyMissileOnce(missile);
+            destroyShipOnce(ship);
           }
         }
       });
@@ -86,6 +101,11 @@ export class CollisionRegistrar {
   }
 
   private handleShipDestruction(ship: PlayerShip | Target): void {
+    // Skip if this ship has already been destroyed or detached from the scene.
+    if (!ship.active || !ship.scene) {
+      return;
+    }
+
     this.deps.physicsRenderer.spawnExplosion(ship.x, ship.y);
 
     if (ship === this.deps.player) {
