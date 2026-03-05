@@ -47,7 +47,7 @@ export const createPlayerShipFactory = (_scene: Phaser.Scene) => {
     target.setMissileNoCollideGroup(targetMissileNoCollideGroup);
     target.addToDisplayList();
     target.addToUpdateList();
-    const controller = new AiUnitController(this.scene, target);
+    const controller = new AiUnitController(this.scene, target, 0, false, false, target.radar, target.id);
     if (params.type === 'cargo') {
       controller.setTurnRate(targetShipSettings.TURN_RATE_CARGO);
     }

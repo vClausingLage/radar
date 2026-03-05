@@ -85,6 +85,7 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
 }
 
 export class PlayerShip extends Ship {
+    public id: number;
     public controller?: PlayerController;
 
     constructor(params: {
@@ -96,6 +97,7 @@ export class PlayerShip extends Ship {
         radar: LightRadar;
     }) {
         super(params);
+        this.id = 0;
     }
 }
 

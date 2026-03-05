@@ -8,6 +8,8 @@ export class InterfaceRenderer {
     private speedOneThirdBtn?: Phaser.GameObjects.Text;
     private speedTwoThirdBtn?: Phaser.GameObjects.Text;
     private speedFullBtn?: Phaser.GameObjects.Text;
+    private zoomInBtn?: Phaser.GameObjects.Text;
+    private zoomOutBtn?: Phaser.GameObjects.Text;
     private warningText?: Phaser.GameObjects.Text;
     private lockWarningText?: Phaser.GameObjects.Text;
     private goSttWarning?: Phaser.GameObjects.Text;
@@ -109,6 +111,44 @@ export class InterfaceRenderer {
         .on('pointerdown', () => {
             (ship as any).setCurrentSpeed?.(fullSpeed);
         });
+
+        // ZOOM BUTTONS (fixed to camera)
+        this.zoomInBtn = this.scene.add.text(0, 0, '+', {
+            font: '32px Courier',
+            color: '#000',
+            backgroundColor: '#ffdb4d',
+            padding: { x: 15, y: 5 }
+        })
+        .setInteractive()
+        .setOrigin(0)
+        .setScrollFactor(0)
+        .on('pointerdown', () => {
+            const camera = this.scene.cameras.main;
+            camera.setZoom(camera.zoom + 0.2);
+            camera.startFollow(ship);
+        });
+
+        this.zoomOutBtn = this.scene.add.text(0, 0, '-', {
+            font: '32px Courier',
+            color: '#000',
+            backgroundColor: '#ffdb4d',
+            padding: { x: 15, y: 5 }
+        })
+        .setInteractive()
+        .setOrigin(0)
+        .setScrollFactor(0)
+        .on('pointerdown', () => {
+            const camera = this.scene.cameras.main;
+            camera.setZoom(Math.max(0.2, camera.zoom - 0.2));
+            camera.startFollow(ship);
+        });
+
+        // Position zoom buttons on right side of screen
+        const camera = this.scene.cameras.main;
+        const rightX = camera.width - this.zoomInBtn.width - 20;
+        const centerY = camera.height / 2;
+        this.zoomInBtn.setPosition(rightX, centerY - 30);
+        this.zoomOutBtn.setPosition(rightX, centerY + 20);
 
         // Warning texts
         this.warningText = this.scene.add.text(0, 0, 'RADAR WARNING', {
@@ -288,6 +328,8 @@ export class InterfaceRenderer {
         this.speedOneThirdBtn?.destroy();
         this.speedTwoThirdBtn?.destroy();
         this.speedFullBtn?.destroy();
+        this.zoomInBtn?.destroy();
+        this.zoomOutBtn?.destroy();
         this.warningText?.destroy();
         this.lockWarningText?.destroy();
         this.goSttWarning?.destroy();
@@ -298,6 +340,8 @@ export class InterfaceRenderer {
         this.speedOneThirdBtn = undefined;
         this.speedTwoThirdBtn = undefined;
         this.speedFullBtn = undefined;
+        this.zoomInBtn = undefined;
+        this.zoomOutBtn = undefined;
         this.warningText = undefined;
         this.lockWarningText = undefined;
         this.goSttWarning = undefined;

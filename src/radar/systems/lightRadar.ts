@@ -1,7 +1,7 @@
 import { RadarOptions, Loadout, Vector2 } from '../../types'
 import { Track } from '../data/track'
 import { Asteroid } from '../../entities/asteroid'
-import { Ship, Target } from '../../entities/ship'
+import { Ship } from '../../entities/ship'
 import { Missile } from '../../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
 import { Math as MathUtils } from '../../math'
@@ -128,7 +128,7 @@ export class LightRadar {
         this.interfaceRenderer = renderer
     }
 
-    update(delta: number, angle: number, ships: Array<Ship | Target>, asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
+    update(delta: number, angle: number, ships: Ship[], asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
         // Keep radar anchored to its owner if available
         if (this.owner) {
             const pos = this.owner.getPosition();
@@ -136,8 +136,9 @@ export class LightRadar {
         }
 
         // Derive targets by excluding the owning ship, if set (always available for missiles)
-        const targets: Target[] = (ships || [])
-            .filter(s => (this.owner ? s !== this.owner : true)) as Target[]
+        const targets: Array<Ship & { id: number }> = (ships || [])
+            .filter(s => (this.owner ? s !== this.owner : true))
+            .filter((s): s is Ship & { id: number } => typeof (s as { id?: number }).id === 'number')
 
         if (!this.radarOptions.isScanning) {
             // do nothing
@@ -441,7 +442,7 @@ export class LightRadar {
         }
     }
 
-    filterTargetsAndAsteroidsInScanArea(startAngle: number, endAngle: number, targets: Target[], asteroids: Asteroid[]): { targetsInRange: Target[], asteroidsInRange: Asteroid[] } {
+    filterTargetsAndAsteroidsInScanArea(startAngle: number, endAngle: number, targets: Array<Ship & { id: number }>, asteroids: Asteroid[]): { targetsInRange: Array<Ship & { id: number }>, asteroidsInRange: Asteroid[] } {
         const targetsInRange = targets.filter(target => {
             const dx = target.x - this.radarOptions.position.x
             const dy = target.y - this.radarOptions.position.y
@@ -500,7 +501,7 @@ export class LightRadar {
         return { targetsInRange, asteroidsInRange }
     }
 
-    radarScan(startAngle: number, endAngle: number, targets: Target[], asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
+    radarScan(startAngle: number, endAngle: number, targets: Array<Ship & { id: number }>, asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
 
         // TODO
         // THIS MUST BE REFACTORED TO DO AN ACTUAL RADAR SCAN
@@ -600,7 +601,7 @@ export class LightRadar {
         this.lastScanTime = 0
     }
 
-    radarTwsScan(startAngle: number, endAngle: number, targets: Target[], asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
+    radarTwsScan(startAngle: number, endAngle: number, targets: Array<Ship & { id: number }>, asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
         this.sttTrack = null
         const MAX_TWS_TRACKS = 3
 
@@ -616,7 +617,7 @@ export class LightRadar {
         }
 
         // Build list of valid targets (not obstructed)
-        const validTargets: Array<{ target: Target, distance: number, hasCollision: boolean }> = [];
+        const validTargets: Array<{ target: Ship & { id: number }, distance: number, hasCollision: boolean }> = [];
 
         for (const t of targetsInRange) {
             const c = t.getCircle();

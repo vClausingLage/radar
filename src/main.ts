@@ -83,10 +83,6 @@ class Game extends Phaser.Scene
         loadout: playerShipSettings.LOADOUT
       }),
     });
-    // Attach radar to its owning ship
-    // this.player.radar.attachTo(this.player);
-    // PLAYER CONTROLLER
-    // this.playerController = new PlayerController(this, this.player);
 
     // CAMERA
     this.cameras.main.setBounds(0, 0, this.world.width, this.world.height);
@@ -132,7 +128,7 @@ class Game extends Phaser.Scene
     const target2 = this.add.target({
       x: 2100,
       y: 1700,
-      direction: 30,
+      direction: 90,
       speed: .1,
       type: 'cruiser',
       radar: new LightRadar({
@@ -180,39 +176,7 @@ class Game extends Phaser.Scene
     // Update AI continuous (every frame)
     this.targets.forEach(t => {
       t.controller?.updateContinuous();
-
-      // Update AI radar scan; radar self-syncs to owner
-      // if (t.radar) {
-      //   t.radar.update(delta, newDirection, allShips, this.asteroids, this.graphics!);
-      // }
     });
-
-    // // Update target AI strategic decisions once per second
-    // if (!this.aiUpdateTimer) {
-    //   this.aiUpdateTimer = this.time.addEvent({
-    //     delay: 1000,
-    //     callback: () => {
-    //       this.targets.forEach(t => {
-    //         t.controller.updateStrategic();
-    //       });
-    //     },
-    //     loop: true
-    //   });
-    // }
-
-    // // Check if player is being tracked
-    // const playerTrackedByRadar = this.targets.some(t => 
-    //   t.radar?.getTracks().length > 0
-    // );
-    // const playerLockedByStt = this.targets.some(t => 
-    //   t.radar?.getMode() === 'stt'
-    // );
-
-    // // update targets
-    // const destroyedEnemyId = this.player?.radar?.updateEnemiesInMain();
-    // if (destroyedEnemyId !== undefined) {
-    //   this.targets = this.targets.filter(target => target.id !== destroyedEnemyId);
-    // }
 
     // Update interface with warnings
     if (player.radar && this.interfaceRenderer) {

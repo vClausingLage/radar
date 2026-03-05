@@ -2,7 +2,7 @@ import { Vector2 } from "../../types";
 import { Track } from "../data/track";
 import { Asteroid } from "../../entities/asteroid";
 import { Missile } from "../../entities/missiles";
-import { Target } from "../../entities/ship";
+import { Ship } from "../../entities/ship";
 import { Loadout } from "../../types"
 
 export class LightRadarRenderer {
@@ -52,7 +52,7 @@ export class LightRadarRenderer {
         }
     }
 
-    renderRwsContacts(graphics: Phaser.GameObjects.Graphics, t: Target, distance: number): void {
+    renderRwsContacts(graphics: Phaser.GameObjects.Graphics, t: Ship, distance: number): void {
         // Draw green rectangle at target position on separate graphics object
         const rectGraphics = graphics.scene?.add.graphics();
         if (rectGraphics) {
