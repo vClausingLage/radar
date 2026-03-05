@@ -23,6 +23,8 @@ export const createPlayerShipFactory = (_scene: Phaser.Scene) => {
     const controller = new PlayerController(this.scene, ship);
     ship.controller = controller;
     if (!ship.body) throw new Error('Ship body is undefined');
+    const playerMissileNoCollideGroup = this.scene.matter.world.nextGroup(true);
+    ship.setMissileNoCollideGroup(playerMissileNoCollideGroup);
     // Matter physics doesn't use onCollide flag like Arcade
     ship.radar.attachTo(ship);
     ship.radar.start();
@@ -41,6 +43,8 @@ export const createPlayerShipFactory = (_scene: Phaser.Scene) => {
       shipType: params.type,
     });
     if (!target.body) throw new Error('Target body is undefined');
+    const targetMissileNoCollideGroup = this.scene.matter.world.nextGroup(true);
+    target.setMissileNoCollideGroup(targetMissileNoCollideGroup);
     target.addToDisplayList();
     target.addToUpdateList();
     const controller = new AiUnitController(this.scene, target);

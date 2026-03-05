@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import StartMenu from "./scenes/startMenu";
+// import StartMenu from "./scenes/startMenu";
 import { LightRadar } from "./radar/systems/lightRadar";
 import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer";
 import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer";
@@ -116,9 +116,9 @@ class Game extends Phaser.Scene
     // TARGETS using factory
     const target1 = this.add.target({
       x: 2000,
-      y: 2000,
-      direction: 340,
-      speed: .01,
+      y: 1800,
+      direction: 180,
+      speed: .1,
       type: 'cargo',
       radar: new LightRadar({
         scene: this,
@@ -131,9 +131,9 @@ class Game extends Phaser.Scene
     });
     const target2 = this.add.target({
       x: 2100,
-      y: 2050,
+      y: 1700,
       direction: 30,
-      speed: .01,
+      speed: .1,
       type: 'cruiser',
       radar: new LightRadar({
         scene: this,
@@ -250,6 +250,20 @@ class Game extends Phaser.Scene
   }
 }
 
+const debugConfig = process.env.NODE_ENV === 'development' ? {
+        showBody: true,
+        showStaticBody: true,
+        showVelocity: true,
+        velocityColor: 0x00aeef,
+        showCollisions: true,
+        collisionColor: 0xf5950c,
+        renderFill: false,
+        renderLine: true,
+        lineColor: 0x28de19,
+        lineOpacity: 1,
+        lineThickness: 1
+      } : false;
+
 const config = {
   type: Phaser.AUTO,
   scene: Game,
@@ -263,19 +277,7 @@ const config = {
     default: 'matter',
     matter: {
       gravity: { x: 0, y: 0 },
-      debug: {
-        showBody: true,
-        showStaticBody: true,
-        showVelocity: true,
-        velocityColor: 0x00aeef,
-        showCollisions: true,
-        collisionColor: 0xf5950c,
-        renderFill: false,
-        renderLine: true,
-        lineColor: 0x28de19,
-        lineOpacity: 1,
-        lineThickness: 1
-      }
+      debug: debugConfig
     }
   },
 };

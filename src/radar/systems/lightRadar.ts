@@ -351,6 +351,10 @@ export class LightRadar {
                     dirY: Math.sin(Phaser.Math.DegToRad(angle)),
                     owner: this.owner || undefined
                 });
+                const ownerNoCollideGroupSarh = this.owner?.getMissileNoCollideGroup();
+                if (ownerNoCollideGroupSarh !== undefined) {
+                    sarhMissile.setCollisionGroup(ownerNoCollideGroupSarh);
+                }
                 this.activeMissiles.push(sarhMissile);
                 break;
             case 'AIM-220':
@@ -365,6 +369,10 @@ export class LightRadar {
                     dirY: Math.sin(Phaser.Math.DegToRad(angle)),
                     owner: this.owner || undefined
                 });
+                const ownerNoCollideGroupActive = this.owner?.getMissileNoCollideGroup();
+                if (ownerNoCollideGroupActive !== undefined) {
+                    activeRadarMissile.setCollisionGroup(ownerNoCollideGroupActive);
+                }
                 if (this.mode === 'tws' && target) {
                     activeRadarMissile.targetId = target.id;
                 }

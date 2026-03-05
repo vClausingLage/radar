@@ -7,6 +7,7 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
     private direction: number;
     private speed: number;
     private currentSpeed: number;
+    private missileNoCollideGroup?: number;
     public radar: LightRadar;
 
     constructor(params: {
@@ -72,6 +73,15 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
     getPosition(): Vector2 {
         return { x: this.x, y: this.y };
     }
+
+    setMissileNoCollideGroup(group: number): void {
+        this.missileNoCollideGroup = group;
+        this.setCollisionGroup(group);
+    }
+
+    getMissileNoCollideGroup(): number | undefined {
+        return this.missileNoCollideGroup;
+    }
 }
 
 export class PlayerShip extends Ship {
@@ -112,7 +122,7 @@ export class Target extends Ship {
         this.id = params.id;
         this.shipType = params.shipType;
         
-        this.setVisible(true);
+        this.setVisible(process.env.NODE_ENV === 'development' ? true : false);
         this.setScale(.7);
     }
 
