@@ -52,8 +52,8 @@ export const targetShipSettings = {
         },
     },
     SHIP_SCALE: 0.5,
-    TURN_RATE_CRUISER: 0.01,
-    TURN_RATE_CARGO: 0.005,
+    TURN_RATE_CRUISER: 0.3,  // degrees per frame (at 60fps = 18°/sec)
+    TURN_RATE_CARGO: 0.15,   // degrees per frame (at 60fps = 9°/sec)
 }
 
 // MISSILES
