@@ -41,8 +41,7 @@ class Game extends Phaser.Scene
     this.canvas = this.sys.game.canvas;
     this.load.image('universe', 'universe.png');
     this.load.image('ship', 'ship.png');
-    this.load.image('rwr', 'screen.png');
-    this.load.image('radar', 'screen.png');
+    this.load.image('rwr', 'rwr_screen.png');
     this.load.image('missile', 'missile.png');
     this.load.image('explosion', 'explosion.png');
     this.load.image('asteroid', 'asteroid.png');
