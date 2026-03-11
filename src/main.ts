@@ -110,7 +110,7 @@ class Game extends Phaser.Scene
 
     // TARGETS using factory
     const target1 = this.add.target({
-      x: 2000,
+      x: 1500,
       y: 1800,
       direction: 180,
       speed: .1,
@@ -125,7 +125,7 @@ class Game extends Phaser.Scene
       id: 1,
     });
     const target2 = this.add.target({
-      x: 2100,
+      x: 1900,
       y: 1700,
       direction: 90,
       speed: .1,

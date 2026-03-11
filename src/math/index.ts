@@ -1,11 +1,11 @@
-export class Math {
+export class GameMath {
     static normalizeAngle(angle: number): number {
         while (angle > 180) angle -= 360;
         while (angle < -180) angle += 360;
         return angle;
     }
 
-    static getRelativeAngle(sourceAngle: number, targetAngle: number): {
+    static getAspect(sourceAngle: number, targetAngle: number): {
         aspect: 'hot' | 'cold' | 'flanking_left' | 'flanking_right',
         angle: number
      } {
@@ -22,5 +22,9 @@ export class Math {
         } else {
             return { aspect: 'flanking_left', angle: relativeAngle };
         }
+    }
+
+    static getDistance(x1: number, y1: number, x2: number, y2: number): number {
+        return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
     }
 }

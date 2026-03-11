@@ -29,6 +29,7 @@ export const playerShipSettings = {
 // RADAR
 export const radarModule = {
     RANGE: 600,
+    RWR_RANGE_MULTIPLICATOR: 1.7,
     SCAN_SPEED: 0.04,
 }
 export const radarDefaultSettings = {

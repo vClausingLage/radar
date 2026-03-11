@@ -4,7 +4,8 @@ import { Asteroid } from '../../entities/asteroid'
 import { Ship } from '../../entities/ship'
 import { Missile } from '../../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
-import { Math as MathUtils } from '../../math'
+import { GameMath } from '../../math'
+import { RWR } from './rwr'
  
 
 export class LightRadar {
@@ -21,6 +22,7 @@ export class LightRadar {
     private loadout: Loadout;
     private renderer: LightRadarRenderer | null;
     private interfaceRenderer: any | null;
+    private rwr: RWR | null;
     public events: Phaser.Events.EventEmitter;
 
     constructor(params: {
@@ -41,6 +43,7 @@ export class LightRadar {
         this.loadout = params.loadout;
         this.renderer = params.renderer;
         this.interfaceRenderer = params.interfaceRenderer || null;
+        this.rwr = new RWR();
         this.events = new Phaser.Events.EventEmitter();
     }
 
@@ -59,6 +62,10 @@ export class LightRadar {
 
     getRange(): number {
         return this.radarOptions.range
+    }
+
+    getAzimuth(): number {
+        return this.radarOptions.azimuth
     }
 
     getMode(): string {
@@ -156,6 +163,8 @@ export class LightRadar {
 
                     if (this.lastScanTime >= scanDuration) {
                         this.radarScan(startAngle, endAngle, targets, asteroids, graphics)
+                        this.rwr?.receive(targets, asteroids, this.radarOptions.range, this.owner);
+                        console.log('RWR Alert:', this.rwr?.getAlert()) // Debug log for RWR alert status;
                     }
                 }
             }
@@ -216,9 +225,9 @@ export class LightRadar {
                 const dy = this.sttTrack.pos.y - this.radarOptions.position.y
                 const distanceToTrack = Math.sqrt(dx * dx + dy * dy)
 
-                let angleToTrack = MathUtils.normalizeAngle(Phaser.Math.RadToDeg(Math.atan2(dy, dx)))
-                const normalizedStartAngle = MathUtils.normalizeAngle(startAngle);
-                const normalizedEndAngle = MathUtils.normalizeAngle(endAngle);
+                let angleToTrack = GameMath.normalizeAngle(Phaser.Math.RadToDeg(Math.atan2(dy, dx)))
+                const normalizedStartAngle = GameMath.normalizeAngle(startAngle);
+                const normalizedEndAngle = GameMath.normalizeAngle(endAngle);
 
                 let isTrackInAngle = false;
                 
@@ -343,7 +352,6 @@ export class LightRadar {
                 }
                 // Only decrease ammo if we actually fire
                 activeWeapon.load--;
-                console.info(`Fired a ${activeWeaponType}. Remaining: ${activeWeapon.load}`);
                 
                 const sarhMissile = this.scene.add.sarhMissile({
                     x: missileStartX,
@@ -361,7 +369,6 @@ export class LightRadar {
             case 'AIM-220':
                 // Only decrease ammo if we actually fire
                 activeWeapon.load--;
-                console.info(`Fired a ${activeWeaponType}. Remaining: ${activeWeapon.load}`);
                 
                 const activeRadarMissile = this.scene.add.activeRadarMissile({
                     x: missileStartX,
@@ -392,10 +399,6 @@ export class LightRadar {
         // Filter out missiles that have gone beyond their burn time
         this.missileUpdateDelta += delta
         if (this.missileUpdateDelta >= 1000) {
-            for (const m of this.activeMissiles) {
-                console.info(`Missile ${m.missileType} at position (${m.x}, ${m.y}) with burn time ${m.missileBurnTime} and age ${m.missileAge}`);
-            }
-
             this.activeMissiles = this.activeMissiles.filter(missile => {
                 if (missile.missileAge <= missile.missileBurnTime) {
                     missile.missileAge += 1;
@@ -450,9 +453,9 @@ export class LightRadar {
             let angleToTarget = Phaser.Math.RadToDeg(Math.atan2(dy, dx))
 
             // Normalize angles to be within -180 to 180 range
-            angleToTarget = MathUtils.normalizeAngle(angleToTarget);
-            const normalizedStartAngle = MathUtils.normalizeAngle(startAngle);
-            const normalizedEndAngle = MathUtils.normalizeAngle(endAngle);
+            angleToTarget = GameMath.normalizeAngle(angleToTarget);
+            const normalizedStartAngle = GameMath.normalizeAngle(startAngle);
+            const normalizedEndAngle = GameMath.normalizeAngle(endAngle);
 
             let isInAngle = false;
             
@@ -474,15 +477,9 @@ export class LightRadar {
             let angleToAsteroid = Phaser.Math.RadToDeg(Math.atan2(dy, dx))
 
             // Normalize angles to be within -180 to 180 range
-            const normalizeAngle = (angle: number) => {
-                while (angle > 180) angle -= 360;
-                while (angle < -180) angle += 360;
-                return angle;
-            }
-
-            angleToAsteroid = normalizeAngle(angleToAsteroid);
-            const normalizedStartAngle = normalizeAngle(startAngle);
-            const normalizedEndAngle = normalizeAngle(endAngle);
+            angleToAsteroid = GameMath.normalizeAngle(angleToAsteroid);
+            const normalizedStartAngle = GameMath.normalizeAngle(startAngle);
+            const normalizedEndAngle = GameMath.normalizeAngle(endAngle);
 
             let isInAngle = false;
             
@@ -763,7 +760,6 @@ export class LightRadar {
         }
         
         if (targetTrack) {
-            // console.info("Calculating lead for missile towards target")
             const angleRad = Phaser.Math.DegToRad(targetTrack.dir);
             // 1. Calculate relative position and velocity
             const targetVelocity = {
