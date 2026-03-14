@@ -6,6 +6,7 @@ import { Missile } from '../../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
 import { GameMath } from '../../math'
 import { RWR } from './rwr'
+import { RwrContact } from './rwr'
  
 
 export class LightRadar {
@@ -147,6 +148,9 @@ export class LightRadar {
             .filter(s => (this.owner ? s !== this.owner : true))
             .filter((s): s is Ship & { id: number } => typeof (s as { id?: number }).id === 'number')
 
+        // Passive RWR reception runs continuously while radar is attached to an owner
+        this.rwr?.receive(targets, asteroids, this.radarOptions.range, this.owner)
+
         if (!this.radarOptions.isScanning) {
             // do nothing
         } else {
@@ -163,8 +167,6 @@ export class LightRadar {
 
                     if (this.lastScanTime >= scanDuration) {
                         this.radarScan(startAngle, endAngle, targets, asteroids, graphics)
-                        this.rwr?.receive(targets, asteroids, this.radarOptions.range, this.owner);
-                        console.log('RWR Alert:', this.rwr?.getAlert()) // Debug log for RWR alert status;
                     }
                 }
             }
@@ -742,6 +744,14 @@ export class LightRadar {
             return this.tracks.map(track => track.id);
         }
         return null
+    }
+
+    getRwrContacts(): RwrContact[] {
+        return this.rwr?.getContacts() ?? [];
+    }
+
+    getPrimaryRwrContact(): RwrContact | null {
+        return this.rwr?.getPrimaryContact() ?? null;
     }
 
     flyInDirectionOfShip(m: Missile): { targetDirX: number, targetDirY: number } {

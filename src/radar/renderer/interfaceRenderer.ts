@@ -1,4 +1,5 @@
 import { LightRadar } from "../systems/lightRadar";
+import { RwrContact } from "../systems/rwr";
 
 export class InterfaceRenderer {
     private sttBtn?: Phaser.GameObjects.Text;
@@ -13,6 +14,8 @@ export class InterfaceRenderer {
     private warningText?: Phaser.GameObjects.Text;
     private lockWarningText?: Phaser.GameObjects.Text;
     private goSttWarning?: Phaser.GameObjects.Text;
+    private rwrImage?: Phaser.GameObjects.Image;
+    private rwrDirectionGraphics?: Phaser.GameObjects.Graphics;
     private playerRadar: LightRadar;
 
     constructor(private scene: Phaser.Scene, playerRadar: LightRadar) {
@@ -178,6 +181,21 @@ export class InterfaceRenderer {
         .setOrigin(0.5)
         .setVisible(false);
 
+        // RWR screen image fixed to bottom-left of camera viewport
+        this.rwrImage = this.scene.add.image(20, camera.height - 20, 'rwr')
+            .setOrigin(0, 1)
+            .setScrollFactor(0)
+            .setDepth(1000);
+
+        // Keep RWR image at a practical HUD size while preserving aspect ratio
+        const targetRwrHeight = 120;
+        const rwrScale = targetRwrHeight / this.rwrImage.height;
+        this.rwrImage.setScale(rwrScale);
+
+        this.rwrDirectionGraphics = this.scene.add.graphics()
+            .setScrollFactor(0)
+            .setDepth(1001);
+
         this.updateLayout(ship);
     }
 
@@ -275,6 +293,12 @@ export class InterfaceRenderer {
             const goSttY = shipY - 180;
             this.goSttWarning.setPosition(shipX, goSttY);
         }
+
+        // Keep RWR widget pinned to camera bottom-left
+        if (this.rwrImage) {
+            const camera = this.scene.cameras.main;
+            this.rwrImage.setPosition(20, camera.height - 20);
+        }
     }
 
     updateWarnings(isTracked: boolean, isLocked: boolean): void {
@@ -304,6 +328,36 @@ export class InterfaceRenderer {
     update(ship: Phaser.GameObjects.Sprite): void {
         this.updateButtonColors(ship);
         this.updateLayout(ship);
+
+        const primaryContact = this.playerRadar.getPrimaryRwrContact();
+        this.renderRwrDirectionDiamond(primaryContact);
+    }
+
+    private renderRwrDirectionDiamond(contact: RwrContact | null): void {
+        if (!this.rwrDirectionGraphics || !this.rwrImage) return;
+
+        this.rwrDirectionGraphics.clear();
+        if (!contact) return;
+
+        const centerX = this.rwrImage.x + this.rwrImage.displayWidth / 2;
+        const centerY = this.rwrImage.y - this.rwrImage.displayHeight / 2;
+        const markerRadius = Math.min(this.rwrImage.displayWidth, this.rwrImage.displayHeight) * 0.35;
+
+        const angleRad = Phaser.Math.DegToRad(contact.bearingDeg);
+        const markerX = centerX + Math.cos(angleRad) * markerRadius;
+        const markerY = centerY + Math.sin(angleRad) * markerRadius;
+
+        const diamondSize = 8;
+        const color = contact.isLocked ? 0xff0000 : 0x00ff00;
+
+        this.rwrDirectionGraphics.lineStyle(2, color, 1);
+        this.rwrDirectionGraphics.beginPath();
+        this.rwrDirectionGraphics.moveTo(markerX, markerY - diamondSize);
+        this.rwrDirectionGraphics.lineTo(markerX + diamondSize, markerY);
+        this.rwrDirectionGraphics.lineTo(markerX, markerY + diamondSize);
+        this.rwrDirectionGraphics.lineTo(markerX - diamondSize, markerY);
+        this.rwrDirectionGraphics.closePath();
+        this.rwrDirectionGraphics.strokePath();
     }
 
     showGoSttWarning(): void {
@@ -333,6 +387,8 @@ export class InterfaceRenderer {
         this.warningText?.destroy();
         this.lockWarningText?.destroy();
         this.goSttWarning?.destroy();
+        this.rwrImage?.destroy();
+        this.rwrDirectionGraphics?.destroy();
         this.sttBtn = undefined;
         this.rwsBtn = undefined;
         this.twsBtn = undefined;
@@ -345,5 +401,7 @@ export class InterfaceRenderer {
         this.warningText = undefined;
         this.lockWarningText = undefined;
         this.goSttWarning = undefined;
+        this.rwrImage = undefined;
+        this.rwrDirectionGraphics = undefined;
     }
 }

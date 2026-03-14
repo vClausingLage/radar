@@ -25,7 +25,7 @@ export class SARHMissile extends Phaser.Physics.Matter.Sprite implements BaseMis
     missileType: 'AIM-177' = 'AIM-177';
     missileGuidance: 'semi-active' = 'semi-active';
     missileBurnTime = 14;
-    missileSpeed = .1;
+    missileSpeed = .6;
     missileTurnSpeed = 0.7;
     missileAge: number = 0;
     missileWarhead: 'high-explosive' | 'fragmentation' = 'high-explosive';
@@ -58,7 +58,7 @@ export class ActiveRadarMissile extends Phaser.Physics.Matter.Sprite implements 
     missileType: 'AIM-220' = 'AIM-220';
     missileGuidance: 'active' = 'active';
     missileBurnTime = 14;
-    missileSpeed = .1;
+    missileSpeed = .6;
     missileTurnSpeed = 0.8;
     missileAge: number = 0;
     missileWarhead: 'high-explosive' | 'fragmentation' = 'fragmentation';
