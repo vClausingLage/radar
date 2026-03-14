@@ -57,11 +57,29 @@ export class RWR {
       const distance = GameMath.getDistance(target.x, target.y, owner.x, owner.y);
       if (distance > range * radarModule.RWR_RANGE_MULTIPLICATOR) continue;
 
-      const radarTrackedIds = target.radar.alertRwr() ?? [];
-      const isTracked = radarTrackedIds.includes(ownerId);
-      const isLocked = target.radar.alertTargetBeingTracked() === ownerId;
+      if (target.radar.getMode() === 'emcon') continue;
 
-      if (!isTracked && !isLocked) continue;
+      const emitterHeading = target.getDirection();
+      const emitterAzimuth = target.radar.getAzimuth();
+      const startAngle = emitterHeading - emitterAzimuth;
+      const endAngle = emitterHeading + emitterAzimuth;
+
+      const angleToOwner = GameMath.normalizeAngle(
+        Phaser.Math.RadToDeg(Math.atan2(owner.y - target.y, owner.x - target.x))
+      );
+      const normalizedStartAngle = GameMath.normalizeAngle(startAngle);
+      const normalizedEndAngle = GameMath.normalizeAngle(endAngle);
+
+      let isInCone = false;
+      if (normalizedStartAngle > normalizedEndAngle) {
+        isInCone = angleToOwner >= normalizedStartAngle || angleToOwner <= normalizedEndAngle;
+      } else {
+        isInCone = angleToOwner >= normalizedStartAngle && angleToOwner <= normalizedEndAngle;
+      }
+
+      if (!isInCone) continue;
+
+      const isLocked = target.radar.alertTargetBeingTracked() === ownerId;
 
       // Check that the line from target to owner is not obstructed by an asteroid
       const line = new Phaser.Geom.Line(target.x, target.y, owner.x, owner.y);

@@ -7,11 +7,13 @@ import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
 import { GameMath } from '../../math'
 import { RWR } from './rwr'
 import { RwrContact } from './rwr'
+import { RadarDetection } from './radarDetection'
+import { TwsTrackManager } from './twsTrackManager'
+import { MissileGuidance } from './missileGuidance'
  
 
 export class LightRadar {
     private lastScanTime = 0
-    private missileUpdateDelta = 0
     private activeMissiles: Missile[] = []
     private twsTargetIndex = 0
     private owner: Ship | null = null
@@ -24,6 +26,9 @@ export class LightRadar {
     private renderer: LightRadarRenderer | null;
     private interfaceRenderer: any | null;
     private rwr: RWR | null;
+    private radarDetection: RadarDetection;
+    private twsTrackManager: TwsTrackManager;
+    private missileGuidance: MissileGuidance;
     public events: Phaser.Events.EventEmitter;
 
     constructor(params: {
@@ -45,6 +50,9 @@ export class LightRadar {
         this.renderer = params.renderer;
         this.interfaceRenderer = params.interfaceRenderer || null;
         this.rwr = new RWR();
+        this.radarDetection = new RadarDetection(this.radarOptions);
+        this.twsTrackManager = new TwsTrackManager();
+        this.missileGuidance = new MissileGuidance();
         this.events = new Phaser.Events.EventEmitter();
     }
 
@@ -308,7 +316,7 @@ export class LightRadar {
         const distance = Math.sqrt(
             (target.pos.x - missileStartX) ** 2 +
             (target.pos.y - missileStartY) ** 2
-        );
+        )
 
         if (distance === 0) {
             // Fallback: nudge start point a bit and continue
@@ -395,109 +403,17 @@ export class LightRadar {
     }
 
     updateMissiles(delta: number): void {
-        // Remove destroyed or inactive missiles
-        this.activeMissiles = this.activeMissiles.filter(m => m.active);
-
-        // Filter out missiles that have gone beyond their burn time
-        this.missileUpdateDelta += delta
-        if (this.missileUpdateDelta >= 1000) {
-            this.activeMissiles = this.activeMissiles.filter(missile => {
-                if (missile.missileAge <= missile.missileBurnTime) {
-                    missile.missileAge += 1;
-                    return true;
-                }
-                missile.destroy();
-                return false;
-            });
-            this.missileUpdateDelta = 0
-        }
-        
-        // Update missile positions
-        for (const m of this.activeMissiles) {
-            // Calculate current direction as a vector
-            const currentDirX = m.direction.x;
-            const currentDirY = m.direction.y;
-            
-            // Calculate target direction (either to STT target or continuing straight)
-            let targetDirX = currentDirX;
-            let targetDirY = currentDirY;
-
-            if (m.missileAge < 2) {
-                ({ targetDirX, targetDirY } = this.flyInDirectionOfShip(m));
-            } else {
-                const trackResult = this.trackInDirectionOfTarget(m);
-                if (trackResult) {
-                    ({ targetDirX, targetDirY } = trackResult);
-                }
-            }
-            
-            // Interpolate direction based on turn speed (0 to 1)
-            const turnFactor = Math.min(m.missileTurnSpeed * delta / 1000, 1);
-            m.direction.x = currentDirX + (targetDirX - currentDirX) * turnFactor;
-            m.direction.y = currentDirY + (targetDirY - currentDirY) * turnFactor;
-            
-            // Normalize the direction vector
-            const dirMag = Math.sqrt(m.direction.x * m.direction.x + m.direction.y * m.direction.y);
-            if (dirMag > 0) {
-                m.direction.x /= dirMag;
-                m.direction.y /= dirMag;
-            }
-            
-            m.updateHeading(m.direction.x, m.direction.y);
-        }
+        this.activeMissiles = this.missileGuidance.updateMissiles(
+            this.activeMissiles,
+            delta,
+            this.mode,
+            this.sttTrack,
+            this.tracks
+        )
     }
 
     filterTargetsAndAsteroidsInScanArea(startAngle: number, endAngle: number, targets: Array<Ship & { id: number }>, asteroids: Asteroid[]): { targetsInRange: Array<Ship & { id: number }>, asteroidsInRange: Asteroid[] } {
-        const targetsInRange = targets.filter(target => {
-            const dx = target.x - this.radarOptions.position.x
-            const dy = target.y - this.radarOptions.position.y
-            const distance = Math.sqrt(dx * dx + dy * dy)
-            let angleToTarget = Phaser.Math.RadToDeg(Math.atan2(dy, dx))
-
-            // Normalize angles to be within -180 to 180 range
-            angleToTarget = GameMath.normalizeAngle(angleToTarget);
-            const normalizedStartAngle = GameMath.normalizeAngle(startAngle);
-            const normalizedEndAngle = GameMath.normalizeAngle(endAngle);
-
-            let isInAngle = false;
-            
-            // Handle angle wraparound case (e.g., start=-156, end=-36)
-            if (normalizedStartAngle > normalizedEndAngle) {
-                // Wraparound case: target is in range if it's >= startAngle OR <= endAngle
-                isInAngle = angleToTarget >= normalizedStartAngle || angleToTarget <= normalizedEndAngle;
-            } else {
-                // Normal case: target is in range if it's between start and end angles
-                isInAngle = angleToTarget >= normalizedStartAngle && angleToTarget <= normalizedEndAngle;
-            }
-
-            return distance <= this.radarOptions.range && isInAngle
-        })
-        const asteroidsInRange = asteroids.filter(a => {
-            const dx = a.position.x - this.radarOptions.position.x
-            const dy = a.position.y - this.radarOptions.position.y
-            const distance = Math.sqrt(dx * dx + dy * dy)
-            let angleToAsteroid = Phaser.Math.RadToDeg(Math.atan2(dy, dx))
-
-            // Normalize angles to be within -180 to 180 range
-            angleToAsteroid = GameMath.normalizeAngle(angleToAsteroid);
-            const normalizedStartAngle = GameMath.normalizeAngle(startAngle);
-            const normalizedEndAngle = GameMath.normalizeAngle(endAngle);
-
-            let isInAngle = false;
-            
-            // Handle angle wraparound case (e.g., start=-156, end=-36)
-            if (normalizedStartAngle > normalizedEndAngle) {
-                // Wraparound case: asteroid is in range if it's >= startAngle OR <= endAngle
-                isInAngle = angleToAsteroid >= normalizedStartAngle || angleToAsteroid <= normalizedEndAngle;
-            } else {
-                // Normal case: asteroid is in range if it's between start and end angles
-                isInAngle = angleToAsteroid >= normalizedStartAngle && angleToAsteroid <= normalizedEndAngle;
-            }
-
-            return distance <= this.radarOptions.range && isInAngle
-        })
-
-        return { targetsInRange, asteroidsInRange }
+        return this.radarDetection.filterTargetsAndAsteroidsInScanArea(startAngle, endAngle, targets, asteroids)
     }
 
     radarScan(startAngle: number, endAngle: number, targets: Array<Ship & { id: number }>, asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
@@ -511,82 +427,21 @@ export class LightRadar {
         this.sttTrack = null
 
         const { targetsInRange, asteroidsInRange } = this.filterTargetsAndAsteroidsInScanArea(startAngle, endAngle, targets, asteroids)
+        const visibleTargets = this.radarDetection.getVisibleTargets(targetsInRange, asteroidsInRange)
 
-        const targetCircles = targetsInRange.map(t => {
-            return t.getCircle();
-        });
-        const asteroidCircles = asteroidsInRange.map(a => {
-            return a.getCircle();
-        });
-        const allCircles = [...targetCircles, ...asteroidCircles];
+        for (const { target, distance } of visibleTargets) {
+            this.tracks = [...this.tracks, {
+                id: target.id,
+                pos: { x: target.x, y: target.y },
+                dist: distance,
+                dir: target.getDirection(),
+                speed: target.getSpeed(),
+                age: 0,
+                lastUpdate: 0,
+                confidence: 0,
+            }]
 
-        const radarPosition = {
-            x: this.radarOptions.position.x,
-            y: this.radarOptions.position.y
-        }
-        
-        for (const t of targetsInRange) {
-            let hasCollision = false;
-            // Create lines to r, l, t, b points of target circle
-            const c = t.getCircle();
-
-            const cardinalPoints = [
-                { x: c.right, y: c.y },
-                { x: c.left, y: c.y },
-                { x: c.x, y: c.top },
-                { x: c.x, y: c.bottom }
-            ];
-
-            let unobstructedLines = 0;
-
-            for (const point of cardinalPoints) {
-                const line = new Phaser.Geom.Line(
-                    radarPosition.x,
-                    radarPosition.y,
-                    point.x,
-                    point.y
-                );
-                
-                let lineHasObstruction = false;
-                
-                // Check against all other circles (except the current target's circle)
-                for (const otherCircle of allCircles) {
-                    if (otherCircle.x === c.x && otherCircle.y === c.y && otherCircle.radius === c.radius) continue;
-                    
-                    if (Phaser.Geom.Intersects.LineToCircle(line, otherCircle)) {
-                        lineHasObstruction = true;
-                        break;
-                    }
-                }
-                
-                if (!lineHasObstruction) {
-                    unobstructedLines++;
-                }
-            }
-
-            // If all four lines are obstructed, set hasCollision to true
-            hasCollision = unobstructedLines === 0;
-
-            // Calculate distance
-            const dx = t.x - this.radarOptions.position.x;
-            const dy = t.y - this.radarOptions.position.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-
-            // Only draw and process target if there's no collision
-            if (!hasCollision) {
-                this.tracks = [...this.tracks, {
-                    id: t.id,
-                    pos: { x: t.x, y: t.y },
-                    dist: distance,
-                    dir: t.getDirection(),
-                    speed: t.getSpeed(),
-                    age: 0,
-                    lastUpdate: 0,
-                    confidence: 0,
-                }]
-                
-                this.renderer?.renderRwsContacts(graphics, t, distance)
-            }
+            this.renderer?.renderRwsContacts(graphics, target, distance)
         }
         
         // sort tracks by distance
@@ -602,115 +457,10 @@ export class LightRadar {
 
     radarTwsScan(startAngle: number, endAngle: number, targets: Array<Ship & { id: number }>, asteroids: Asteroid[], graphics: Phaser.GameObjects.Graphics): void {
         this.sttTrack = null
-        const MAX_TWS_TRACKS = 3
 
         const { targetsInRange, asteroidsInRange } = this.filterTargetsAndAsteroidsInScanArea(startAngle, endAngle, targets, asteroids)
-
-        const targetCircles = targetsInRange.map(t => t.getCircle());
-        const asteroidCircles = asteroidsInRange.map(a => a.getCircle());
-        const allCircles = [...targetCircles, ...asteroidCircles];
-
-        const radarPosition = {
-            x: this.radarOptions.position.x,
-            y: this.radarOptions.position.y
-        }
-
-        // Build list of valid targets (not obstructed)
-        const validTargets: Array<{ target: Ship & { id: number }, distance: number, hasCollision: boolean }> = [];
-
-        for (const t of targetsInRange) {
-            const c = t.getCircle();
-            const cardinalPoints = [
-                { x: c.right, y: c.y },
-                { x: c.left, y: c.y },
-                { x: c.x, y: c.top },
-                { x: c.x, y: c.bottom }
-            ];
-
-            let unobstructedLines = 0;
-
-            for (const point of cardinalPoints) {
-                const line = new Phaser.Geom.Line(
-                    radarPosition.x,
-                    radarPosition.y,
-                    point.x,
-                    point.y
-                );
-                
-                let lineHasObstruction = false;
-                
-                for (const otherCircle of allCircles) {
-                    if (otherCircle.x === c.x && otherCircle.y === c.y && otherCircle.radius === c.radius) continue;
-                    
-                    if (Phaser.Geom.Intersects.LineToCircle(line, otherCircle)) {
-                        lineHasObstruction = true;
-                        break;
-                    }
-                }
-                
-                if (!lineHasObstruction) {
-                    unobstructedLines++;
-                }
-            }
-
-            const hasCollision = unobstructedLines === 0;
-            const dx = t.x - this.radarOptions.position.x;
-            const dy = t.y - this.radarOptions.position.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-
-            if (!hasCollision) {
-                validTargets.push({ target: t, distance, hasCollision });
-            }
-        }
-
-        // Update existing tracks or add new ones
-        const updatedTracks: Track[] = [];
-        const usedTargetIds = new Set<number>();
-
-        // First, try to update existing tracks with targets still in range
-        for (const track of this.tracks) {
-            const matchingTarget = validTargets.find(vt => vt.target.id === track.id);
-            
-            if (matchingTarget) {
-                // Update existing track
-                updatedTracks.push({
-                    id: matchingTarget.target.id,
-                    pos: { x: matchingTarget.target.x, y: matchingTarget.target.y },
-                    dist: matchingTarget.distance,
-                    dir: matchingTarget.target.getDirection(),
-                    speed: matchingTarget.target.getSpeed(),
-                    age: track.age + 1,
-                    lastUpdate: 0,
-                    confidence: Math.min(track.confidence + 0.1, 1.0),
-                });
-                usedTargetIds.add(matchingTarget.target.id);
-            }
-        }
-
-        // Add new targets to empty slots (up to MAX_TWS_TRACKS total)
-        if (updatedTracks.length < MAX_TWS_TRACKS) {
-            // Sort unused targets by distance
-            const unusedTargets = validTargets
-                .filter(vt => !usedTargetIds.has(vt.target.id))
-                .sort((a, b) => a.distance - b.distance);
-
-            for (const vt of unusedTargets) {
-                if (updatedTracks.length >= MAX_TWS_TRACKS) break;
-
-                updatedTracks.push({
-                    id: vt.target.id,
-                    pos: { x: vt.target.x, y: vt.target.y },
-                    dist: vt.distance,
-                    dir: vt.target.getDirection(),
-                    speed: vt.target.getSpeed(),
-                    age: 0,
-                    lastUpdate: 0,
-                    confidence: 0.5,
-                });
-            }
-        }
-
-        this.tracks = updatedTracks;
+        const visibleTargets = this.radarDetection.getVisibleTargets(targetsInRange, asteroidsInRange)
+        this.tracks = this.twsTrackManager.updateTracks(this.tracks, visibleTargets)
 
         // Reset target index if it exceeds current track count
         if (this.twsTargetIndex >= this.tracks.length && this.tracks.length > 0) {
@@ -755,104 +505,11 @@ export class LightRadar {
     }
 
     flyInDirectionOfShip(m: Missile): { targetDirX: number, targetDirY: number } {
-        return { targetDirX: m.direction.x, targetDirY: m.direction.y };
+        return this.missileGuidance.flyInDirectionOfShip(m)
     }
 
     trackInDirectionOfTarget(m: Missile): { targetDirX: number, targetDirY: number } | null {
-        // Find the track this missile is targeting
-        let targetTrack: Track | null = null;
-        
-        if (this.mode === 'stt' && this.sttTrack) {
-            targetTrack = this.sttTrack;
-        } else if (this.mode === 'tws' && m.targetId !== undefined) {
-            // Find the track with matching ID
-            targetTrack = this.tracks.find(track => track.id === m.targetId) || null;
-        }
-        
-        if (targetTrack) {
-            const angleRad = Phaser.Math.DegToRad(targetTrack.dir);
-            // 1. Calculate relative position and velocity
-            const targetVelocity = {
-                x: Math.cos(angleRad) * targetTrack.speed,
-                y: Math.sin(angleRad) * targetTrack.speed
-            };
-            const targetPos = targetTrack?.pos!;
-            // const targetVelocity = this.sttTrack?.dir!
-            const relPos = {
-                x: targetPos.x - m.x,
-                y: targetPos.y - m.y,
-            };
-
-            // 2. Calculate quadratic coefficients (a, b, c)
-            const a =
-                targetVelocity.x * targetVelocity.x +
-                targetVelocity.y * targetVelocity.y -
-                m.missileSpeed * m.missileSpeed;
-
-            const b = 2 * (relPos.x * targetVelocity.x + relPos.y * targetVelocity.y);
-            
-            const c = relPos.x * relPos.x + relPos.y * relPos.y;
-
-            // 3. Solve for time 't'
-            
-            let t = 0; // Time to intercept
-
-            // Check if we have a linear equation (a is close to zero)
-            if (Math.abs(a) < 0.001) {
-                if (Math.abs(b) < 0.001) {
-                // No solution (or infinite solutions)
-                return null;
-                }
-                t = -c / b;
-            } else {
-                // Solve the quadratic equation
-                const discriminant = b * b - 4 * a * c;
-
-                if (discriminant < 0) {
-                // No real solution, missile can't catch target
-                return null;
-                }
-
-                const t1 = (-b + Math.sqrt(discriminant)) / (2 * a);
-                const t2 = (-b - Math.sqrt(discriminant)) / (2 * a);
-
-                // We need the smallest positive time
-                if (t1 > 0 && t2 > 0) {
-                t = Math.min(t1, t2);
-                } else if (t1 > 0) {
-                t = t1;
-                } else if (t2 > 0) {
-                t = t2;
-                } else {
-                // Both solutions are negative, intercept is in the past
-                return null;
-                }
-            }
-
-            // 4. Calculate the intercept position
-            const interceptPos = {
-                x: targetPos.x + targetVelocity.x * t,
-                y: targetPos.y + targetVelocity.y * t,
-            };
-
-            // 5. Find the vector from missile to intercept
-            const direction = {
-                x: interceptPos.x - m.x,
-                y: interceptPos.y - m.y,
-            };
-
-            // 6. Normalize the direction vector
-            const mag = Math.sqrt(direction.x * direction.x + direction.y * direction.y);
-            if (mag === 0) {
-                return null; // Should not happen if t > 0
-            }
-
-            return {
-                targetDirX: direction.x / mag,
-                targetDirY: direction.y / mag,
-            };
-        }
-        return null;    
+        return this.missileGuidance.trackInDirectionOfTarget(m, this.mode, this.sttTrack, this.tracks)
     }
 
     private emitTrackingEvents(): void {

@@ -109,24 +109,24 @@ class Game extends Phaser.Scene
     }
 
     // TARGETS using factory
-    const target1 = this.add.target({
-      x: 1500,
-      y: 1800,
-      direction: 180,
-      speed: .1,
-      type: 'cargo',
-      radar: new LightRadar({
-        scene: this,
-        settings: { ...radarDefaultSettings, position: { x: 0, y: 0 } },
-        renderer: null,
-        mode: 'rws',
-        loadout: targetShipSettings.LOADOUT
-      }),
-      id: 1,
-    });
+    // const target1 = this.add.target({
+    //   x: 1500,
+    //   y: 1800,
+    //   direction: 180,
+    //   speed: .1,
+    //   type: 'cargo',
+    //   radar: new LightRadar({
+    //     scene: this,
+    //     settings: { ...radarDefaultSettings, position: { x: 0, y: 0 } },
+    //     renderer: null,
+    //     mode: 'rws',
+    //     loadout: targetShipSettings.LOADOUT
+    //   }),
+    //   id: 1,
+    // });
     const target2 = this.add.target({
       x: 1900,
-      y: 1700,
+      y: 1500,
       direction: 90,
       speed: .1,
       type: 'cruiser',
@@ -139,7 +139,7 @@ class Game extends Phaser.Scene
       }),
       id: 2,
     });
-    this.targets.push(target1, target2);
+    this.targets.push(target2);
 
     // ASTEROIDS using factory
     const asteroid1 = this.add.asteroid({
@@ -214,18 +214,18 @@ class Game extends Phaser.Scene
 }
 
 const debugConfig = process.env.NODE_ENV === 'development' ? {
-        showBody: true,
-        showStaticBody: true,
-        showVelocity: true,
-        velocityColor: 0x00aeef,
-        showCollisions: true,
-        collisionColor: 0xf5950c,
-        renderFill: false,
-        renderLine: true,
-        lineColor: 0x28de19,
-        lineOpacity: 1,
-        lineThickness: 1
-      } : false;
+  showBody: true,
+  showStaticBody: true,
+  showVelocity: true,
+  velocityColor: 0x00aeef,
+  showCollisions: true,
+  collisionColor: 0xf5950c,
+  renderFill: false,
+  renderLine: true,
+  lineColor: 0x28de19,
+  lineOpacity: 1,
+  lineThickness: 1
+} : false;
 
 const config = {
   type: Phaser.AUTO,

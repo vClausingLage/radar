@@ -188,7 +188,7 @@ export class InterfaceRenderer {
             .setDepth(1000);
 
         // Keep RWR image at a practical HUD size while preserving aspect ratio
-        const targetRwrHeight = 120;
+        const targetRwrHeight = 270;
         const rwrScale = targetRwrHeight / this.rwrImage.height;
         this.rwrImage.setScale(rwrScale);
 

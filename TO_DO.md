@@ -5,6 +5,7 @@
 AIM :: DO AN ACTUAL RADAR SCAN IN STEPS RATHER THAN ALL AT ONCE (SEE lightRadar.ts)
 
 - DI
+- missiles dont die if owner dies
 - update missile size
 - ship -> bring radar from constructor to factory
 - prevent shooting sarh missiles in tws without stt
