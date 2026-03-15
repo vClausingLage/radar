@@ -222,8 +222,7 @@ export class LightRadar {
 
         if (this.tracks.length <= 0) {
             console.error('No tracks found')
-            this.sttTrack = null
-            this.setMode('rws')
+            this.clearSttTrackingAndReturnToRws()
             return
         }
 
@@ -233,14 +232,12 @@ export class LightRadar {
 
         if (!this.refreshSttTrackFromTargets(targets)) {
             console.info('Tracked target not found or destroyed')
-            this.sttTrack = null
-            this.setMode('rws')
+            this.clearSttTrackingAndReturnToRws()
             return
         }
 
         if (!this.isCurrentSttTrackInScan(scanArea.startAngle, scanArea.endAngle)) {
-            this.sttTrack = null
-            this.setMode('rws')
+            this.clearSttTrackingAndReturnToRws()
             return
         }
 
@@ -249,6 +246,13 @@ export class LightRadar {
             this.renderer?.renderStt(this.sttTrack, graphics)
             this.lastScanTime = 0
         }
+    }
+
+    private clearSttTrackingAndReturnToRws(): void {
+        // Avoid stale contacts causing immediate re-entry into STT on invalid targets.
+        this.sttTrack = null
+        this.tracks = []
+        this.setMode('rws')
     }
 
     private refreshSttTrackFromTargets(targets: Array<Ship & { id: number }>): boolean {

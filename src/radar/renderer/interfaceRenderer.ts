@@ -328,39 +328,41 @@ export class InterfaceRenderer {
         this.updateButtonColors(ship);
         this.updateLayout(ship);
 
-        const primaryContact = this.playerRadar.getPrimaryRwrContact();
-        this.renderRwrDirectionDiamond(primaryContact);
+        const contacts = this.playerRadar.getRwrContacts();
+        this.renderRwrDirectionDiamonds(contacts);
     }
 
     private getFullSpeed(ship: Ship): number {
         return ship.getSpeed();
     }
 
-    private renderRwrDirectionDiamond(contact: RwrContact | null): void {
+    private renderRwrDirectionDiamonds(contacts: RwrContact[]): void {
         if (!this.rwrDirectionGraphics || !this.rwrImage) return;
 
         this.rwrDirectionGraphics.clear();
-        if (!contact) return;
+        if (contacts.length === 0) return;
 
         const centerX = this.rwrImage.x + this.rwrImage.displayWidth / 2;
         const centerY = this.rwrImage.y - this.rwrImage.displayHeight / 2;
         const markerRadius = Math.min(this.rwrImage.displayWidth, this.rwrImage.displayHeight) * 0.35;
-
-        const angleRad = Phaser.Math.DegToRad(contact.bearingDeg);
-        const markerX = centerX + Math.cos(angleRad) * markerRadius;
-        const markerY = centerY + Math.sin(angleRad) * markerRadius;
-
         const diamondSize = 8;
-        const color = contact.isLocked ? 0xff0000 : 0x00ff00;
 
-        this.rwrDirectionGraphics.lineStyle(2, color, 1);
-        this.rwrDirectionGraphics.beginPath();
-        this.rwrDirectionGraphics.moveTo(markerX, markerY - diamondSize);
-        this.rwrDirectionGraphics.lineTo(markerX + diamondSize, markerY);
-        this.rwrDirectionGraphics.lineTo(markerX, markerY + diamondSize);
-        this.rwrDirectionGraphics.lineTo(markerX - diamondSize, markerY);
-        this.rwrDirectionGraphics.closePath();
-        this.rwrDirectionGraphics.strokePath();
+        for (const contact of contacts) {
+            const angleRad = Phaser.Math.DegToRad(contact.bearingDeg);
+            const markerX = centerX + Math.cos(angleRad) * markerRadius;
+            const markerY = centerY + Math.sin(angleRad) * markerRadius;
+
+            const color = contact.isLocked ? 0xff0000 : 0x00ff00;
+
+            this.rwrDirectionGraphics.lineStyle(2, color, 1);
+            this.rwrDirectionGraphics.beginPath();
+            this.rwrDirectionGraphics.moveTo(markerX, markerY - diamondSize);
+            this.rwrDirectionGraphics.lineTo(markerX + diamondSize, markerY);
+            this.rwrDirectionGraphics.lineTo(markerX, markerY + diamondSize);
+            this.rwrDirectionGraphics.lineTo(markerX - diamondSize, markerY);
+            this.rwrDirectionGraphics.closePath();
+            this.rwrDirectionGraphics.strokePath();
+        }
     }
 
     showGoSttWarning(): void {

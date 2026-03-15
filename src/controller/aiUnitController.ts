@@ -18,6 +18,8 @@ export class AiUnitController {
     private nextShotAt = 0;
     private sttLockAcquiredAt: number | null = null;
     private currentSttTargetId: number | null = null;
+    private cargoWaypoints: { x: number; y: number }[] = [];
+    private cargoWaypointIndex = 0;
 
     constructor(
         private readonly scene: Phaser.Scene,
@@ -30,6 +32,9 @@ export class AiUnitController {
     ) {
         this.setupRadarListeners();
         this.createDebugText();
+        if (ship.shipType === 'cargo') {
+            this.cargoWaypoints = this.generateCargoRoute();
+        }
     }
 
     public getTurnRate(): number {
@@ -90,7 +95,7 @@ export class AiUnitController {
 
         const radar = this.radar;
         const tracks = radar?.getTracks() ?? [];
-        const preferredTrack = tracks.find((t) => t.id === 0) ?? tracks[0];
+        const preferredTrack = tracks.find((t) => t.id === 0);
         const sttTargetId = radar?.alertTargetBeingTracked() ?? null;
 
         // Track STT lock duration for fire delay
@@ -139,6 +144,7 @@ export class AiUnitController {
     }
 
     private updateState(preferredTrack: Track | undefined): void {
+        const isCargo = this.ship.shipType === 'cargo';
         // Priority: Evade > Engage > Investigate > Patrol
         if (this.sttTracked) {
             // Enemy has STT lock on us!
@@ -146,20 +152,25 @@ export class AiUnitController {
                 console.log(`AI ${this.id}: EVADING! Enemy lock detected!`);
                 this.state = AIState.EVADE;
             }
-        } else if (preferredTrack && this.radar?.getMode() === 'stt' && this.currentSttTargetId !== null) {
+        } else if (
+            !isCargo &&
+            preferredTrack &&
+            this.radar?.getMode() === 'stt' &&
+            this.currentSttTargetId === 0
+        ) {
             // We have STT lock
             if (this.state !== AIState.ENGAGE) {
                 console.log(`AI ${this.id}: ENGAGING target ${this.currentSttTargetId}!`);
                 this.state = AIState.ENGAGE;
             }
-        } else if (preferredTrack) {
+        } else if (!isCargo && preferredTrack) {
             // We have radar contact but no lock
             if (this.state !== AIState.INVESTIGATE) {
                 console.log(`AI ${this.id}: INVESTIGATING contact ${preferredTrack.id}`);
                 this.state = AIState.INVESTIGATE;
             }
         } else {
-            // No contacts
+            // No contacts (or cargo ship — always returns to route/patrol)
             if (this.state !== AIState.PATROL) {
                 console.log(`AI ${this.id}: Returning to PATROL`);
                 this.state = AIState.PATROL;
@@ -168,6 +179,10 @@ export class AiUnitController {
     }
 
     private executePatrol(): void {
+        if (this.ship.shipType === 'cargo') {
+            this.executeCargoRoute();
+            return;
+        }
         // Wander randomly
         if (!this.patrolTarget || this.isNearPosition(this.patrolTarget, 100)) {
             this.patrolTarget = {
@@ -178,6 +193,30 @@ export class AiUnitController {
         this.turnToward(this.patrolTarget);
         
         // Keep radar in RWS mode when patrolling
+        if (this.radar?.getMode() !== 'rws') {
+            this.radar?.setMode('rws');
+        }
+    }
+
+    private generateCargoRoute(): { x: number; y: number }[] {
+        const cx = this.ship.x;
+        const cy = this.ship.y;
+        const r = 800;
+        return [
+            { x: cx + r, y: cy },
+            { x: cx, y: cy + r },
+            { x: cx - r, y: cy },
+            { x: cx, y: cy - r },
+        ];
+    }
+
+    private executeCargoRoute(): void {
+        if (this.cargoWaypoints.length === 0) return;
+        const waypoint = this.cargoWaypoints[this.cargoWaypointIndex];
+        if (this.isNearPosition(waypoint, 150)) {
+            this.cargoWaypointIndex = (this.cargoWaypointIndex + 1) % this.cargoWaypoints.length;
+        }
+        this.turnToward(this.cargoWaypoints[this.cargoWaypointIndex]);
         if (this.radar?.getMode() !== 'rws') {
             this.radar?.setMode('rws');
         }
@@ -207,7 +246,7 @@ export class AiUnitController {
         const now = this.scene.time.now;
         const lockHeldTime = this.sttLockAcquiredAt !== null ? now - this.sttLockAcquiredAt : 0;
         
-        if (this.radar && sttTargetId !== null && 
+        if (this.radar && sttTargetId === 0 && 
             lockHeldTime >= this.sttLockDelayMs && 
             now >= this.nextShotAt) {
             this.radar.shoot(this.ship.getDirection());
