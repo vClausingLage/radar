@@ -167,98 +167,11 @@ export class LightRadar {
 
         if (this.radarOptions.isScanning) {
             if (this.mode === 'rws') {
-                if (angle !== undefined) {
-                    // calculations
-                    this.lastScanTime += delta
-                    const middleAngle: number = angle
-                    const startAngle: number = middleAngle - this.radarOptions.azimuth
-                    const endAngle: number = middleAngle + this.radarOptions.azimuth
-                    const scanDuration = this.radarOptions.range * this.radarOptions.scanSpeed * (endAngle - startAngle)
-
-                    if (this.lastScanTime >= scanDuration) {
-                        this.radarScan(startAngle, endAngle, targets, asteroids, graphics)
-                    }
-                }
+                this.tryRunVolumeScan('rws', delta, angle, targets, asteroids, graphics)
             } else if (this.mode === 'tws') {
-                if (angle !== undefined) {
-                    // calculations
-                    this.lastScanTime += delta
-                    const middleAngle: number = angle
-                    const startAngle: number = middleAngle - this.radarOptions.azimuth
-                    const endAngle: number = middleAngle + this.radarOptions.azimuth
-                    const scanDuration = this.radarOptions.range * this.radarOptions.scanSpeed * (endAngle - startAngle)
-
-                    if (this.lastScanTime >= scanDuration) {
-                        this.radarTwsScan(startAngle, endAngle, targets, asteroids, graphics)
-                    }
-                }
+                this.tryRunVolumeScan('tws', delta, angle, targets, asteroids, graphics)
             } else if (this.mode === 'stt') {
-                const middleAngle: number = angle
-                const startAngle: number = middleAngle - this.radarOptions.azimuth
-                const endAngle: number = middleAngle + this.radarOptions.azimuth
-
-                if (this.tracks.length <= 0) {
-                    console.error('No tracks found')
-                    this.sttTrack = null
-                    this.mode = 'rws'
-                    return
-                }
-
-                if (!this.sttTrack) {
-                    this.sttTrack = this.tracks[0]
-                }
-
-                // Update sttTrack with current target information
-                const trackedTarget = targets.find(t => t.id === this.sttTrack!.id);
-                if (trackedTarget && trackedTarget.body && trackedTarget.active) {
-                    // Update position
-                    this.sttTrack.pos = { x: trackedTarget.x, y: trackedTarget.y };
-                    // Update direction
-                    this.sttTrack.dir = trackedTarget.getDirection();
-                    // Update speed
-                    this.sttTrack.speed = trackedTarget.getSpeed();
-                    // Recalculate distance
-                    const dx = this.sttTrack.pos.x - this.radarOptions.position.x;
-                    const dy = this.sttTrack.pos.y - this.radarOptions.position.y;
-                    this.sttTrack.dist = Math.sqrt(dx * dx + dy * dy);
-                } else {
-                    // Target not found or destroyed, switch back to RWS
-                    console.info('Tracked target not found or destroyed');
-                    this.sttTrack = null;
-                    this.mode = 'rws';
-                    return;
-                }
-
-                const dx = this.sttTrack.pos.x - this.radarOptions.position.x
-                const dy = this.sttTrack.pos.y - this.radarOptions.position.y
-                const distanceToTrack = Math.sqrt(dx * dx + dy * dy)
-
-                const angleToTrack = GameMath.normalizeAngle(Phaser.Math.RadToDeg(Math.atan2(dy, dx)))
-                const normalizedStartAngle = GameMath.normalizeAngle(startAngle);
-                const normalizedEndAngle = GameMath.normalizeAngle(endAngle);
-
-                let isTrackInAngle = false;
-                
-                // Handle angle wraparound case
-                if (normalizedStartAngle > normalizedEndAngle) {
-                    // Wraparound case: track is in range if it's >= startAngle OR <= endAngle
-                    isTrackInAngle = angleToTrack >= normalizedStartAngle || angleToTrack <= normalizedEndAngle;
-                } else {
-                    // Normal case: track is in range if it's between start and end angles
-                    isTrackInAngle = angleToTrack >= normalizedStartAngle && angleToTrack <= normalizedEndAngle;
-                }
-
-                if (distanceToTrack > this.radarOptions.range || !isTrackInAngle) {
-                    this.sttTrack = null
-                    this.setMode('rws')
-                    return
-                }
-
-                this.lastScanTime += delta
-                if (this.lastScanTime >= 1000) {
-                    this.renderer?.renderStt(this.sttTrack, graphics)
-                    this.lastScanTime = 0
-                }
+                this.handleSttMode(delta, angle, targets, graphics)
             } // emcon keeps passive RWR only (no active scan)
         }
         // update missiles
@@ -269,6 +182,121 @@ export class LightRadar {
 
         this.renderer?.renderMissiles(this.activeMissiles)
         this.renderer?.renderRadarScanInterface(graphics, this.radarOptions.position, this.radarOptions.range, angle - this.radarOptions.azimuth, angle + this.radarOptions.azimuth, this.radarOptions.range, this.activeMissiles, this.loadout)
+    }
+
+    private tryRunVolumeScan(
+        mode: 'rws' | 'tws',
+        delta: number,
+        angle: number,
+        targets: Array<Ship & { id: number }>,
+        asteroids: Asteroid[],
+        graphics: Phaser.GameObjects.Graphics
+    ): void {
+        const scanArea = this.getScanArea(angle)
+        if (!scanArea) return
+
+        this.lastScanTime += delta
+        const scanDuration = this.getScanDuration(scanArea.startAngle, scanArea.endAngle)
+        if (this.lastScanTime < scanDuration) return
+
+        if (mode === 'rws') {
+            this.radarScan(scanArea.startAngle, scanArea.endAngle, targets, asteroids, graphics)
+            return
+        }
+
+        this.radarTwsScan(scanArea.startAngle, scanArea.endAngle, targets, asteroids, graphics)
+    }
+
+    private getScanDuration(startAngle: number, endAngle: number): number {
+        return this.radarOptions.range * this.radarOptions.scanSpeed * (endAngle - startAngle)
+    }
+
+    private handleSttMode(
+        delta: number,
+        angle: number,
+        targets: Array<Ship & { id: number }>,
+        graphics: Phaser.GameObjects.Graphics
+    ): void {
+        const scanArea = this.getScanArea(angle)
+        if (!scanArea) return
+
+        if (this.tracks.length <= 0) {
+            console.error('No tracks found')
+            this.sttTrack = null
+            this.setMode('rws')
+            return
+        }
+
+        if (!this.sttTrack) {
+            this.sttTrack = this.tracks[0]
+        }
+
+        if (!this.refreshSttTrackFromTargets(targets)) {
+            console.info('Tracked target not found or destroyed')
+            this.sttTrack = null
+            this.setMode('rws')
+            return
+        }
+
+        if (!this.isCurrentSttTrackInScan(scanArea.startAngle, scanArea.endAngle)) {
+            this.sttTrack = null
+            this.setMode('rws')
+            return
+        }
+
+        this.lastScanTime += delta
+        if (this.lastScanTime >= 1000 && this.sttTrack) {
+            this.renderer?.renderStt(this.sttTrack, graphics)
+            this.lastScanTime = 0
+        }
+    }
+
+    private refreshSttTrackFromTargets(targets: Array<Ship & { id: number }>): boolean {
+        if (!this.sttTrack) return false
+
+        const trackedTarget = targets.find((target) => target.id === this.sttTrack?.id)
+        if (!trackedTarget || !trackedTarget.body || !trackedTarget.active) {
+            return false
+        }
+
+        this.sttTrack.pos = { x: trackedTarget.x, y: trackedTarget.y }
+        this.sttTrack.dir = trackedTarget.getDirection()
+        this.sttTrack.speed = trackedTarget.getSpeed()
+        this.sttTrack.dist = this.getDistanceToRadar(this.sttTrack.pos.x, this.sttTrack.pos.y)
+        return true
+    }
+
+    private isCurrentSttTrackInScan(startAngle: number, endAngle: number): boolean {
+        if (!this.sttTrack) return false
+
+        const dx = this.sttTrack.pos.x - this.radarOptions.position.x
+        const dy = this.sttTrack.pos.y - this.radarOptions.position.y
+        const distanceToTrack = Math.sqrt(dx * dx + dy * dy)
+
+        if (distanceToTrack > this.radarOptions.range) {
+            return false
+        }
+
+        const angleToTrack = GameMath.normalizeAngle(Phaser.Math.RadToDeg(Math.atan2(dy, dx)))
+        return this.isAngleWithinScanWindow(angleToTrack, startAngle, endAngle)
+    }
+
+    private isAngleWithinScanWindow(angle: number, startAngle: number, endAngle: number): boolean {
+        const normalizedAngle = GameMath.normalizeAngle(angle)
+        const normalizedStartAngle = GameMath.normalizeAngle(startAngle)
+        const normalizedEndAngle = GameMath.normalizeAngle(endAngle)
+
+        if (normalizedStartAngle > normalizedEndAngle) {
+            return normalizedAngle >= normalizedStartAngle || normalizedAngle <= normalizedEndAngle
+        }
+
+        return normalizedAngle >= normalizedStartAngle && normalizedAngle <= normalizedEndAngle
+    }
+
+    private getDistanceToRadar(x: number, y: number): number {
+        const dx = x - this.radarOptions.position.x
+        const dy = y - this.radarOptions.position.y
+        return Math.sqrt(dx * dx + dy * dy)
     }
 
     getScanArea(angle: number): { startAngle: number, endAngle: number } | null {
