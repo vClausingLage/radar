@@ -11,6 +11,8 @@ import { RadarDetection } from './radarDetection'
 import { TwsTrackManager } from './twsTrackManager'
 import { MissileGuidance } from './missileGuidance'
  
+type RadarMode = 'stt' | 'rws' | 'tws' | 'tws-auto' | 'emcon'
+type InterfaceWarningRenderer = { showGoSttWarning: () => void }
 
 export class LightRadar {
     private lastScanTime = 0
@@ -21,10 +23,10 @@ export class LightRadar {
     private tracks: Track[];
     private sttTrack: Track | null;
     private radarOptions: RadarOptions;
-    private mode: string;
+    private mode: RadarMode;
     private loadout: Loadout;
     private renderer: LightRadarRenderer | null;
-    private interfaceRenderer: any | null;
+    private interfaceRenderer: InterfaceWarningRenderer | null;
     private rwr: RWR | null;
     private radarDetection: RadarDetection;
     private twsTrackManager: TwsTrackManager;
@@ -35,11 +37,11 @@ export class LightRadar {
         scene: Phaser.Scene;
         settings: RadarOptions;
         renderer: LightRadarRenderer | null;
-        mode?: string;
+        mode?: RadarMode;
         loadout: Loadout;
         tracks?: Track[];
         sttTrack?: Track | null;
-        interfaceRenderer?: any | null;
+        interfaceRenderer?: InterfaceWarningRenderer | null;
     }) {
         this.scene = params.scene;
         this.tracks = params.tracks || [];
@@ -77,10 +79,10 @@ export class LightRadar {
         return this.radarOptions.azimuth
     }
 
-    getMode(): string {
+    getMode(): RadarMode {
         return this.mode
     }
-    setMode(mode: string): void {
+    setMode(mode: RadarMode): void {
         this.mode = mode
         switch (mode) {
             case 'rws':
@@ -114,6 +116,10 @@ export class LightRadar {
         return this.loadout
     }
     setLoadout(): void {
+        this.cycleLoadout();
+    }
+
+    cycleLoadout(): void {
         // Find current active weapon and set the next one active
         const loadoutKeys = Object.keys(this.loadout) as (keyof Loadout)[];
         if (loadoutKeys.length > 0) {
@@ -140,7 +146,7 @@ export class LightRadar {
         this.radarOptions.isScanning = false
     }
 
-    setInterfaceRenderer(renderer: any): void {
+    setInterfaceRenderer(renderer: InterfaceWarningRenderer): void {
         this.interfaceRenderer = renderer
     }
 
@@ -159,11 +165,7 @@ export class LightRadar {
         // Passive RWR reception runs continuously while radar is attached to an owner
         this.rwr?.receive(targets, asteroids, this.radarOptions.range, this.owner)
 
-        if (!this.radarOptions.isScanning) {
-            // do nothing
-        } else {
-            if (this.mode === 'emcon') {
-            }
+        if (this.radarOptions.isScanning) {
             if (this.mode === 'rws') {
                 if (angle !== undefined) {
                     // calculations
@@ -177,9 +179,7 @@ export class LightRadar {
                         this.radarScan(startAngle, endAngle, targets, asteroids, graphics)
                     }
                 }
-            }
-
-            if (this.mode === 'tws') {
+            } else if (this.mode === 'tws') {
                 if (angle !== undefined) {
                     // calculations
                     this.lastScanTime += delta
@@ -192,9 +192,7 @@ export class LightRadar {
                         this.radarTwsScan(startAngle, endAngle, targets, asteroids, graphics)
                     }
                 }
-            }
-
-            if (this.mode === 'stt') {
+            } else if (this.mode === 'stt') {
                 const middleAngle: number = angle
                 const startAngle: number = middleAngle - this.radarOptions.azimuth
                 const endAngle: number = middleAngle + this.radarOptions.azimuth
@@ -235,7 +233,7 @@ export class LightRadar {
                 const dy = this.sttTrack.pos.y - this.radarOptions.position.y
                 const distanceToTrack = Math.sqrt(dx * dx + dy * dy)
 
-                let angleToTrack = GameMath.normalizeAngle(Phaser.Math.RadToDeg(Math.atan2(dy, dx)))
+                const angleToTrack = GameMath.normalizeAngle(Phaser.Math.RadToDeg(Math.atan2(dy, dx)))
                 const normalizedStartAngle = GameMath.normalizeAngle(startAngle);
                 const normalizedEndAngle = GameMath.normalizeAngle(endAngle);
 
@@ -261,7 +259,7 @@ export class LightRadar {
                     this.renderer?.renderStt(this.sttTrack, graphics)
                     this.lastScanTime = 0
                 }
-            }
+            } // emcon keeps passive RWR only (no active scan)
         }
         // update missiles
         this.updateMissiles(delta)
@@ -274,7 +272,7 @@ export class LightRadar {
     }
 
     getScanArea(angle: number): { startAngle: number, endAngle: number } | null {
-        if (!angle) return null
+        if (!Number.isFinite(angle)) return null
 
         const middleAngle: number = angle
 
@@ -351,7 +349,7 @@ export class LightRadar {
         }
 
         switch (activeWeaponType) {
-            case 'AIM-177':
+            case 'AIM-177': {
                 // Semi-active radar homing missile requires STT mode
                 if (this.mode === 'tws') {
                     console.log('GO STT! PREVENT SHOOTING');
@@ -376,7 +374,8 @@ export class LightRadar {
                 }
                 this.activeMissiles.push(sarhMissile);
                 break;
-            case 'AIM-220':
+            }
+            case 'AIM-220': {
                 // Only decrease ammo if we actually fire
                 activeWeapon.load--;
                 
@@ -396,6 +395,7 @@ export class LightRadar {
                 }
                 this.activeMissiles.push(activeRadarMissile);
                 break;
+            }
             default:
                 console.error(`Unknown missile type: ${activeWeaponType}`);
                 return;

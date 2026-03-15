@@ -22,8 +22,8 @@ export class SARHMissile extends Phaser.Physics.Matter.Sprite implements BaseMis
     direction: { x: number; y: number; };
     targetId?: number;
     owner?: Ship;
-    missileType: 'AIM-177' = 'AIM-177';
-    missileGuidance: 'semi-active' = 'semi-active';
+    missileType = 'AIM-177' as const;
+    missileGuidance = 'semi-active' as const;
     missileBurnTime = 14;
     missileSpeed = .6;
     missileTurnSpeed = 0.7;
@@ -55,8 +55,8 @@ export class ActiveRadarMissile extends Phaser.Physics.Matter.Sprite implements 
     direction: { x: number; y: number; };
     targetId?: number;
     owner?: Ship;
-    missileType: 'AIM-220' = 'AIM-220';
-    missileGuidance: 'active' = 'active';
+    missileType = 'AIM-220' as const;
+    missileGuidance = 'active' as const;
     missileBurnTime = 14;
     missileSpeed = .6;
     missileTurnSpeed = 0.8;

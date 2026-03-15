@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { SARHMissile, ActiveRadarMissile } from './missiles';
 import type { Ship } from './ship';
 
+/* eslint-disable @typescript-eslint/no-namespace */
+
 const missileCategoryByScene = new WeakMap<Phaser.Scene, number>();
 
 const getMissileCollisionCategory = (scene: Phaser.Scene): number => {
@@ -29,7 +31,7 @@ declare global {
   }
 }
 
-export const createMissileFactory = (_scene: Phaser.Scene) => {
+export const createMissileFactory = () => {
   Phaser.GameObjects.GameObjectFactory.register('sarhMissile', function(
     this: Phaser.GameObjects.GameObjectFactory,
     params: { x: number; y: number; dirX: number; dirY: number; owner?: Ship }

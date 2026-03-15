@@ -9,7 +9,7 @@ export class PlayerController {
   private onKeyUpD = () => { this.turn = 0; };
   private onKeyDownQ = () => {
     if (!this.ship.active || !this.ship.scene) return;
-    this.ship.radar.setLoadout();
+    this.ship.radar.cycleLoadout();
   };
   
   constructor(

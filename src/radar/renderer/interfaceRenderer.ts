@@ -1,5 +1,6 @@
 import { LightRadar } from "../systems/lightRadar";
 import { RwrContact } from "../systems/rwr";
+import { Ship } from "../../entities/ship";
 
 export class InterfaceRenderer {
     private sttBtn?: Phaser.GameObjects.Text;
@@ -22,7 +23,7 @@ export class InterfaceRenderer {
         this.playerRadar = playerRadar;
     }
 
-    createInterface(ship: Phaser.GameObjects.Sprite): void {
+    createInterface(ship: Ship): void {
         // TWS BTN
         this.twsBtn = this.scene.add.text(0, 0, 'TWS', { 
             font: '22px Courier', 
@@ -75,7 +76,7 @@ export class InterfaceRenderer {
         });
 
         // SPEED BUTTONS
-        const fullSpeed = (ship as any).getSpeed ? (ship as any).getSpeed() : 3;
+        const fullSpeed = this.getFullSpeed(ship);
         const oneThirdSpeed = fullSpeed / 3;
         const twoThirdSpeed = (fullSpeed * 2) / 3;
 
@@ -88,7 +89,7 @@ export class InterfaceRenderer {
         .setInteractive()
         .setOrigin(0)
         .on('pointerdown', () => {
-            (ship as any).setCurrentSpeed?.(oneThirdSpeed);
+            ship.setCurrentSpeed(oneThirdSpeed);
         });
 
         this.speedTwoThirdBtn = this.scene.add.text(0, 0, '2/3', {
@@ -100,7 +101,7 @@ export class InterfaceRenderer {
         .setInteractive()
         .setOrigin(0)
         .on('pointerdown', () => {
-            (ship as any).setCurrentSpeed?.(twoThirdSpeed);
+            ship.setCurrentSpeed(twoThirdSpeed);
         });
 
         this.speedFullBtn = this.scene.add.text(0, 0, 'FULL', {
@@ -112,7 +113,7 @@ export class InterfaceRenderer {
         .setInteractive()
         .setOrigin(0)
         .on('pointerdown', () => {
-            (ship as any).setCurrentSpeed?.(fullSpeed);
+            ship.setCurrentSpeed(fullSpeed);
         });
 
         // ZOOM BUTTONS (fixed to camera)
@@ -199,7 +200,7 @@ export class InterfaceRenderer {
         this.updateLayout(ship);
     }
 
-    updateButtonColors(ship: Phaser.GameObjects.Sprite): void {
+    updateButtonColors(ship: Ship): void {
         const mode = this.playerRadar.getMode();
         const tracks = this.playerRadar.getTracks();
         const isTWSActive = mode === 'tws';
@@ -210,28 +211,26 @@ export class InterfaceRenderer {
         if (this.shootBtn) this.shootBtn.setBackgroundColor(mode === 'stt' || (isTWSActive && hasTracks) ? '#ed9209' : '#ffdb4d');
 
         // Update speed button colors
-        const fullSpeed = (ship as any).getSpeed ? (ship as any).getSpeed() : 3;
+        const fullSpeed = this.getFullSpeed(ship);
         const oneThirdSpeed = fullSpeed / 3;
         const twoThirdSpeed = (fullSpeed * 2) / 3;
-        const currentShipSpeed = (ship as any).getCurrentSpeed ? (ship as any).getCurrentSpeed() : fullSpeed;
+        const currentShipSpeed = ship.getCurrentSpeed();
 
         if (this.speedOneThirdBtn) this.speedOneThirdBtn.setBackgroundColor(Math.abs(currentShipSpeed - oneThirdSpeed) < 0.01 ? '#00ff00' : '#ffdb4d');
         if (this.speedTwoThirdBtn) this.speedTwoThirdBtn.setBackgroundColor(Math.abs(currentShipSpeed - twoThirdSpeed) < 0.01 ? '#00ff00' : '#ffdb4d');
         if (this.speedFullBtn) this.speedFullBtn.setBackgroundColor(Math.abs(currentShipSpeed - fullSpeed) < 0.01 ? '#00ff00' : '#ffdb4d');
     }
 
-    updateLayout(ship: Phaser.GameObjects.Sprite): void {
+    updateLayout(ship: Ship): void {
         if (!this.sttBtn || !this.rwsBtn || !this.shootBtn) return;
         const shipX = ship.x;
         const shipY = ship.y;
 
-        // radius from getCircle if present, else half display height
-        // @ts-ignore
-        const circle = ship.getCircle ? ship.getCircle() : null;
+        const circle = ship.getCircle();
         const radius = circle ? circle.radius : (ship.displayHeight / 2);
 
         // Check if ship is pointing downwards (45-135 degrees)
-        const shipAngle = (ship as any).angle ?? 0;
+        const shipAngle = ship.angle;
         const isPointingDown = shipAngle > 45 && shipAngle < 135;
         
         // Flip button position based on ship direction
@@ -325,12 +324,16 @@ export class InterfaceRenderer {
         }
     }
 
-    update(ship: Phaser.GameObjects.Sprite): void {
+    update(ship: Ship): void {
         this.updateButtonColors(ship);
         this.updateLayout(ship);
 
         const primaryContact = this.playerRadar.getPrimaryRwrContact();
         this.renderRwrDirectionDiamond(primaryContact);
+    }
+
+    private getFullSpeed(ship: Ship): number {
+        return ship.getSpeed();
     }
 
     private renderRwrDirectionDiamond(contact: RwrContact | null): void {

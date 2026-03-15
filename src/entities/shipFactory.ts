@@ -5,6 +5,8 @@ import { AiUnitController } from '../controller/aiUnitController';
 import { PlayerController } from '../controller/playerController';
 import { targetShipSettings } from '../settings';
 
+/* eslint-disable @typescript-eslint/no-namespace */
+
 declare global {
   namespace Phaser.GameObjects {
     interface GameObjectFactory {
@@ -14,7 +16,7 @@ declare global {
   }
 }
 
-export const createPlayerShipFactory = (_scene: Phaser.Scene) => {
+export const createPlayerShipFactory = () => {
   Phaser.GameObjects.GameObjectFactory.register('playerShip', function(
     this: Phaser.GameObjects.GameObjectFactory,
     params: { x: number; y: number; direction: number; speed: number; radar: LightRadar }
@@ -47,7 +49,7 @@ export const createPlayerShipFactory = (_scene: Phaser.Scene) => {
     target.setMissileNoCollideGroup(targetMissileNoCollideGroup);
     target.addToDisplayList();
     target.addToUpdateList();
-    const controller = new AiUnitController(this.scene, target, 0, false, false, target.radar, target.id);
+    const controller = new AiUnitController(this.scene, target, 0, false, target.radar, target.id);
     if (params.type === 'cargo') {
       controller.setTurnRate(targetShipSettings.TURN_RATE_CARGO);
     }

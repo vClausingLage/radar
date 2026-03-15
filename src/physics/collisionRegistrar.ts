@@ -6,12 +6,11 @@ import type { Missile } from "../entities/missiles";
 export type CollisionDependencies = {
   scene: Phaser.Scene;
   player: PlayerShip;
-  shipCategory: number;
-  asteroidCategory: number;
-  missileCategory: number;
   physicsRenderer: PhysicsRenderer;
   destroyPlayer: () => void;
 };
+
+type CollisionGameObject = PlayerShip | Target | Missile | Phaser.GameObjects.GameObject;
 
 export class CollisionRegistrar {
   constructor(private readonly deps: CollisionDependencies) {}
@@ -38,11 +37,11 @@ export class CollisionRegistrar {
         missile.destroy();
       };
 
-      pairs.forEach((pair: any) => {
+      pairs.forEach((pair) => {
         const bodyA = pair.bodyA;
         const bodyB = pair.bodyB;
-        const gameObjectA = (bodyA as any).gameObject;
-        const gameObjectB = (bodyB as any).gameObject;
+        const gameObjectA = bodyA.gameObject as CollisionGameObject | undefined;
+        const gameObjectB = bodyB.gameObject as CollisionGameObject | undefined;
 
         if (!gameObjectA || !gameObjectB) return;
 
@@ -88,16 +87,20 @@ export class CollisionRegistrar {
     });
   }
 
-  private isShip(obj: any): boolean {
+  private isShip(obj: unknown): obj is PlayerShip | Target {
     return obj instanceof PlayerShip || obj instanceof Target;
   }
 
-  private isAsteroid(obj: any): boolean {
-    return obj.texture?.key === 'asteroid';
+  private isAsteroid(obj: unknown): boolean {
+    if (!obj || typeof obj !== 'object') return false;
+    const maybeWithTexture = obj as { texture?: { key?: string } };
+    return maybeWithTexture.texture?.key === 'asteroid';
   }
 
-  private isMissile(obj: any): boolean {
-    return obj.texture?.key === 'missile';
+  private isMissile(obj: unknown): obj is Missile {
+    if (!obj || typeof obj !== 'object') return false;
+    const maybeWithTexture = obj as { texture?: { key?: string } };
+    return maybeWithTexture.texture?.key === 'missile';
   }
 
   private handleShipDestruction(ship: PlayerShip | Target): void {

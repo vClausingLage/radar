@@ -5,6 +5,7 @@ import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer";
 import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer";
 import { createPlayerShipFactory } from "./entities/shipFactory";
 import { createAsteroidFactory } from "./entities/asteroidFactory";
+import { Asteroid } from "./entities/asteroid";
 import { PlayerShip, Target } from "./entities/ship";
 import { CAMERA_ZOOM, playerShipSettings, radarDefaultSettings, targetShipSettings } from "./settings";
 import { createMissileFactory } from "./entities/missileFactory";
@@ -17,28 +18,21 @@ class Game extends Phaser.Scene
     width: 2500,
     height: 2500
   };
-  private canvas?: HTMLCanvasElement = this.sys?.game?.canvas ?? undefined;
   private graphics?: Phaser.GameObjects.Graphics;
   private player?: PlayerShip;
   private interfaceRenderer?: InterfaceRenderer;
   private targets: Target[] = [];
-  private asteroids: any[] = [];
+  private asteroids: Asteroid[] = [];
   // Matter physics uses collision categories instead of groups
-  private shipCategory!: number;
-  private asteroidCategory!: number;
-  private missileCategory!: number;
   private physicsRenderer!: PhysicsRenderer;
 
   constructor()
   {
     super('Game');
-    // return undefined canvas initially
-    console.info(this.canvas);
   }
   
   preload()
   {
-    this.canvas = this.sys.game.canvas;
     this.load.image('universe', 'universe.png');
     this.load.image('ship', 'ship.png');
     this.load.image('rwr', 'rwr_screen.png');
@@ -52,16 +46,12 @@ class Game extends Phaser.Scene
   create()
   {
     // Register factories
-    createPlayerShipFactory(this);
-    createAsteroidFactory(this);
-    createMissileFactory(this);
+    createPlayerShipFactory();
+    createAsteroidFactory();
+    createMissileFactory();
 
     // WORLD
     this.matter.world.setBounds(0, 0, this.world.width, this.world.height);
-    // Collision categories for Matter physics
-    this.shipCategory = this.matter.world.nextCategory();
-    this.asteroidCategory = this.matter.world.nextCategory();
-    this.missileCategory = this.matter.world.nextCategory();
     this.physicsRenderer = new PhysicsRenderer(this);
     // ADD IMAGES
     this.add.image(0, 0, 'universe').setOrigin(0).setScale(2.5);
@@ -99,9 +89,6 @@ class Game extends Phaser.Scene
       const collisionRegistrar = new CollisionRegistrar({
         scene: this,
         player: this.player,
-        shipCategory: this.shipCategory,
-        asteroidCategory: this.asteroidCategory,
-        missileCategory: this.missileCategory,
         physicsRenderer: this.physicsRenderer,
         destroyPlayer: () => this.destroyPlayer(),
       });
@@ -109,21 +96,21 @@ class Game extends Phaser.Scene
     }
 
     // TARGETS using factory
-    // const target1 = this.add.target({
-    //   x: 1500,
-    //   y: 1800,
-    //   direction: 180,
-    //   speed: .1,
-    //   type: 'cargo',
-    //   radar: new LightRadar({
-    //     scene: this,
-    //     settings: { ...radarDefaultSettings, position: { x: 0, y: 0 } },
-    //     renderer: null,
-    //     mode: 'rws',
-    //     loadout: targetShipSettings.LOADOUT
-    //   }),
-    //   id: 1,
-    // });
+    const target1 = this.add.target({
+      x: 1500,
+      y: 1800,
+      direction: 180,
+      speed: .1,
+      type: 'cargo',
+      radar: new LightRadar({
+        scene: this,
+        settings: { ...radarDefaultSettings, position: { x: 0, y: 0 } },
+        renderer: null,
+        mode: 'rws',
+        loadout: targetShipSettings.LOADOUT
+      }),
+      id: 1,
+    });
     const target2 = this.add.target({
       x: 1900,
       y: 1500,
@@ -139,7 +126,7 @@ class Game extends Phaser.Scene
       }),
       id: 2,
     });
-    this.targets.push(target2);
+    this.targets.push(target1, target2);
 
     // ASTEROIDS using factory
     const asteroid1 = this.add.asteroid({
@@ -213,7 +200,7 @@ class Game extends Phaser.Scene
   }
 }
 
-const debugConfig = process.env.NODE_ENV === 'development' ? {
+const debugConfig = import.meta.env.DEV ? {
   showBody: true,
   showStaticBody: true,
   showVelocity: true,

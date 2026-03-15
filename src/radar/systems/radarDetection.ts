@@ -29,8 +29,8 @@ export class RadarDetection {
     })
 
     const asteroidsInRange = asteroids.filter((asteroid) => {
-      const dx = asteroid.position.x - this.radarOptions.position.x
-      const dy = asteroid.position.y - this.radarOptions.position.y
+      const dx = asteroid.x - this.radarOptions.position.x
+      const dy = asteroid.y - this.radarOptions.position.y
       const distance = Math.sqrt(dx * dx + dy * dy)
       const angleToAsteroid = Phaser.Math.RadToDeg(Math.atan2(dy, dx))
 

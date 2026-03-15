@@ -1,9 +1,8 @@
 import { Vector2 } from "../types"
 
 export class Asteroid extends Phaser.Physics.Matter.Sprite {
-    position: Vector2;
-    direction: number;
-    speed: number;
+    private readonly direction: number;
+    private readonly speed: number;
 
     constructor(params: {
         scene: Phaser.Scene;
@@ -12,10 +11,9 @@ export class Asteroid extends Phaser.Physics.Matter.Sprite {
         speed: number;
     }) {
         super(params.scene.matter.world, params.position.x, params.position.y, 'asteroid');
-        this.position = params.position;
         this.direction = params.direction;
         this.speed = params.speed;
-        this.setPosition(this.position.x, this.position.y);
+        this.setPosition(params.position.x, params.position.y);
         this.setAngle(this.direction);
         this.scene.add.existing(this);
         // Remove air friction for space physics

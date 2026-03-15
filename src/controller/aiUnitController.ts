@@ -1,5 +1,6 @@
 import { LightRadar } from '../radar/systems/lightRadar';
 import { Target } from '../entities/ship';
+import { Track } from '../radar/data/track';
 
 enum AIState {
     PATROL,      // No contacts, wandering
@@ -19,16 +20,12 @@ export class AiUnitController {
     private currentSttTargetId: number | null = null;
 
     constructor(
-        // @ts-ignore
-        private scene: Phaser.Scene,
-        private ship: Target,
-        private turnRate: number = 0,
-        // @ts-ignore
-        private sttTracked: boolean = false,
-        // @ts-ignore
-        private radarTracked: boolean = false,
-        private radar: LightRadar | null = null,
-        private id: number | null = null,
+        private readonly scene: Phaser.Scene,
+        private readonly ship: Target,
+        private turnRate = 0,
+        private sttTracked = false,
+        private readonly radar: LightRadar | null = null,
+        private readonly id: number | null = null,
 
     ) {
         this.setupRadarListeners();
@@ -55,14 +52,10 @@ export class AiUnitController {
             }
         });
 
-        // Listen for general radar tracking
-        this.radar?.events.on('radar-track', (trackedIds: number[]) => {
-            this.radarTracked = trackedIds.length > 0;
-        });
     }
 
     private createDebugText(): void {
-        const isDev = process.env.NODE_ENV === 'development';
+        const isDev = import.meta.env.DEV;
         if (!isDev) return;
 
         this.debugText = this.scene.add.text(this.ship.x, this.ship.y - 24, '', {
@@ -97,14 +90,14 @@ export class AiUnitController {
 
         const radar = this.radar;
         const tracks = radar?.getTracks() ?? [];
-        const preferredTrack = tracks.find((t: any) => t.id === 0) ?? tracks[0];
+        const preferredTrack = tracks.find((t) => t.id === 0) ?? tracks[0];
         const sttTargetId = radar?.alertTargetBeingTracked() ?? null;
 
         // Track STT lock duration for fire delay
         this.updateSttLockTracking(sttTargetId);
 
         // State transitions
-        this.updateState(preferredTrack, sttTargetId);
+        this.updateState(preferredTrack);
 
         // Execute current state behavior
         switch (this.state) {
@@ -145,7 +138,7 @@ export class AiUnitController {
         }
     }
 
-    private updateState(preferredTrack: any, _sttTargetId: number | null): void {
+    private updateState(preferredTrack: Track | undefined): void {
         // Priority: Evade > Engage > Investigate > Patrol
         if (this.sttTracked) {
             // Enemy has STT lock on us!
@@ -190,12 +183,12 @@ export class AiUnitController {
         }
     }
 
-    private executeInvestigate(track: any): void {
+    private executeInvestigate(track: Track | undefined): void {
         if (!track) return;
         
         // Switch radar to STT mode to get lock
         if (this.radar && this.radar.getMode() !== 'stt') {
-            const prioritizedTracks = [track, ...this.radar.getTracks().filter((t: any) => t.id !== track.id)];
+            const prioritizedTracks = [track, ...this.radar.getTracks().filter((t) => t.id !== track.id)];
             this.radar.setTracks(prioritizedTracks);
             this.radar.setMode('stt');
         }
@@ -204,7 +197,7 @@ export class AiUnitController {
         this.turnToward(track.pos);
     }
 
-    private executeEngage(track: any, sttTargetId: number | null): void {
+    private executeEngage(track: Track | undefined, sttTargetId: number | null): void {
         if (!track) return;
         
         // Point at target
@@ -223,7 +216,7 @@ export class AiUnitController {
         }
     }
 
-    private executeEvade(track: any): void {
+    private executeEvade(track: Track | undefined): void {
         // Evasive maneuvers: turn perpendicular to threat + jink
         if (track) {
             const threatAngle = Phaser.Math.RadToDeg(
@@ -264,10 +257,5 @@ export class AiUnitController {
         const dx = pos.x - this.ship.x;
         const dy = pos.y - this.ship.y;
         return Math.sqrt(dx * dx + dy * dy) < threshold;
-    }
-
-    // Called once per second for strategic decisions
-    updateStrategic(): void {
-       
     }
 }

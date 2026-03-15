@@ -5,10 +5,10 @@ import { PlayerController } from "../controller/playerController";
 
 export abstract class Ship extends Phaser.Physics.Matter.Sprite {
     private direction: number;
-    private speed: number;
+    private readonly speed: number;
     private currentSpeed: number;
     private missileNoCollideGroup?: number;
-    public radar: LightRadar;
+    public readonly radar: LightRadar;
 
     constructor(params: {
         scene: Phaser.Scene;
@@ -85,7 +85,7 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
 }
 
 export class PlayerShip extends Ship {
-    public id: number;
+    public readonly id: number;
     public controller?: PlayerController;
 
     constructor(params: {
@@ -102,8 +102,8 @@ export class PlayerShip extends Ship {
 }
 
 export class Target extends Ship {
-    public id: number;
-    public shipType: 'cruiser' | 'cargo';
+    public readonly id: number;
+    public readonly shipType: 'cruiser' | 'cargo';
     public controller?: AiUnitController;
 
     constructor(params: {
@@ -124,7 +124,7 @@ export class Target extends Ship {
         this.id = params.id;
         this.shipType = params.shipType;
         
-        this.setVisible(process.env.NODE_ENV === 'development' ? true : false);
+        this.setVisible(import.meta.env.DEV);
         this.setScale(.7);
     }
 
