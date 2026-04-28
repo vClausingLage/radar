@@ -15,6 +15,7 @@ export class InterfaceRenderer {
     private warningText?: Phaser.GameObjects.Text;
     private lockWarningText?: Phaser.GameObjects.Text;
     private goSttWarning?: Phaser.GameObjects.Text;
+    private missileTtaText?: Phaser.GameObjects.Text;
     private rwrImage?: Phaser.GameObjects.Image;
     private rwrDirectionGraphics?: Phaser.GameObjects.Graphics;
     private playerRadar: LightRadar;
@@ -182,6 +183,15 @@ export class InterfaceRenderer {
         .setOrigin(0.5)
         .setVisible(false);
 
+        this.missileTtaText = this.scene.add.text(0, 0, '', {
+            font: '20px Courier',
+            color: '#00ff88',
+            backgroundColor: '#001a11',
+            padding: { x: 10, y: 5 }
+        })
+        .setOrigin(0.5)
+        .setVisible(false);
+
         // RWR screen image fixed to bottom-left of camera viewport
         this.rwrImage = this.scene.add.image(20, camera.height - 20, 'rwr')
             .setOrigin(0, 1)
@@ -293,6 +303,11 @@ export class InterfaceRenderer {
             this.goSttWarning.setPosition(shipX, goSttY);
         }
 
+        if (this.missileTtaText) {
+            const missileTtaY = shipY - 220;
+            this.missileTtaText.setPosition(shipX, missileTtaY);
+        }
+
         // Keep RWR widget pinned to camera bottom-left
         if (this.rwrImage) {
             const camera = this.scene.cameras.main;
@@ -329,6 +344,14 @@ export class InterfaceRenderer {
         this.updateLayout(ship);
 
         const contacts = this.playerRadar.getRwrContacts();
+        const primaryContact = this.playerRadar.getPrimaryRwrContact();
+        const missileHudText = this.playerRadar.getLastFiredMissileHudText();
+
+        this.updateWarnings(Boolean(primaryContact), Boolean(primaryContact?.isLocked));
+        if (this.missileTtaText) {
+            this.missileTtaText.setText(missileHudText ?? '');
+            this.missileTtaText.setVisible(Boolean(missileHudText));
+        }
         this.renderRwrDirectionDiamonds(contacts);
     }
 
@@ -392,6 +415,7 @@ export class InterfaceRenderer {
         this.warningText?.destroy();
         this.lockWarningText?.destroy();
         this.goSttWarning?.destroy();
+        this.missileTtaText?.destroy();
         this.rwrImage?.destroy();
         this.rwrDirectionGraphics?.destroy();
         this.sttBtn = undefined;
@@ -406,6 +430,7 @@ export class InterfaceRenderer {
         this.warningText = undefined;
         this.lockWarningText = undefined;
         this.goSttWarning = undefined;
+        this.missileTtaText = undefined;
         this.rwrImage = undefined;
         this.rwrDirectionGraphics = undefined;
     }

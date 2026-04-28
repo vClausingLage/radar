@@ -97,6 +97,7 @@ export class AiUnitController {
         const tracks = radar?.getTracks() ?? [];
         const preferredTrack = tracks.find((t) => t.id === 0);
         const sttTargetId = radar?.alertTargetBeingTracked() ?? null;
+        this.sttTracked = radar?.getRwrContacts().some((contact) => contact.isLocked) ?? false;
 
         // Track STT lock duration for fire delay
         this.updateSttLockTracking(sttTargetId);

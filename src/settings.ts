@@ -67,6 +67,9 @@ export const missileSettings = {
     "AIM-220": {
         SPEED: 6,
         TURN_SPEED: 0.5,
-        BURN_TIME: 25
+        BURN_TIME: 25,
+        ACTIVE_RADAR_ACTIVATION_TIME: 8,
+        ACTIVE_RADAR_RANGE: 220,
+        ACTIVE_RADAR_AZIMUTH: 10
     }
 }

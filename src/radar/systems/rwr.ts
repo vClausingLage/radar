@@ -10,6 +10,16 @@ export type RwrContact = {
   isLocked: boolean;
 };
 
+export type RwrEmitter = {
+  emitterId: string;
+  x: number;
+  y: number;
+  headingDeg: number;
+  azimuth: number;
+  range: number;
+  lockedTargetId: number | null;
+};
+
 export class RWR {
   private alert = false;
   private contacts: RwrContact[] = [];
@@ -35,7 +45,13 @@ export class RWR {
     return sorted[0];
   }
 
-  receive(targets: Array<Ship & { id: number }>, asteroids: Asteroid[], range: number, owner: Ship|null): void {
+  receive(
+    targets: Array<Ship & { id: number }>,
+    asteroids: Asteroid[],
+    range: number,
+    owner: Ship | null,
+    extraEmitters: RwrEmitter[] = []
+  ): void {
     if (!owner) {
       this.alert = false;
       this.contacts = [];
@@ -51,7 +67,7 @@ export class RWR {
 
     this.alert = false;
     this.contacts = [];
-    const dedupedContacts = new Map<number, RwrContact>();
+    const dedupedContacts = new Map<string | number, RwrContact>();
 
     for (const target of targets) {
       const distance = GameMath.getDistance(target.x, target.y, owner.x, owner.y);
@@ -112,6 +128,50 @@ export class RWR {
           });
         }
       }
+    }
+
+    for (const emitter of extraEmitters) {
+      const distance = GameMath.getDistance(emitter.x, emitter.y, owner.x, owner.y);
+      if (distance > emitter.range * radarModule.RWR_RANGE_MULTIPLICATOR) continue;
+
+      const emitterHeading = emitter.headingDeg;
+      const startAngle = emitterHeading - emitter.azimuth;
+      const endAngle = emitterHeading + emitter.azimuth;
+
+      const angleToOwner = GameMath.normalizeAngle(
+        Phaser.Math.RadToDeg(Math.atan2(owner.y - emitter.y, owner.x - emitter.x))
+      );
+      const normalizedStartAngle = GameMath.normalizeAngle(startAngle);
+      const normalizedEndAngle = GameMath.normalizeAngle(endAngle);
+
+      let isInCone = false;
+      if (normalizedStartAngle > normalizedEndAngle) {
+        isInCone = angleToOwner >= normalizedStartAngle || angleToOwner <= normalizedEndAngle;
+      } else {
+        isInCone = angleToOwner >= normalizedStartAngle && angleToOwner <= normalizedEndAngle;
+      }
+
+      if (!isInCone) continue;
+
+      const line = new Phaser.Geom.Line(emitter.x, emitter.y, owner.x, owner.y);
+      let obstructed = false;
+
+      for (const asteroid of asteroids) {
+        if (Phaser.Geom.Intersects.LineToCircle(line, asteroid.getCircle())) {
+          obstructed = true;
+          break;
+        }
+      }
+
+      if (obstructed) continue;
+
+      const bearingDeg = Phaser.Math.RadToDeg(Math.atan2(emitter.y - owner.y, emitter.x - owner.x));
+      dedupedContacts.set(emitter.emitterId, {
+        targetId: emitter.lockedTargetId ?? -1,
+        bearingDeg,
+        distance,
+        isLocked: emitter.lockedTargetId === ownerId,
+      });
     }
 
     this.contacts = Array.from(dedupedContacts.values());

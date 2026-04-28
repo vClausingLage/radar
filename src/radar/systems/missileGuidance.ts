@@ -1,4 +1,5 @@
-import { Missile } from '../../entities/missiles'
+import { ActiveRadarMissile, Missile } from '../../entities/missiles'
+import { Ship } from '../../entities/ship'
 import { Track } from '../data/track'
 
 type MissileMode = 'stt' | 'tws' | string
@@ -16,7 +17,8 @@ export class MissileGuidance {
     delta: number,
     mode: MissileMode,
     sttTrack: Track | null,
-    tracks: Track[]
+    tracks: Track[],
+    targets: Array<Ship & { id: number }>
   ): Missile[] {
     let updatedMissiles = activeMissiles.filter((missile) => missile.active)
 
@@ -44,7 +46,7 @@ export class MissileGuidance {
       if (missile.missileAge < 2) {
         ;({ targetDirX, targetDirY } = this.flyInDirectionOfShip(missile))
       } else {
-        const trackResult = this.trackInDirectionOfTarget(missile, mode, sttTrack, tracks)
+        const trackResult = this.trackInDirectionOfTarget(missile, mode, sttTrack, tracks, targets)
         if (trackResult) {
           ;({ targetDirX, targetDirY } = trackResult)
         }
@@ -74,8 +76,21 @@ export class MissileGuidance {
     missile: Missile,
     mode: MissileMode,
     sttTrack: Track | null,
-    tracks: Track[]
+    tracks: Track[],
+    targets: Array<Ship & { id: number }>
   ): GuidanceVector | null {
+    if (missile instanceof ActiveRadarMissile && missile.isActiveRadarEnabled()) {
+      const activeTarget = this.acquireActiveRadarTarget(missile, targets)
+      if (activeTarget) {
+        return this.getInterceptVector(
+          missile,
+          { x: activeTarget.x, y: activeTarget.y },
+          activeTarget.getDirection(),
+          activeTarget.getSpeed()
+        )
+      }
+    }
+
     let targetTrack: Track | null = null
 
     if (mode === 'stt' && sttTrack) {
@@ -88,15 +103,81 @@ export class MissileGuidance {
       return null
     }
 
-    const angleRad = Phaser.Math.DegToRad(targetTrack.dir)
+    return this.getInterceptVector(missile, targetTrack.pos, targetTrack.dir, targetTrack.speed)
+  }
+
+  private acquireActiveRadarTarget(
+    missile: ActiveRadarMissile,
+    targets: Array<Ship & { id: number }>
+  ): (Ship & { id: number }) | null {
+    const assignedTarget =
+      missile.activeRadarTargetId !== null
+        ? targets.find((target) => target.id === missile.activeRadarTargetId && target.active) ?? null
+        : null
+
+    if (assignedTarget && this.isTargetInsideActiveRadarBasket(missile, assignedTarget, true)) {
+      return assignedTarget
+    }
+
+    const preferredTarget =
+      missile.targetId !== undefined
+        ? targets.find((target) => target.id === missile.targetId && target.active) ?? null
+        : null
+
+    if (preferredTarget && this.isTargetInsideActiveRadarBasket(missile, preferredTarget, false)) {
+      missile.activeRadarTargetId = preferredTarget.id
+      return preferredTarget
+    }
+
+    const fallbackTarget =
+      targets
+        .filter((target) => target.active)
+        .filter((target) => this.isTargetInsideActiveRadarBasket(missile, target, false))
+        .sort(
+          (left, right) =>
+            Phaser.Math.Distance.Between(missile.x, missile.y, left.x, left.y) -
+            Phaser.Math.Distance.Between(missile.x, missile.y, right.x, right.y)
+        )[0] ?? null
+
+    missile.activeRadarTargetId = fallbackTarget?.id ?? null
+    return fallbackTarget
+  }
+
+  private isTargetInsideActiveRadarBasket(
+    missile: ActiveRadarMissile,
+    target: Ship & { id: number },
+    isAlreadyTracking: boolean
+  ): boolean {
+    const distance = Phaser.Math.Distance.Between(missile.x, missile.y, target.x, target.y)
+    if (distance > missile.activeRadarRange) {
+      return false
+    }
+
+    if (isAlreadyTracking) {
+      return true
+    }
+
+    const angleToTarget = Phaser.Math.RadToDeg(Math.atan2(target.y - missile.y, target.x - missile.x))
+    const missileHeading = Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x))
+    const delta = Math.abs(Phaser.Math.Angle.WrapDegrees(angleToTarget - missileHeading))
+    return delta <= missile.activeRadarAzimuth
+  }
+
+  private getInterceptVector(
+    missile: Missile,
+    targetPosition: { x: number; y: number },
+    targetDirectionDeg: number,
+    targetSpeed: number
+  ): GuidanceVector | null {
+    const angleRad = Phaser.Math.DegToRad(targetDirectionDeg)
     const targetVelocity = {
-      x: Math.cos(angleRad) * targetTrack.speed,
-      y: Math.sin(angleRad) * targetTrack.speed,
+      x: Math.cos(angleRad) * targetSpeed,
+      y: Math.sin(angleRad) * targetSpeed,
     }
 
     const relPos = {
-      x: targetTrack.pos.x - missile.x,
-      y: targetTrack.pos.y - missile.y,
+      x: targetPosition.x - missile.x,
+      y: targetPosition.y - missile.y,
     }
 
     const a =
@@ -135,8 +216,8 @@ export class MissileGuidance {
     }
 
     const interceptPos = {
-      x: targetTrack.pos.x + targetVelocity.x * interceptTime,
-      y: targetTrack.pos.y + targetVelocity.y * interceptTime,
+      x: targetPosition.x + targetVelocity.x * interceptTime,
+      y: targetPosition.y + targetVelocity.y * interceptTime,
     }
 
     const direction = {

@@ -1,4 +1,5 @@
 import type { Ship } from './ship';
+import { missileSettings } from '../settings';
 
 export interface BaseMissile {
     direction: {
@@ -62,6 +63,19 @@ export class ActiveRadarMissile extends Phaser.Physics.Matter.Sprite implements 
     missileTurnSpeed = 0.8;
     missileAge: number = 0;
     missileWarhead: 'high-explosive' | 'fragmentation' = 'fragmentation';
+    activeRadarActivationAge = missileSettings['AIM-220'].ACTIVE_RADAR_ACTIVATION_TIME;
+    activeRadarRange = missileSettings['AIM-220'].ACTIVE_RADAR_RANGE;
+    activeRadarAzimuth = missileSettings['AIM-220'].ACTIVE_RADAR_AZIMUTH;
+    activeRadarTargetId: number | null = null;
+
+    isActiveRadarEnabled(): boolean {
+        return this.missileAge >= this.activeRadarActivationAge;
+    }
+
+    getTimeToActive(): number {
+        return Math.max(0, this.activeRadarActivationAge - this.missileAge);
+    }
+
     updateHeading(dirX: number, dirY: number): void {
         const mag = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
         this.direction = { x: dirX / mag, y: dirY / mag };

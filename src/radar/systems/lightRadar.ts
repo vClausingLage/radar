@@ -2,11 +2,11 @@ import { RadarOptions, Loadout, Vector2 } from '../../types'
 import { Track } from '../data/track'
 import { Asteroid } from '../../entities/asteroid'
 import { Ship } from '../../entities/ship'
-import { Missile } from '../../entities/missiles'
+import { ActiveRadarMissile, Missile } from '../../entities/missiles'
 import { LightRadarRenderer } from '../renderer/lightRadarRenderer'
 import { GameMath } from '../../math'
 import { RWR } from './rwr'
-import { RwrContact } from './rwr'
+import { RwrContact, RwrEmitter } from './rwr'
 import { RadarDetection } from './radarDetection'
 import { TwsTrackManager } from './twsTrackManager'
 import { MissileGuidance } from './missileGuidance'
@@ -17,6 +17,7 @@ type InterfaceWarningRenderer = { showGoSttWarning: () => void }
 export class LightRadar {
     private lastScanTime = 0
     private activeMissiles: Missile[] = []
+    private lastFiredMissile: Missile | null = null
     private twsTargetIndex = 0
     private owner: Ship | null = null
     private scene: Phaser.Scene;
@@ -162,8 +163,10 @@ export class LightRadar {
             .filter(s => (this.owner ? s !== this.owner : true))
             .filter((s): s is Ship & { id: number } => typeof (s as { id?: number }).id === 'number')
 
+        const hostileMissileEmitters = targets.flatMap((target) => target.radar.getActiveRadarRwrEmitters())
+
         // Passive RWR reception runs continuously while radar is attached to an owner
-        this.rwr?.receive(targets, asteroids, this.radarOptions.range, this.owner)
+        this.rwr?.receive(targets, asteroids, this.radarOptions.range, this.owner, hostileMissileEmitters)
 
         if (this.radarOptions.isScanning) {
             if (this.mode === 'rws') {
@@ -405,6 +408,7 @@ export class LightRadar {
                     sarhMissile.setCollisionGroup(ownerNoCollideGroupSarh);
                 }
                 this.activeMissiles.push(sarhMissile);
+                this.lastFiredMissile = sarhMissile;
                 break;
             }
             case 'AIM-220': {
@@ -422,10 +426,11 @@ export class LightRadar {
                 if (ownerNoCollideGroupActive !== undefined) {
                     activeRadarMissile.setCollisionGroup(ownerNoCollideGroupActive);
                 }
-                if (this.mode === 'tws' && target) {
+                if (target) {
                     activeRadarMissile.targetId = target.id;
                 }
                 this.activeMissiles.push(activeRadarMissile);
+                this.lastFiredMissile = activeRadarMissile;
                 break;
             }
             default:
@@ -435,13 +440,19 @@ export class LightRadar {
     }
 
     updateMissiles(delta: number): void {
+        const targets = this.getTrackableTargets()
         this.activeMissiles = this.missileGuidance.updateMissiles(
             this.activeMissiles,
             delta,
             this.mode,
             this.sttTrack,
-            this.tracks
+            this.tracks,
+            targets
         )
+
+        if (this.lastFiredMissile && !this.lastFiredMissile.active) {
+            this.lastFiredMissile = null
+        }
     }
 
     filterTargetsAndAsteroidsInScanArea(startAngle: number, endAngle: number, targets: Array<Ship & { id: number }>, asteroids: Asteroid[]): { targetsInRange: Array<Ship & { id: number }>, asteroidsInRange: Asteroid[] } {
@@ -536,12 +547,48 @@ export class LightRadar {
         return this.rwr?.getPrimaryContact() ?? null;
     }
 
+    getActiveRadarRwrEmitters(): RwrEmitter[] {
+        return this.activeMissiles
+            .filter((missile): missile is ActiveRadarMissile => missile instanceof ActiveRadarMissile)
+            .filter((missile) => missile.active && missile.isActiveRadarEnabled() && missile.activeRadarTargetId !== null)
+            .map((missile) => ({
+                emitterId: `missile-${missile.owner ? (missile.owner as { id?: number }).id ?? 'unknown' : 'unknown'}-${missile.targetId ?? 'free'}-${Math.round(missile.x)}-${Math.round(missile.y)}`,
+                x: missile.x,
+                y: missile.y,
+                headingDeg: Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x)),
+                azimuth: missile.activeRadarAzimuth,
+                range: missile.activeRadarRange,
+                lockedTargetId: missile.activeRadarTargetId,
+            }))
+    }
+
+    getLastFiredMissileHudText(): string | null {
+        if (!this.lastFiredMissile || !this.lastFiredMissile.active) {
+            return null
+        }
+
+        if (!(this.lastFiredMissile instanceof ActiveRadarMissile)) {
+            return null
+        }
+
+        if (this.lastFiredMissile.isActiveRadarEnabled()) {
+            return 'AIM-220 ACTIVE'
+        }
+
+        return `AIM-220 TTA ${this.lastFiredMissile.getTimeToActive().toFixed(1)}`
+    }
+
     flyInDirectionOfShip(m: Missile): { targetDirX: number, targetDirY: number } {
         return this.missileGuidance.flyInDirectionOfShip(m)
     }
 
     trackInDirectionOfTarget(m: Missile): { targetDirX: number, targetDirY: number } | null {
-        return this.missileGuidance.trackInDirectionOfTarget(m, this.mode, this.sttTrack, this.tracks)
+        return this.missileGuidance.trackInDirectionOfTarget(m, this.mode, this.sttTrack, this.tracks, this.getTrackableTargets())
+    }
+
+    private getTrackableTargets(): Array<Ship & { id: number }> {
+        return this.scene.children.list
+            .filter((entry): entry is Ship & { id: number } => entry instanceof Ship && entry !== this.owner && typeof (entry as { id?: number }).id === 'number')
     }
 
     private emitTrackingEvents(): void {
