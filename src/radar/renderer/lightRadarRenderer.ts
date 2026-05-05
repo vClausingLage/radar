@@ -12,7 +12,7 @@ export class LightRadarRenderer {
 
     constructor(public scene: Phaser.Scene) {}
     
-    renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, range: number, activeMissiles: Missile[], loadout: Loadout): void {
+    renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, range: number, activeMissiles: Missile[], loadout: Loadout, aim220Waypoints: Vector2[] = []): void {
         const endX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(endAngle));
         const endY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(endAngle));
         
@@ -50,6 +50,17 @@ export class LightRadarRenderer {
         } else {
             this.activeLoadout.setText(`\n\n\n No Active Missile`);
         }
+
+        this.renderAim220Waypoints(graphics, aim220Waypoints);
+    }
+
+    private renderAim220Waypoints(graphics: Phaser.GameObjects.Graphics, waypoints: Vector2[]): void {
+        if (waypoints.length === 0) return;
+
+        graphics.fillStyle(0xffff00, 1);
+        waypoints.forEach((point) => {
+            graphics.fillCircle(point.x, point.y, 5);
+        });
     }
 
     renderRwsContacts(graphics: Phaser.GameObjects.Graphics, t: Ship, distance: number): void {

@@ -11,6 +11,10 @@ export class PlayerController {
     if (!this.ship.active || !this.ship.scene) return;
     this.ship.radar.cycleLoadout();
   };
+  private onPointerDown = (pointer: Phaser.Input.Pointer) => {
+    if (!this.ship.active || !this.ship.scene) return;
+    this.ship.radar.addAim220Waypoint({ x: pointer.worldX, y: pointer.worldY });
+  };
   
   constructor(
     private scene: Phaser.Scene,
@@ -26,6 +30,7 @@ export class PlayerController {
     keyboard?.on('keydown-D', this.onKeyDownD);
     keyboard?.on('keyup-D', this.onKeyUpD);
     keyboard?.on('keydown-Q', this.onKeyDownQ);
+    this.scene.input.on('pointerdown', this.onPointerDown);
   }
 
   destroy(): void {
@@ -35,6 +40,7 @@ export class PlayerController {
     keyboard?.off('keydown-D', this.onKeyDownD);
     keyboard?.off('keyup-D', this.onKeyUpD);
     keyboard?.off('keydown-Q', this.onKeyDownQ);
+    this.scene.input.off('pointerdown', this.onPointerDown);
   }
   
   update(speed: number): void {

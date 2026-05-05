@@ -9,6 +9,8 @@ type GuidanceVector = {
   targetDirY: number
 }
 
+const WAYPOINT_REACHED_DISTANCE = 24
+
 export class MissileGuidance {
   private missileUpdateDelta = 0
 
@@ -46,7 +48,8 @@ export class MissileGuidance {
       if (missile.missileAge < 2) {
         ;({ targetDirX, targetDirY } = this.flyInDirectionOfShip(missile))
       } else {
-        const trackResult = this.trackInDirectionOfTarget(missile, mode, sttTrack, tracks, targets)
+        const waypointResult = this.trackAim220WaypointRoute(missile)
+        const trackResult = waypointResult ?? this.trackInDirectionOfTarget(missile, mode, sttTrack, tracks, targets)
         if (trackResult) {
           ;({ targetDirX, targetDirY } = trackResult)
         }
@@ -70,6 +73,41 @@ export class MissileGuidance {
 
   flyInDirectionOfShip(missile: Missile): GuidanceVector {
     return { targetDirX: missile.direction.x, targetDirY: missile.direction.y }
+  }
+
+  private trackAim220WaypointRoute(missile: Missile): GuidanceVector | null {
+    if (!(missile instanceof ActiveRadarMissile) || !missile.waypointRoute || missile.isActiveRadarEnabled()) {
+      return null
+    }
+
+    const route = missile.waypointRoute
+    if (!route.reachedFirst) {
+      const distanceToFirst = Phaser.Math.Distance.Between(missile.x, missile.y, route.first.x, route.first.y)
+      if (distanceToFirst > WAYPOINT_REACHED_DISTANCE) {
+        return this.getDirectionToPoint(missile, route.first)
+      }
+
+      route.reachedFirst = true
+    }
+
+    return this.getDirectionFromPoints(route.first, route.directionPoint)
+  }
+
+  private getDirectionToPoint(missile: Missile, point: { x: number; y: number }): GuidanceVector | null {
+    return this.getNormalizedDirection(point.x - missile.x, point.y - missile.y)
+  }
+
+  private getDirectionFromPoints(from: { x: number; y: number }, to: { x: number; y: number }): GuidanceVector | null {
+    return this.getNormalizedDirection(to.x - from.x, to.y - from.y)
+  }
+
+  private getNormalizedDirection(x: number, y: number): GuidanceVector | null {
+    const mag = Math.sqrt(x * x + y * y)
+    if (mag === 0) {
+      return null
+    }
+
+    return { targetDirX: x / mag, targetDirY: y / mag }
   }
 
   trackInDirectionOfTarget(

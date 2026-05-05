@@ -1,5 +1,6 @@
 import type { Ship } from './ship';
 import { missileSettings } from '../settings';
+import type { Vector2 } from '../types';
 
 export interface BaseMissile {
     direction: {
@@ -67,6 +68,7 @@ export class ActiveRadarMissile extends Phaser.Physics.Matter.Sprite implements 
     activeRadarRange = missileSettings['AIM-220'].ACTIVE_RADAR_RANGE;
     activeRadarAzimuth = missileSettings['AIM-220'].ACTIVE_RADAR_AZIMUTH;
     activeRadarTargetId: number | null = null;
+    waypointRoute: { first: Vector2; directionPoint: Vector2; reachedFirst: boolean } | null = null;
 
     isActiveRadarEnabled(): boolean {
         return this.missileAge >= this.activeRadarActivationAge;

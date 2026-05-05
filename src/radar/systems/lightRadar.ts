@@ -32,6 +32,7 @@ export class LightRadar {
     private radarDetection: RadarDetection;
     private twsTrackManager: TwsTrackManager;
     private missileGuidance: MissileGuidance;
+    private aim220Waypoints: Vector2[] = [];
     public events: Phaser.Events.EventEmitter;
 
     constructor(params: {
@@ -137,7 +138,38 @@ export class LightRadar {
             : currentActiveIndex + 1;
             
             this.loadout[loadoutKeys[nextIndex]].active = true;
+            if (loadoutKeys[nextIndex] !== 'AIM-220') {
+                this.clearAim220Waypoints();
+            }
         }
+    }
+
+    getActiveWeaponType(): keyof Loadout | null {
+        return (Object.keys(this.loadout).find(key =>
+            this.loadout[key as keyof Loadout]?.active
+        ) as keyof Loadout | undefined) ?? null;
+    }
+
+    addAim220Waypoint(point: Vector2): boolean {
+        const aim220Loadout = this.loadout['AIM-220'];
+        if (this.getActiveWeaponType() !== 'AIM-220' || !aim220Loadout || aim220Loadout.load <= 0) {
+            return false;
+        }
+
+        if (this.aim220Waypoints.length >= 2) {
+            this.aim220Waypoints = [];
+        }
+
+        this.aim220Waypoints.push({ x: point.x, y: point.y });
+        return true;
+    }
+
+    getAim220Waypoints(): Vector2[] {
+        return this.aim220Waypoints.map((point) => ({ x: point.x, y: point.y }));
+    }
+
+    private clearAim220Waypoints(): void {
+        this.aim220Waypoints = [];
     }
 
     start(): void {
@@ -184,7 +216,7 @@ export class LightRadar {
         this.emitTrackingEvents();
 
         this.renderer?.renderMissiles(this.activeMissiles)
-        this.renderer?.renderRadarScanInterface(graphics, this.radarOptions.position, this.radarOptions.range, angle - this.radarOptions.azimuth, angle + this.radarOptions.azimuth, this.radarOptions.range, this.activeMissiles, this.loadout)
+        this.renderer?.renderRadarScanInterface(graphics, this.radarOptions.position, this.radarOptions.range, angle - this.radarOptions.azimuth, angle + this.radarOptions.azimuth, this.radarOptions.range, this.activeMissiles, this.loadout, this.getRenderedAim220Waypoints())
     }
 
     private tryRunVolumeScan(
@@ -321,7 +353,22 @@ export class LightRadar {
     }
 
     shoot(angle: number): void {
-        let target
+        const activeWeaponType = this.getActiveWeaponType();
+
+        // Check if we have the active weapon type and it has ammo
+        if (!activeWeaponType || !this.loadout[activeWeaponType]) {
+            console.error('No active weapon found');
+            return;
+        }
+
+        const activeWeapon = this.loadout[activeWeaponType];
+        if (activeWeapon.load <= 0) {
+            console.warn(`No ${activeWeaponType} missiles remaining`);
+            return;
+        }
+
+        const hasAim220WaypointRoute = activeWeaponType === 'AIM-220' && this.aim220Waypoints.length === 2;
+        let target: Track | undefined
 
         if (this.mode === 'stt' && this.sttTrack) {
             target = this.sttTrack
@@ -331,11 +378,10 @@ export class LightRadar {
             // Move to next target for next shot
             this.twsTargetIndex = (this.twsTargetIndex + 1) % this.tracks.length
         } else {
-            console.error('No target to shoot at')
-            return
+            target = undefined
         }
 
-        if (!target) {
+        if (!target && !hasAim220WaypointRoute) {
             console.error('No target to shoot at')
             return
         }
@@ -346,12 +392,7 @@ export class LightRadar {
         const missileStartX = this.radarOptions.position.x + Math.cos(angleRad) * spawnOffset
         const missileStartY = this.radarOptions.position.y + Math.sin(angleRad) * spawnOffset 
 
-        const distance = Math.sqrt(
-            (target.pos.x - missileStartX) ** 2 +
-            (target.pos.y - missileStartY) ** 2
-        )
-
-        if (distance === 0) {
+        if (target && Phaser.Math.Distance.Between(missileStartX, missileStartY, target.pos.x, target.pos.y) === 0) {
             // Fallback: nudge start point a bit and continue
             const nudge = 1
             const adjX = missileStartX + Math.cos(angleRad) * nudge
@@ -364,23 +405,6 @@ export class LightRadar {
                 console.error('Target is at current location, missile not fired.')
                 return
             }
-        }
-
-        // Find the active weapon type in the loadout
-        const activeWeaponType = Object.keys(this.loadout).find(key => 
-            this.loadout[key as keyof Loadout]?.active
-        ) as keyof Loadout;
-
-        // Check if we have the active weapon type and it has ammo
-        if (!activeWeaponType || !this.loadout[activeWeaponType]) {
-            console.error('No active weapon found');
-            return;
-        }
-
-        const activeWeapon = this.loadout[activeWeaponType];
-        if (activeWeapon.load <= 0) {
-            console.warn(`No ${activeWeaponType} missiles remaining`);
-            return;
         }
 
         switch (activeWeaponType) {
@@ -428,6 +452,15 @@ export class LightRadar {
                 }
                 if (target) {
                     activeRadarMissile.targetId = target.id;
+                }
+                if (this.aim220Waypoints.length === 2) {
+                    const [first, directionPoint] = this.aim220Waypoints;
+                    activeRadarMissile.waypointRoute = {
+                        first: { x: first.x, y: first.y },
+                        directionPoint: { x: directionPoint.x, y: directionPoint.y },
+                        reachedFirst: false,
+                    };
+                    this.clearAim220Waypoints();
                 }
                 this.activeMissiles.push(activeRadarMissile);
                 this.lastFiredMissile = activeRadarMissile;
@@ -589,6 +622,15 @@ export class LightRadar {
     private getTrackableTargets(): Array<Ship & { id: number }> {
         return this.scene.children.list
             .filter((entry): entry is Ship & { id: number } => entry instanceof Ship && entry !== this.owner && typeof (entry as { id?: number }).id === 'number')
+    }
+
+    private getRenderedAim220Waypoints(): Vector2[] {
+        const routeWaypoints = this.activeMissiles
+            .filter((missile): missile is ActiveRadarMissile => missile instanceof ActiveRadarMissile)
+            .filter((missile) => missile.active && missile.waypointRoute !== null && !missile.isActiveRadarEnabled())
+            .flatMap((missile) => missile.waypointRoute ? [missile.waypointRoute.first, missile.waypointRoute.directionPoint] : []);
+
+        return [...this.aim220Waypoints, ...routeWaypoints];
     }
 
     private emitTrackingEvents(): void {
