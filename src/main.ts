@@ -1,13 +1,11 @@
 import Phaser from "phaser";
 // import StartMenu from "./scenes/startMenu";
-import { LightRadar } from "./radar/systems/lightRadar";
-import { LightRadarRenderer } from "./radar/renderer/lightRadarRenderer";
 import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer";
 import { createPlayerShipFactory } from "./entities/shipFactory";
 import { createAsteroidFactory } from "./entities/asteroidFactory";
 import { Asteroid } from "./entities/asteroid";
 import { PlayerShip, Target } from "./entities/ship";
-import { CAMERA_ZOOM, playerShipSettings, radarDefaultSettings, targetShipSettings } from "./settings";
+import { CAMERA_ZOOM, playerShipSettings } from "./settings";
 import { createMissileFactory } from "./entities/missileFactory";
 import { CollisionRegistrar } from "./physics/collisionRegistrar";
 import { PhysicsRenderer } from "./physics/renderer/physicsRenderer";
@@ -64,13 +62,6 @@ class Game extends Phaser.Scene
       y: playerShipSettings.START_POSITION.y,
       direction: playerShipSettings.DIRECTION,
       speed: playerShipSettings.SPEED,
-      radar: new LightRadar({
-        scene: this,
-        settings: { ...radarDefaultSettings, position: { x: 0, y: 0 } },
-        renderer: new LightRadarRenderer(this),
-        mode: 'rws',
-        loadout: playerShipSettings.LOADOUT
-      }),
     });
 
     // CAMERA
@@ -78,12 +69,6 @@ class Game extends Phaser.Scene
     this.cameras.main.startFollow(this.player);
     this.cameras.main.setZoom(CAMERA_ZOOM);
     
-    // INTERFACE
-    this.interfaceRenderer = new InterfaceRenderer(this, this.player.radar);
-    this.interfaceRenderer.createInterface(this.player);
-    // Connect interface renderer to radar so it can display warnings
-    this.player.radar.setInterfaceRenderer(this.interfaceRenderer);
-
     // Colliders
     if (this.player) {
       const collisionRegistrar = new CollisionRegistrar({
@@ -102,13 +87,6 @@ class Game extends Phaser.Scene
       direction: 180,
       speed: .1,
       type: 'cargo',
-      radar: new LightRadar({
-        scene: this,
-        settings: { ...radarDefaultSettings, position: { x: 0, y: 0 } },
-        renderer: null,
-        mode: 'rws',
-        loadout: targetShipSettings.LOADOUT
-      }),
       id: 1,
     });
     const target2 = this.add.target({
@@ -117,13 +95,6 @@ class Game extends Phaser.Scene
       direction: 90,
       speed: .1,
       type: 'cruiser',
-      radar: new LightRadar({
-        scene: this,
-        settings: { ...radarDefaultSettings, position: { x: 0, y: 0 } },
-        renderer: null,
-        mode: 'rws',
-        loadout: targetShipSettings.LOADOUT
-      }),
       id: 2,
     });
     this.targets.push(target1, target2);

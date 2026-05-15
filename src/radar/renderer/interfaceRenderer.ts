@@ -1,4 +1,4 @@
-import { LightRadar } from "../systems/lightRadar";
+import { LightRadar } from "../systems/radar";
 import { RwrContact } from "../systems/rwr";
 import { Ship } from "../../entities/ship";
 

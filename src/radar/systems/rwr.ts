@@ -3,6 +3,8 @@ import { Asteroid } from "../../entities/asteroid";
 import { radarModule } from "../../settings";
 import { GameMath } from "../../math";
 
+const RWR_DETECTION_POWER = 1.5e7;
+
 export type RwrContact = {
   targetId: number;
   bearingDeg: number;
@@ -48,7 +50,7 @@ export class RWR {
   receive(
     targets: Array<Ship & { id: number }>,
     asteroids: Asteroid[],
-    range: number,
+    _range: number,
     owner: Ship | null,
     extraEmitters: RwrEmitter[] = []
   ): void {
@@ -71,14 +73,14 @@ export class RWR {
 
     for (const target of targets) {
       const distance = GameMath.getDistance(target.x, target.y, owner.x, owner.y);
-      if (distance > range * radarModule.RWR_RANGE_MULTIPLICATOR) continue;
+      if (target.radar.getEmitterPowerAtRange(distance) < RWR_DETECTION_POWER) continue;
 
       if (target.radar.getMode() === 'emcon') continue;
 
       const emitterHeading = target.getDirection();
-      const emitterAzimuth = target.radar.getAzimuth();
-      const startAngle = emitterHeading - emitterAzimuth;
-      const endAngle = emitterHeading + emitterAzimuth;
+      const emitterHalfAzimuth = target.radar.getAzimuth() / 2;
+      const startAngle = emitterHeading - emitterHalfAzimuth;
+      const endAngle = emitterHeading + emitterHalfAzimuth;
 
       const angleToOwner = GameMath.normalizeAngle(
         Phaser.Math.RadToDeg(Math.atan2(owner.y - target.y, owner.x - target.x))
@@ -132,7 +134,8 @@ export class RWR {
 
     for (const emitter of extraEmitters) {
       const distance = GameMath.getDistance(emitter.x, emitter.y, owner.x, owner.y);
-      if (distance > emitter.range * radarModule.RWR_RANGE_MULTIPLICATOR) continue;
+      const emitterPowerAtReceiver = emitter.range * radarModule.RWR_RANGE_MULTIPLICATOR / Math.max(distance, 1);
+      if (emitterPowerAtReceiver < 1) continue;
 
       const emitterHeading = emitter.headingDeg;
       const startAngle = emitterHeading - emitter.azimuth;

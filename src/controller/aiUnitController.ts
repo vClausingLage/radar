@@ -1,4 +1,4 @@
-import { LightRadar } from '../radar/systems/lightRadar';
+import { LightRadar } from '../radar/systems/radar';
 import { Target } from '../entities/ship';
 import { Track } from '../radar/data/track';
 

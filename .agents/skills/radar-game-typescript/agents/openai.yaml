@@ -1,0 +1,7 @@
+interface:
+  display_name: "Radar Game TypeScript"
+  short_description: "Work on the Phaser TypeScript radar game."
+  default_prompt: "Use $radar-game-typescript when changing this radar game project."
+
+policy:
+  allow_implicit_invocation: true

@@ -1,4 +1,4 @@
-import { LightRadar } from "../radar/systems/lightRadar";
+import { LightRadar } from "../radar/systems/radar";
 import { AiUnitController } from "../controller/aiUnitController";
 import { Vector2 } from "../types";
 import { PlayerController } from "../controller/playerController";
