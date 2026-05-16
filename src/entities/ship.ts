@@ -1,4 +1,4 @@
-import { LightRadar } from "../radar/systems/radar";
+import { Radar } from "../radar/systems/radar";
 import { AiUnitController } from "../controller/aiUnitController";
 import { Vector2 } from "../types";
 import { PlayerController } from "../controller/playerController";
@@ -8,7 +8,7 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
     private readonly speed: number;
     private currentSpeed: number;
     private missileNoCollideGroup?: number;
-    public readonly radar: LightRadar;
+    public readonly radar: Radar;
 
     constructor(params: {
         scene: Phaser.Scene;
@@ -16,7 +16,7 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
         y: number;
         direction: number;
         speed: number;
-        radar: LightRadar;
+        radar: Radar;
         texture?: string;
     }) {
         super(params.scene.matter.world, params.x, params.y, params.texture || 'ship');
@@ -94,7 +94,7 @@ export class PlayerShip extends Ship {
         y: number;
         direction: number;
         speed: number;
-        radar: LightRadar;
+        radar: Radar;
     }) {
         super(params);
         this.id = 0;
@@ -112,7 +112,7 @@ export class Target extends Ship {
         y: number;
         direction: number;
         speed: number;
-        radar: LightRadar;
+        radar: Radar;
         shipType: 'cruiser' | 'cargo';
         id: number;
     }) {

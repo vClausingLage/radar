@@ -1,4 +1,4 @@
-import { LightRadar } from "../systems/radar";
+import { Radar } from "../systems/radar";
 import { RwrContact } from "../systems/rwr";
 import { Ship } from "../../entities/ship";
 
@@ -18,13 +18,16 @@ export class InterfaceRenderer {
     private missileTtaText?: Phaser.GameObjects.Text;
     private rwrImage?: Phaser.GameObjects.Image;
     private rwrDirectionGraphics?: Phaser.GameObjects.Graphics;
-    private playerRadar: LightRadar;
+    private playerShip: Ship;
+    private playerRadar: Radar;
 
-    constructor(private scene: Phaser.Scene, playerRadar: LightRadar) {
-        this.playerRadar = playerRadar;
+    constructor(private scene: Phaser.Scene, playerShip: Ship) {
+        this.playerShip = playerShip;
+        this.playerRadar = playerShip.radar;
     }
 
     createInterface(ship: Ship): void {
+        this.playerShip = ship;
         // TWS BTN
         this.twsBtn = this.scene.add.text(0, 0, 'TWS', { 
             font: '22px Courier', 
@@ -339,20 +342,20 @@ export class InterfaceRenderer {
         }
     }
 
-    update(ship: Ship): void {
-        this.updateButtonColors(ship);
-        this.updateLayout(ship);
+    update(): void {
+        this.updateButtonColors(this.playerShip);
+        this.updateLayout(this.playerShip);
 
-        const contacts = this.playerRadar.getRwrContacts();
-        const primaryContact = this.playerRadar.getPrimaryRwrContact();
-        const missileHudText = this.playerRadar.getLastFiredMissileHudText();
+        const signals = this.playerRadar.rwrReceiver.getRwrSignals();
+        const primaryContact = this.playerRadar.rwrReceiver.getPrimaryRwrContact();
+        const missileHudText = this.playerRadar.rwrReceiver.getLastFiredMissileHudText();
 
         this.updateWarnings(Boolean(primaryContact), Boolean(primaryContact?.isLocked));
         if (this.missileTtaText) {
             this.missileTtaText.setText(missileHudText ?? '');
             this.missileTtaText.setVisible(Boolean(missileHudText));
         }
-        this.renderRwrDirectionDiamonds(contacts);
+        this.renderRwrDirectionDiamonds(signals);
     }
 
     private getFullSpeed(ship: Ship): number {

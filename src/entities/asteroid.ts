@@ -14,7 +14,7 @@ export class Asteroid extends Phaser.Physics.Matter.Sprite {
         this.direction = params.direction;
         this.speed = params.speed;
         this.setPosition(params.position.x, params.position.y);
-        this.setAngle(this.direction);
+        this.setAngle(Phaser.Math.Between(0, 359));
         this.scene.add.existing(this);
         // Remove air friction for space physics
         this.setFrictionAir(0);
@@ -22,6 +22,9 @@ export class Asteroid extends Phaser.Physics.Matter.Sprite {
             this.speed * Math.cos(Phaser.Math.DegToRad(this.direction)),
             this.speed * Math.sin(Phaser.Math.DegToRad(this.direction))
         );
+        const spinDirection = Phaser.Math.Between(0, 1) === 0 ? -1 : 1;
+        const spinSpeed = Phaser.Math.FloatBetween(0.005, 0.02);
+        this.setAngularVelocity(spinDirection * spinSpeed);
     }
 
     getCircle(): Phaser.Geom.Circle {

@@ -1,11 +1,10 @@
 import Phaser from 'phaser';
 import { PlayerShip, Target } from './ship';
 import { Radar } from '../radar/systems/radar';
-import { LightRadarRenderer } from '../radar/renderer/lightRadarRenderer';
 import { InterfaceRenderer } from '../radar/renderer/interfaceRenderer';
 import { AiUnitController } from '../controller/aiUnitController';
 import { PlayerController } from '../controller/playerController';
-import { playerShipSettings, radarDefaultSettings, targetShipSettings } from '../settings';
+import { radarDefaultSettings, targetShipSettings } from '../settings';
 
 /* eslint-disable @typescript-eslint/no-namespace */
 
@@ -23,16 +22,11 @@ export const createPlayerShipFactory = () => {
     this: Phaser.GameObjects.GameObjectFactory,
     params: { x: number; y: number; direction: number; speed: number }
   ) {
-    const RadarCtor = Radar as unknown as new (config: unknown) => Radar;
     const ship = new PlayerShip({
       scene: this.scene,
       ...params,
-      radar: new RadarCtor({
+      radar: new Radar({
         scene: this.scene,
-        settings: { ...radarDefaultSettings, position: { x: 0, y: 0 } },
-        renderer: new LightRadarRenderer(this.scene),
-        mode: 'rws',
-        loadout: playerShipSettings.LOADOUT,
       }),
     });
     const controller = new PlayerController(this.scene, ship);
@@ -44,7 +38,7 @@ export const createPlayerShipFactory = () => {
     ship.radar.attachTo(ship);
     ship.radar.start();
 
-    const interfaceRenderer = new InterfaceRenderer(this.scene, ship.radar);
+    const interfaceRenderer = new InterfaceRenderer(this.scene, ship);
     interfaceRenderer.createInterface(ship);
     ship.radar.setInterfaceRenderer(interfaceRenderer);
     (this.scene as Phaser.Scene & { interfaceRenderer?: InterfaceRenderer }).interfaceRenderer = interfaceRenderer;
@@ -58,16 +52,11 @@ export const createPlayerShipFactory = () => {
     this: Phaser.GameObjects.GameObjectFactory,
     params: { x: number; y: number; direction: number; speed: number; type: 'cruiser' | 'cargo'; id: number }
   ) {
-    const RadarCtor = Radar as unknown as new (config: unknown) => Radar;
     const target = new Target({
       scene: this.scene,
       ...params,
-      radar: new RadarCtor({
+      radar: new Radar({
         scene: this.scene,
-        settings: { ...radarDefaultSettings, position: { x: 0, y: 0 } },
-        renderer: null,
-        mode: 'rws',
-        loadout: targetShipSettings.LOADOUT,
       }),
       shipType: params.type,
     });
@@ -84,6 +73,7 @@ export const createPlayerShipFactory = () => {
       controller.setTurnRate(targetShipSettings.TURN_RATE_CRUISER);
     }
     target.controller = controller;
+    target.radar.loadoutManager.setLoadout(targetShipSettings.LOADOUT);
     target.radar.attachTo(target);
     target.radar.start();
     return target;

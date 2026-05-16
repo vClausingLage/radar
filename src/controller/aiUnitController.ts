@@ -1,4 +1,4 @@
-import { LightRadar } from '../radar/systems/radar';
+import { Radar } from '../radar/systems/radar';
 import { Target } from '../entities/ship';
 import { Track } from '../radar/data/track';
 
@@ -26,7 +26,7 @@ export class AiUnitController {
         private readonly ship: Target,
         private turnRate = 0,
         private sttTracked = false,
-        private readonly radar: LightRadar | null = null,
+        private readonly radar: Radar | null = null,
         private readonly id: number | null = null,
 
     ) {
@@ -48,14 +48,16 @@ export class AiUnitController {
         if (!this.radar || this.id === null) return;
 
         // Listen for STT tracking
-        this.radar?.events.on('stt-track', (trackedId: number | null) => {
-            if (trackedId === this.id) {
-                this.sttTracked = true;
-                console.log(`Target ${this.id}: STT LOCK DETECTED!`);
-            } else {
-                this.sttTracked = false;
-            }
-        });
+        
+        // this.sttTracked = this.radar.eventEmitter.emitLockEvent(trackedId);
+        // this.radar?.events.on('stt-track', (trackedId: number | null) => {
+        //     if (trackedId === this.id) {
+        //         this.sttTracked = true;
+        //         console.log(`Target ${this.id}: STT LOCK DETECTED!`);
+        //     } else {
+        //         this.sttTracked = false;
+        //     }
+        // });
 
     }
 
@@ -93,36 +95,36 @@ export class AiUnitController {
             return;
         }
 
-        const radar = this.radar;
-        const tracks = radar?.getTracks() ?? [];
-        const preferredTrack = tracks.find((t) => t.id === 0);
-        const sttTargetId = radar?.alertTargetBeingTracked() ?? null;
-        this.sttTracked = radar?.getRwrContacts().some((contact) => contact.isLocked) ?? false;
+        // const radar = this.radar;
+        // const tracks = radar?.getTracks() ?? [];
+        // const preferredTrack = tracks.find((t) => t.id === 0);
+        // const sttTargetId = radar?.alertTargetBeingTracked() ?? null;
+        // this.sttTracked = radar?.getRwrContacts().some((contact) => contact.isLocked) ?? false;
 
-        // Track STT lock duration for fire delay
-        this.updateSttLockTracking(sttTargetId);
+        // // Track STT lock duration for fire delay
+        // this.updateSttLockTracking(sttTargetId);
 
-        // State transitions
-        this.updateState(preferredTrack);
+        // // State transitions
+        // this.updateState(preferredTrack);
 
-        // Execute current state behavior
-        switch (this.state) {
-            case AIState.EVADE:
-                this.executeEvade(preferredTrack);
-                break;
-            case AIState.ENGAGE:
-                this.executeEngage(preferredTrack, sttTargetId);
-                break;
-            case AIState.INVESTIGATE:
-                this.executeInvestigate(preferredTrack);
-                break;
-            case AIState.PATROL:
-                this.executePatrol();
-                break;
-        }
+        // // Execute current state behavior
+        // switch (this.state) {
+        //     case AIState.EVADE:
+        //         this.executeEvade(preferredTrack);
+        //         break;
+        //     case AIState.ENGAGE:
+        //         this.executeEngage(preferredTrack, sttTargetId);
+        //         break;
+        //     case AIState.INVESTIGATE:
+        //         this.executeInvestigate(preferredTrack);
+        //         break;
+        //     case AIState.PATROL:
+        //         this.executePatrol();
+        //         break;
+        // }
 
-        this.applyMovement();
-        this.updateDebugText();
+        // this.applyMovement();
+        // this.updateDebugText();
     }
 
     private updateSttLockTracking(sttTargetId: number | null): void {

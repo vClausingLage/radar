@@ -1,6 +1,5 @@
 import Phaser from "phaser";
 // import StartMenu from "./scenes/startMenu";
-import { InterfaceRenderer } from "./radar/renderer/interfaceRenderer";
 import { createPlayerShipFactory } from "./entities/shipFactory";
 import { createAsteroidFactory } from "./entities/asteroidFactory";
 import { Asteroid } from "./entities/asteroid";
@@ -18,7 +17,6 @@ class Game extends Phaser.Scene
   };
   private graphics?: Phaser.GameObjects.Graphics;
   private player?: PlayerShip;
-  private interfaceRenderer?: InterfaceRenderer;
   private targets: Target[] = [];
   private asteroids: Asteroid[] = [];
   // Matter physics uses collision categories instead of groups
@@ -127,7 +125,7 @@ class Game extends Phaser.Scene
     // Radar scan (pass all ships; radar excludes its owner internally)
     const allShips = [player, ...this.targets];
     allShips.forEach(ship => {
-      ship.radar.update(delta, ship.getDirection(), allShips, this.asteroids, this.graphics!);
+      ship.radar.update(delta, ship.getDirection(), [...allShips, ...this.asteroids], this.graphics!);
     });
 
     // Update AI continuous (every frame)
@@ -136,8 +134,8 @@ class Game extends Phaser.Scene
     });
 
     // Update interface with warnings
-    if (player.radar && this.interfaceRenderer) {
-      this.interfaceRenderer.update(player);
+    if (player.radar) {
+      this.player?.radar.getInterfaceRenderer()?.update();
     }
   }
 
@@ -155,7 +153,7 @@ class Game extends Phaser.Scene
     this.player = undefined;
     
     // Clean up renderers
-    this.interfaceRenderer?.destroy();
+    // this.interfaceRenderer?.destroy();
     this.graphics?.destroy();
     
     // Destroy targets and asteroids

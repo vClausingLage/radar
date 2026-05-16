@@ -48,7 +48,7 @@ export class MissileGuidance {
       if (missile.missileAge < 2) {
         ;({ targetDirX, targetDirY } = this.flyInDirectionOfShip(missile))
       } else {
-        const waypointResult = this.trackAim220WaypointRoute(missile)
+        const waypointResult = this.trackVim220WaypointRoute(missile)
         const trackResult = waypointResult ?? this.trackInDirectionOfTarget(missile, mode, sttTrack, tracks, targets)
         if (trackResult) {
           ;({ targetDirX, targetDirY } = trackResult)
@@ -75,7 +75,7 @@ export class MissileGuidance {
     return { targetDirX: missile.direction.x, targetDirY: missile.direction.y }
   }
 
-  private trackAim220WaypointRoute(missile: Missile): GuidanceVector | null {
+  private trackVim220WaypointRoute(missile: Missile): GuidanceVector | null {
     if (!(missile instanceof ActiveRadarMissile) || !missile.waypointRoute || missile.isActiveRadarEnabled()) {
       return null
     }

@@ -7,7 +7,7 @@ export const CAMERA_ZOOM = .8
 // PLAYER SHIP
 export const playerShipSettings = {
     SPEED: .1,
-    TURN_SPEED: .03,
+    TURN_SPEED: .08,
     SIZE: 0.5,
     DIRECTION: 270,
     START_POSITION: { 
@@ -15,11 +15,11 @@ export const playerShipSettings = {
         y: 2300
     },
     LOADOUT: {
-        'AIM-177': {
+        'VIM-177': {
             load: 4,
             active: true
         },
-        'AIM-220': {
+        'VIM-220': {
             load: 2,
             active: false
         },
@@ -43,11 +43,11 @@ export const radarDefaultSettings = {
 // TARGETS
 export const targetShipSettings = {
     LOADOUT: {
-        'AIM-177': {
+        'VIM-177': {
             load: 2,
             active: true
         },
-        'AIM-220': {
+        'VIM-220': {
             load: 0,
             active: false
         },
@@ -59,12 +59,12 @@ export const targetShipSettings = {
 
 // MISSILES
 export const missileSettings = {
-    "AIM-177": {
+    "VIM-177": {
         SPEED: 7,
         TURN_SPEED: 0.7,
         BURN_TIME: 20
     },
-    "AIM-220": {
+    "VIM-220": {
         SPEED: 6,
         TURN_SPEED: 0.5,
         BURN_TIME: 25,

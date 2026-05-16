@@ -13,7 +13,7 @@ export class PlayerController {
   };
   private onPointerDown = (pointer: Phaser.Input.Pointer) => {
     if (!this.ship.active || !this.ship.scene) return;
-    this.ship.radar.addAim220Waypoint({ x: pointer.worldX, y: pointer.worldY });
+    this.ship.radar.addVim220Waypoint({ x: pointer.worldX, y: pointer.worldY });
   };
   
   constructor(
