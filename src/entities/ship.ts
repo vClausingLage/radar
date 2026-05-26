@@ -2,8 +2,10 @@ import { Radar } from "../radar/systems/radar";
 import { AiUnitController } from "../controller/aiUnitController";
 import { Vector2 } from "../types";
 import { PlayerController } from "../controller/playerController";
+import { createEntityId } from './entityId';
 
 export abstract class Ship extends Phaser.Physics.Matter.Sprite {
+    public readonly id: number;
     private direction: number;
     private readonly speed: number;
     private currentSpeed: number;
@@ -18,11 +20,13 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
         speed: number;
         radar: Radar;
         texture?: string;
+        id?: number;
     }) {
         super(params.scene.matter.world, params.x, params.y, params.texture || 'ship');
         this.scene = params.scene;
         this.x = params.x;
         this.y = params.y;
+        this.id = params.id ?? createEntityId();
         this.direction = params.direction;
         this.speed = params.speed;
         this.radar = params.radar;
@@ -85,7 +89,6 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
 }
 
 export class PlayerShip extends Ship {
-    public readonly id: number;
     public controller?: PlayerController;
 
     constructor(params: {
@@ -96,13 +99,11 @@ export class PlayerShip extends Ship {
         speed: number;
         radar: Radar;
     }) {
-        super(params);
-        this.id = 0;
+        super({ ...params, id: 0 });
     }
 }
 
 export class Target extends Ship {
-    public readonly id: number;
     public readonly shipType: 'cruiser' | 'cargo';
     public controller?: AiUnitController;
 
@@ -114,14 +115,12 @@ export class Target extends Ship {
         speed: number;
         radar: Radar;
         shipType: 'cruiser' | 'cargo';
-        id: number;
     }) {
         // Pass correct texture to parent constructor
         super({
             ...params,
             texture: params.shipType === 'cargo' ? 'cargo' : 'ship'
         });
-        this.id = params.id;
         this.shipType = params.shipType;
         
         this.setVisible(import.meta.env.DEV);

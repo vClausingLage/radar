@@ -758,9 +758,6 @@ export class Radar {
 export { Radar as LightRadar }
 
 class Entities {
-    private readonly asteroidIds = new WeakMap<Asteroid, number>()
-    private nextAsteroidId = -1
-
     constructor(private readonly filterRange: number) {}
 
     static createDecoyShape(source: RadarNoiseSource): RadarEntityShape {
@@ -858,7 +855,7 @@ class Entities {
         const circle = asteroid.getCircle()
 
         return {
-            id: this.getAsteroidId(asteroid),
+            id: asteroid.id,
             kind: 'asteroid',
             circle,
             x: asteroid.x,
@@ -868,16 +865,6 @@ class Entities {
             direction: asteroid.angle,
             speed: 0,
         }
-    }
-
-    private getAsteroidId(asteroid: Asteroid): number {
-        const existingId = this.asteroidIds.get(asteroid)
-        if (existingId !== undefined) return existingId
-
-        const id = this.nextAsteroidId
-        this.nextAsteroidId -= 1
-        this.asteroidIds.set(asteroid, id)
-        return id
     }
 
     private getNearestLineCircleIntersection(line: Phaser.Geom.Line, circle: Phaser.Geom.Circle): Vector2 | null {

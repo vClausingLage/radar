@@ -4,7 +4,7 @@ import { Radar } from '../radar/systems/radar';
 import { InterfaceRenderer } from '../radar/renderer/interfaceRenderer';
 import { AiUnitController } from '../controller/aiUnitController';
 import { PlayerController } from '../controller/playerController';
-import { radarDefaultSettings, targetShipSettings } from '../settings';
+import { targetShipSettings } from '../settings';
 
 /* eslint-disable @typescript-eslint/no-namespace */
 
@@ -12,7 +12,7 @@ declare global {
   namespace Phaser.GameObjects {
     interface GameObjectFactory {
       playerShip(params: { x: number; y: number; direction: number; speed: number }): PlayerShip;
-      target(params: { x: number; y: number; direction: number; speed: number; type: 'cruiser' | 'cargo'; id: number }): Target;
+      target(params: { x: number; y: number; direction: number; speed: number; type: 'cruiser' | 'cargo' }): Target;
     }
   }
 }
@@ -50,7 +50,7 @@ export const createPlayerShipFactory = () => {
 
   Phaser.GameObjects.GameObjectFactory.register('target', function(
     this: Phaser.GameObjects.GameObjectFactory,
-    params: { x: number; y: number; direction: number; speed: number; type: 'cruiser' | 'cargo'; id: number }
+    params: { x: number; y: number; direction: number; speed: number; type: 'cruiser' | 'cargo' }
   ) {
     const target = new Target({
       scene: this.scene,

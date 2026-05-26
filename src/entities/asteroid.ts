@@ -1,6 +1,8 @@
 import { Vector2 } from "../types"
+import { createEntityId } from './entityId';
 
 export class Asteroid extends Phaser.Physics.Matter.Sprite {
+    public readonly id: number;
     private readonly direction: number;
     private readonly speed: number;
 
@@ -11,6 +13,7 @@ export class Asteroid extends Phaser.Physics.Matter.Sprite {
         speed: number;
     }) {
         super(params.scene.matter.world, params.position.x, params.position.y, 'asteroid');
+        this.id = createEntityId();
         this.direction = params.direction;
         this.speed = params.speed;
         this.setPosition(params.position.x, params.position.y);

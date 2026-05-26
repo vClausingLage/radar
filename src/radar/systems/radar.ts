@@ -12,6 +12,8 @@ import { RadarRenderer } from "../renderer/radarRenderer";
 import { playerShipSettings } from "../../settings";
 import { Loadout } from "../../types";
 
+import { Ray } from "../../physics/ray";
+
 export interface IRadar {
 
 }
@@ -54,8 +56,6 @@ export class Radar implements IRadar {
 
     attachTo(owner: Entity): void {
         this.owner = owner;
-
-        console.log('owner of the radar:', this.owner);
     }
 
     setMode(mode: Mode): void {
@@ -73,7 +73,7 @@ export class Radar implements IRadar {
         // Stop radar scanning logic
     }
 
-    update(_delta: number, _direction: number, _entities: Entity[], graphics: Phaser.GameObjects.Graphics): void {
+    update(_delta: number, _direction: number, entities: Entity[], graphics: Phaser.GameObjects.Graphics): void {
         if (!this.owner || !('getDirection' in this.owner)) return;
 
         const scanWidth = this.antenna.getAzimuth(this.mode);
@@ -100,6 +100,42 @@ export class Radar implements IRadar {
             [],
             pulse,
         );
+
+        const targets = entities.filter(e => e.id !== this.owner?.id);
+        for (const target of targets) {
+            // const targetCircle = target.getCircle();
+            // const hits = Phaser.Geom.Intersects.GetLineToCircle(pulse.line, targetCircle);
+            // const nearestHit =
+            // hits.length === 0
+            //     ? null
+            //     : hits.reduce((nearest, p) => {
+            //         const dNearest = Phaser.Math.Distance.Squared(
+            //         pulse.line.x1, pulse.line.y1,
+            //         nearest.x, nearest.y
+            //         );
+            //         const dCurrent = Phaser.Math.Distance.Squared(
+            //         pulse.line.x1, pulse.line.y1,
+            //         p.x, p.y
+            //         );
+            //         return dCurrent < dNearest ? p : nearest;
+            //     }, hits[0]);
+
+            // if (nearestHit) {
+            //     graphics.fillStyle(0x800080, 1);
+            //     graphics.fillCircleShape(new Phaser.Geom.Circle(nearestHit.x, nearestHit.y, 3));
+            // }
+            const origin = { x: this.owner.x, y: this.owner.y };
+            const rayEnd = {
+            x: origin.x + Math.cos(Phaser.Math.DegToRad(pulseDirection)) * this.range,
+            y: origin.y + Math.sin(Phaser.Math.DegToRad(pulseDirection)) * this.range
+            };
+            const ray = new Phaser.Geom.Line(origin.x, origin.y, rayEnd.x, rayEnd.y);
+
+            const nearest = Ray.getNearestBodyIntersection(this.owner, ray, origin, targets);
+            if (nearest && this.owner instanceof PlayerShip) {
+            console.log('Nearest body hit:', nearest.entity.id, nearest.point);
+            }
+        }
     }
 
     shoot(_angle: number): void {
