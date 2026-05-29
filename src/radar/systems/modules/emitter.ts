@@ -17,7 +17,7 @@ export class Emitter {
   
 
   sendPulse(origin: { x: number; y: number }, direction: number, sweepWidth: number = 60): Pulse {
-    const directionRad = Phaser.Math.DegToRad(direction);
+    const directionRad = 300 //Phaser.Math.DegToRad(direction);
     const halfSweep = sweepWidth / 2;
     const line = new Phaser.Geom.Line(
       origin.x,

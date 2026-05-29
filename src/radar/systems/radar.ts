@@ -39,6 +39,7 @@ export class Radar implements IRadar {
     private interfaceRenderer: InterfaceRenderer | null = null;
     private radarRenderer: RadarRenderer = new RadarRenderer();
 
+    private raycaster = new Ray();
 
     constructor(_params: {
         scene: Phaser.Scene;
@@ -102,39 +103,34 @@ export class Radar implements IRadar {
         );
 
         const targets = entities.filter(e => e.id !== this.owner?.id);
+        const hits: { point: Phaser.Math.Vector2; id: number }[] = [];
         for (const target of targets) {
-            // const targetCircle = target.getCircle();
-            // const hits = Phaser.Geom.Intersects.GetLineToCircle(pulse.line, targetCircle);
-            // const nearestHit =
-            // hits.length === 0
-            //     ? null
-            //     : hits.reduce((nearest, p) => {
-            //         const dNearest = Phaser.Math.Distance.Squared(
-            //         pulse.line.x1, pulse.line.y1,
-            //         nearest.x, nearest.y
-            //         );
-            //         const dCurrent = Phaser.Math.Distance.Squared(
-            //         pulse.line.x1, pulse.line.y1,
-            //         p.x, p.y
-            //         );
-            //         return dCurrent < dNearest ? p : nearest;
-            //     }, hits[0]);
 
-            // if (nearestHit) {
-            //     graphics.fillStyle(0x800080, 1);
-            //     graphics.fillCircleShape(new Phaser.Geom.Circle(nearestHit.x, nearestHit.y, 3));
-            // }
-            const origin = { x: this.owner.x, y: this.owner.y };
-            const rayEnd = {
-            x: origin.x + Math.cos(Phaser.Math.DegToRad(pulseDirection)) * this.range,
-            y: origin.y + Math.sin(Phaser.Math.DegToRad(pulseDirection)) * this.range
-            };
-            const ray = new Phaser.Geom.Line(origin.x, origin.y, rayEnd.x, rayEnd.y);
+            const polygon = this.raycaster.getBodyPolygons(target);
 
-            const nearest = Ray.getNearestBodyIntersection(this.owner, ray, origin, targets);
-            if (nearest && this.owner instanceof PlayerShip) {
-            console.log('Nearest body hit:', nearest.entity.id, nearest.point);
-            }
+            const hit = Phaser.Geom.Intersects.GetLineToPolygon(pulse.line, polygon);
+
+            if (!hit) continue;
+
+            hits.push({ point: new Phaser.Math.Vector2(hit.x, hit.y), id: target.id });
+        }
+
+        const ownerPosition = this.owner.getPosition();
+        const nearestHit: Phaser.Math.Vector2 | null =
+            hits.length === 0
+                ? null
+                : hits.length === 1
+                    ? hits[0].point
+                    : hits.reduce((nearestPoint, currentHit) => {
+                        const nearestDistance = Phaser.Math.Distance.BetweenPoints(ownerPosition, nearestPoint);
+                        const currentDistance = Phaser.Math.Distance.BetweenPoints(ownerPosition, currentHit.point);
+                        return currentDistance < nearestDistance ? currentHit.point : nearestPoint;
+                    }, hits[0].point);
+
+        if (nearestHit) {
+            console.log(`Nearest hit at (${nearestHit.x.toFixed(2)}, ${nearestHit.y.toFixed(2)})`);
+            graphics.fillStyle(0x800080, 1);
+            graphics.fillCircle(nearestHit.x, nearestHit.y, 4);
         }
     }
 

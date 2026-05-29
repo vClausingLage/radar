@@ -1,5 +1,9 @@
 ## PHASER JS RADAR
 
+VIM 220 waypoints with Shift LClick and clear with Shift RClick
+
+
+
 # To Dos
 
 AIM :: DO AN ACTUAL RADAR SCAN IN STEPS RATHER THAN ALL AT ONCE (SEE lightRadar.ts)

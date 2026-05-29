@@ -10,14 +10,12 @@ type RayHit = {
 };
 
 export class Ray {
-  static getBodyPolygons(body: MatterJS.BodyType): Phaser.Geom.Polygon[] {
-    const parts = body.parts && body.parts.length > 1 ? body.parts.slice(1) : [body];
-    return parts.map((part) =>
-      new Phaser.Geom.Polygon(part.vertices.map((v) => ({ x: v.x, y: v.y })))
-    );
+  getBodyPolygons(target: Entity): Phaser.Geom.Polygon[] {
+    // @ts-ignore // TODO: Fix this type issue
+    return new Phaser.Geom.Polygon(target?.body?.vertices.map((v) => ({ x: v.x, y: v.y })));
   }
   
-  static getNearestBodyIntersection(
+  getNearestBodyIntersection(
     owner: Entity,
     line: Phaser.Geom.Line,
     origin: Phaser.Types.Math.Vector2Like,
