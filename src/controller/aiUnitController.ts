@@ -95,36 +95,43 @@ export class AiUnitController {
             return;
         }
 
-        // const radar = this.radar;
-        // const tracks = radar?.getTracks() ?? [];
-        // const preferredTrack = tracks.find((t) => t.id === 0);
-        // const sttTargetId = radar?.alertTargetBeingTracked() ?? null;
-        // this.sttTracked = radar?.getRwrContacts().some((contact) => contact.isLocked) ?? false;
+        const radar = this.radar;
+        const tracks = radar?.getTracks() ?? [];
+        // Tracks carry no entity ID (geometry-only), so engage the
+        // highest-confidence contact rather than a hard-coded "player" id.
+        const preferredTrack = tracks.reduce<Track | undefined>(
+            (best, t) => (!best || t.confidence > best.confidence ? t : best),
+            undefined,
+        );
+        // Our own radar's current STT lock (the contact we are illuminating).
+        const sttTargetId = radar?.getSttTrack()?.id ?? null;
+        // Are we being locked by someone else's fire-control radar? (RWR)
+        this.sttTracked = radar?.rwrReceiver.getPrimaryRwrContact()?.isLocked ?? false;
 
-        // // Track STT lock duration for fire delay
-        // this.updateSttLockTracking(sttTargetId);
+        // Track STT lock duration for fire delay
+        this.updateSttLockTracking(sttTargetId);
 
-        // // State transitions
-        // this.updateState(preferredTrack);
+        // State transitions
+        this.updateState(preferredTrack);
 
-        // // Execute current state behavior
-        // switch (this.state) {
-        //     case AIState.EVADE:
-        //         this.executeEvade(preferredTrack);
-        //         break;
-        //     case AIState.ENGAGE:
-        //         this.executeEngage(preferredTrack, sttTargetId);
-        //         break;
-        //     case AIState.INVESTIGATE:
-        //         this.executeInvestigate(preferredTrack);
-        //         break;
-        //     case AIState.PATROL:
-        //         this.executePatrol();
-        //         break;
-        // }
+        // Execute current state behavior
+        switch (this.state) {
+            case AIState.EVADE:
+                this.executeEvade(preferredTrack);
+                break;
+            case AIState.ENGAGE:
+                this.executeEngage(preferredTrack, sttTargetId);
+                break;
+            case AIState.INVESTIGATE:
+                this.executeInvestigate(preferredTrack);
+                break;
+            case AIState.PATROL:
+                this.executePatrol();
+                break;
+        }
 
-        // this.applyMovement();
-        // this.updateDebugText();
+        this.applyMovement();
+        this.updateDebugText();
     }
 
     private updateSttLockTracking(sttTargetId: number | null): void {
@@ -159,7 +166,7 @@ export class AiUnitController {
             !isCargo &&
             preferredTrack &&
             this.radar?.getMode() === 'stt' &&
-            this.currentSttTargetId === 0
+            this.currentSttTargetId !== null
         ) {
             // We have STT lock
             if (this.state !== AIState.ENGAGE) {
@@ -197,7 +204,7 @@ export class AiUnitController {
         
         // Keep radar in RWS mode when patrolling
         if (this.radar?.getMode() !== 'rws') {
-            this.radar?.setMode('rws');
+            this.radar?.enterRws();
         }
     }
 
@@ -221,20 +228,19 @@ export class AiUnitController {
         }
         this.turnToward(this.cargoWaypoints[this.cargoWaypointIndex]);
         if (this.radar?.getMode() !== 'rws') {
-            this.radar?.setMode('rws');
+            this.radar?.enterRws();
         }
     }
 
     private executeInvestigate(track: Track | undefined): void {
         if (!track) return;
         
-        // Switch radar to STT mode to get lock
+        // Switch radar to STT to get a lock. enterStt locks the highest-
+        // confidence track, which is the one we picked as preferredTrack.
         if (this.radar && this.radar.getMode() !== 'stt') {
-            const prioritizedTracks = [track, ...this.radar.getTracks().filter((t) => t.id !== track.id)];
-            this.radar.setTracks(prioritizedTracks);
-            this.radar.setMode('stt');
+            this.radar.enterStt();
         }
-        
+
         // Move toward contact
         this.turnToward(track.pos);
     }
@@ -249,8 +255,8 @@ export class AiUnitController {
         const now = this.scene.time.now;
         const lockHeldTime = this.sttLockAcquiredAt !== null ? now - this.sttLockAcquiredAt : 0;
         
-        if (this.radar && sttTargetId === 0 && 
-            lockHeldTime >= this.sttLockDelayMs && 
+        if (this.radar && sttTargetId !== null &&
+            lockHeldTime >= this.sttLockDelayMs &&
             now >= this.nextShotAt) {
             this.radar.shoot(this.ship.getDirection());
             this.nextShotAt = now + this.fireCooldownMs;
@@ -274,7 +280,7 @@ export class AiUnitController {
         
         // Switch radar to RWS while evading (break our own lock)
         if (this.radar?.getMode() === 'stt') {
-            this.radar.setMode('rws');
+            this.radar.enterRws();
         }
     }
 

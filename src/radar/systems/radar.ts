@@ -12,11 +12,11 @@ import { InterfaceRenderer } from "../renderer/interfaceRenderer";
 import { RadarRenderer } from "../renderer/radarRenderer";
 
 import { playerShipSettings } from "../../settings";
-import { Loadout } from "../../types";
+import { Loadout, Vector2 } from "../../types";
 
 import { Ray } from "../../physics/ray";
 import { Receiver } from "./modules/receiver";
-import { Missile, SARHMissile, ActiveRadarMissile } from "../../entities/missiles";
+import { Missile, ActiveRadarMissile } from "../../entities/missiles";
 
 export interface IRadar {
     // TODO implement
@@ -63,7 +63,12 @@ export class Radar implements IRadar {
     public eventEmitter = new RadarEventEmitter();
 
     private interfaceRenderer: InterfaceRenderer | null = null;
-    private radarRenderer: RadarRenderer = new RadarRenderer();
+    // Only the player's radar has a renderer; target radars track silently.
+    private radarRenderer: RadarRenderer | null = null;
+
+    // VIM-220 mid-course waypoints (player-placed, up to two: a steer-to point
+    // and a direction point). Assigned to each VIM-220 fired while present.
+    private vim220Waypoints: Vector2[] = [];
 
     private raycaster = new Ray();
 
@@ -71,7 +76,11 @@ export class Radar implements IRadar {
 
     constructor(_params: { scene: Phaser.Scene }) {
         this.scene = _params.scene;
-        this.radarRenderer.setScene(_params.scene);
+    }
+
+    // Attach the visual renderer. Called by the player ship factory only.
+    setRadarRenderer(renderer: RadarRenderer): void {
+        this.radarRenderer = renderer;
     }
 
     setInterfaceRenderer(renderer: InterfaceRenderer): void {
@@ -165,8 +174,28 @@ export class Radar implements IRadar {
         this.loadoutManager.cycleActive();
     }
 
-    addVim220Waypoint(_point: { x: number; y: number }): void {
-        // TWS waypoint uplink — placeholder for VIM-220 mid-course guidance
+    // Place a VIM-220 mid-course waypoint (Shift+click). The first click sets
+    // the steer-to point, the second sets the direction point. A third click
+    // starts a fresh route. Only meaningful while VIM-220 is the active weapon.
+    addVim220Waypoint(point: { x: number; y: number }): void {
+        if (this.loadoutManager.getActiveType() !== 'VIM-220') return;
+        if (this.vim220Waypoints.length >= 2) this.vim220Waypoints = [];
+        this.vim220Waypoints.push({ x: point.x, y: point.y });
+    }
+
+    clearVim220Waypoints(): void {
+        this.vim220Waypoints = [];
+    }
+
+    // Build a per-missile route copy from the current waypoints, or null if none
+    // are placed. `reachedFirst` is missile-local so each missile flies its own.
+    private buildVim220Route(): ActiveRadarMissile['waypointRoute'] {
+        if (this.vim220Waypoints.length === 0) return null;
+        const first = { ...this.vim220Waypoints[0] };
+        const directionPoint = this.vim220Waypoints.length >= 2
+            ? { ...this.vim220Waypoints[1] }
+            : { ...this.vim220Waypoints[0] };
+        return { first, directionPoint, reachedFirst: false };
     }
 
     // ── Firing ────────────────────────────────────────────────────────────
@@ -197,7 +226,9 @@ export class Radar implements IRadar {
         const ownerPos = ship.getPosition();
         const rad = Phaser.Math.DegToRad(ship.getDirection());
 
-        const missile = new SARHMissile(this.scene, {
+        // Built via the factory so the shared missile collision category is
+        // applied — missiles never collide with one another.
+        const missile = this.scene.add.sarhMissile({
             x: ownerPos.x,
             y: ownerPos.y,
             dirX: Math.cos(rad),
@@ -237,13 +268,16 @@ export class Radar implements IRadar {
 
         const rad = Phaser.Math.DegToRad(ship.getDirection());
 
-        const missile = new ActiveRadarMissile(this.scene, {
+        // Built via the factory so the shared missile collision category is
+        // applied — missiles never collide with one another.
+        const missile = this.scene.add.activeRadarMissile({
             x: ownerPos.x,
             y: ownerPos.y,
             dirX: Math.cos(rad),
             dirY: Math.sin(rad),
         });
         missile.targetId = target.id;
+        missile.waypointRoute = this.buildVim220Route();
         this.armMissile(missile, ship);
 
         this.activeMissiles.push(missile);
@@ -277,14 +311,25 @@ export class Radar implements IRadar {
         const ownerPos = this.owner.getPosition();
         const shipDirection = this.owner.getDirection();
 
+        // Age out stale RWR contacts (incoming-emission warnings).
+        this.rwrReceiver.tick(this.scene.time.now);
+
+        // If the locked STT target was destroyed, drop the dangling reference
+        // before anything reads its (now-undefined) body position.
+        if (this.sttTargetEntity && (!this.sttTargetEntity.active || !this.sttTargetEntity.body)) {
+            this.sttTargetEntity = null;
+        }
+
         // Update missile guidance every frame regardless of radar mode.
         const sttTrack = this.getSttTrack();
         const sttEntity = this.sttTargetEntity && 'getPosition' in this.sttTargetEntity
             ? this.sttTargetEntity as PlayerShip | Target
             : null;
         // Live ship entities (excluding owner) for VIM-220 active-radar homing.
+        // Exclude destroyed ships (body becomes undefined when removed).
         const targetShips = entities.filter(
-            (e): e is PlayerShip | Target => e.id !== this.owner?.id && 'getDirection' in e,
+            (e): e is PlayerShip | Target =>
+                e.id !== this.owner?.id && 'getDirection' in e && e.active && Boolean(e.body),
         );
         this.activeMissiles = this.missileGuidance.update(this.activeMissiles, delta, {
             sttTrack,
@@ -315,14 +360,19 @@ export class Radar implements IRadar {
         const { direction: pulseDirection, sweepComplete } = this.antenna.update(this.mode, shipDirection);
         const pulse = this.emitter.sendPulse(ownerPos, pulseDirection, scanWidth);
 
-        this.radarRenderer.update(
+        this.radarRenderer?.update(
             graphics, ownerPos, this.range,
             scanStartAngle, scanEndAngle,
-            [], this.loadoutManager.getLoadout(), [], pulse, false,
+            [], this.loadoutManager.getLoadout(), this.vim220Waypoints, pulse, false,
             this.getLastVim220TimeToActive(),
         );
 
         const targets = entities.filter(e => e.id !== this.owner?.id);
+
+        // Search illumination: any ship the beam touches detects the emission as
+        // a (non-locked) RWR contact — shown as a green diamond on its RWR.
+        this.illuminateRwr(targets, pulse.line, ownerPos, false);
+
         const nearestPoint = this.nearestHit(pulse.line, ownerPos, targets);
         if (nearestPoint) this.sweepBuffer.push({ point: nearestPoint });
 
@@ -335,7 +385,7 @@ export class Radar implements IRadar {
         }
 
         for (const track of this.trackingComputer.getTracks()) {
-            this.radarRenderer.renderRwsContacts(graphics, track);
+            this.radarRenderer?.renderRwsContacts(graphics, track);
         }
     }
 
@@ -395,10 +445,10 @@ export class Radar implements IRadar {
         const pulse = this.emitter.sendPulse(ownerPos, lockDir, STT_BEAM_DEG);
 
         // Render full RWS cone with red beam fixed at lock direction.
-        this.radarRenderer.update(
+        this.radarRenderer?.update(
             graphics, ownerPos, this.range,
             shipDirection - rwsHalfAz, shipDirection + rwsHalfAz,
-            [], this.loadoutManager.getLoadout(), [], pulse, true,
+            [], this.loadoutManager.getLoadout(), this.vim220Waypoints, pulse, true,
             this.getLastVim220TimeToActive(),
         );
 
@@ -406,17 +456,9 @@ export class Radar implements IRadar {
         const hit = this.nearestHit(pulse.line, ownerPos, targets);
         const rawHits = hit ? [{ point: hit }] : [];
 
-        // Emit RWR lock event on entities that are hit by STT illumination.
-        if (hit) {
-            for (const entity of targets) {
-                if (!('radar' in entity)) continue;
-                const polygon = this.raycaster.getBodyPolygons(entity);
-                const testHit = Phaser.Geom.Intersects.GetLineToPolygon(pulse.line, polygon);
-                if (testHit) {
-                    (entity as PlayerShip | Target).radar.eventEmitter.onRwrLock();
-                }
-            }
-        }
+        // Lock illumination: any ship in the beam detects a locked (red) RWR
+        // contact and fires its lock-warning event.
+        this.illuminateRwr(targets, pulse.line, ownerPos, true);
 
         const returns = this.receiver.processHits(rawHits, ownerPos, this.range);
         // STT updates every frame; high maxMissedScans keeps the lock alive during
@@ -436,11 +478,36 @@ export class Radar implements IRadar {
 
         const stt = this.getSttTrack();
         if (stt) {
-            this.radarRenderer.renderStt(stt, graphics);
+            this.radarRenderer?.renderStt(stt, graphics);
         }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
+
+    // Notify every ship the beam touches that it is being illuminated, so its
+    // RWR registers a contact: unlocked (green, search) or locked (red, STT).
+    private illuminateRwr(
+        targets: Entity[],
+        line: Phaser.Geom.Line,
+        ownerPos: { x: number; y: number },
+        isLocked: boolean,
+    ): void {
+        const now = this.scene.time.now;
+        for (const entity of targets) {
+            if (!('radar' in entity)) continue;
+            const polygon = this.raycaster.getBodyPolygons(entity);
+            const hit = Phaser.Geom.Intersects.GetLineToPolygon(line, polygon);
+            if (!hit) continue;
+
+            const tgt = entity as PlayerShip | Target;
+            const epos = tgt.getPosition();
+            const bearingDeg = Phaser.Math.RadToDeg(
+                Math.atan2(ownerPos.y - epos.y, ownerPos.x - epos.x),
+            );
+            tgt.radar.rwrReceiver.receive(String(this.owner?.id ?? 'unknown'), bearingDeg, isLocked, now);
+            if (isLocked) tgt.radar.eventEmitter.onRwrLock();
+        }
+    }
 
     private nearestHit(
         line: Phaser.Geom.Line,

@@ -71,10 +71,14 @@ export class ActiveRadarMissile extends Phaser.Physics.Matter.Sprite implements 
     waypointRoute: { first: Vector2; directionPoint: Vector2; reachedFirst: boolean } | null = null;
 
     isActiveRadarEnabled(): boolean {
-        return this.missileAge >= this.activeRadarActivationAge;
+        // The seeker comes on after the activation age, OR early once the
+        // missile has passed its first waypoint and is on the WP1→WP2 leg.
+        return this.missileAge >= this.activeRadarActivationAge
+            || (this.waypointRoute?.reachedFirst ?? false);
     }
 
     getTimeToActive(): number {
+        if (this.waypointRoute?.reachedFirst) return 0;
         return Math.max(0, this.activeRadarActivationAge - this.missileAge);
     }
 

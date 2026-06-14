@@ -35,8 +35,12 @@ export type GuidanceContext = {
 //   age < 2  → flyInDirectionOfShip: hold launch heading off the rail
 //   age >= 2 → trackInDirectionOfTarget: steer toward intercept point
 
+// A waypoint counts as reached within this distance (px).
+const WAYPOINT_REACHED_DISTANCE = 24;
+
 export class MissileGuidance {
   private ageTimer = 0;
+  private debugTimer = 0;
 
   update(missiles: Missile[], delta: number, ctx: GuidanceContext): Missile[] {
     // Age missiles once per real second regardless of frame rate.
@@ -80,6 +84,23 @@ export class MissileGuidance {
       missile.updateHeading(nx / mag, ny / mag);
     }
 
+    // Throttled debug (~500ms): report each active-radar VIM-220's tracking
+    // state after guidance has run, so the target id reflects this frame.
+    this.debugTimer += delta;
+    if (this.debugTimer >= 500) {
+      this.debugTimer = 0;
+      for (const m of live) {
+        if (m instanceof ActiveRadarMissile && m.isActiveRadarEnabled()) {
+          const tracked = m.activeRadarTargetId;
+          console.log(
+            tracked !== null
+              ? `VIM-220 active radar: tracking target ${tracked}`
+              : `VIM-220 active radar: tracking none (searching)`,
+          );
+        }
+      }
+    }
+
     return live;
   }
 
@@ -104,13 +125,23 @@ export class MissileGuidance {
     return null;
   }
 
-  // ARH (VIM-220): mid-course on the assigned TWS track, then terminal homing
-  // on its own radar once the seeker activates.
+  // ARH (VIM-220) guidance, in priority order:
+  //   1. If a waypoint route is set and WP1 not yet reached, fly to WP1 with the
+  //      seeker still off.
+  //   2. Once the seeker is live (by age, or because WP1 was passed) search the
+  //      radar basket; if a target is acquired, home on it.
+  //   3. If the seeker is live but no target is acquired yet, keep steering the
+  //      WP1→WP2 direction leg (so a waypoint missile sweeps along its commanded
+  //      heading until it finds something).
+  //   4. Otherwise fly the assigned TWS track (mid-course) by pure pursuit.
   private guideActiveRadar(missile: ActiveRadarMissile, ctx: GuidanceContext): { x: number; y: number } | null {
     const from = { x: missile.x, y: missile.y };
 
-    // Terminal phase: seeker is live — acquire a target inside the radar basket.
-    // The entity's speed is in physics units, so a lead intercept is valid here.
+    // 1. Fly to the first waypoint (seeker stays off until it is reached).
+    const toFirst = this.flyToFirstWaypoint(missile);
+    if (toFirst) return toFirst;
+
+    // 2 & 3. Seeker active — search and home, else continue the WP2 leg.
     if (missile.isActiveRadarEnabled()) {
       const target = this.acquireActiveRadarTarget(missile, ctx.targets);
       if (target) {
@@ -122,17 +153,34 @@ export class MissileGuidance {
           missile.missileSpeed,
         ) ?? this.pursue(from, target);
       }
+      // No lock yet: if on the direction leg, keep flying toward WP2.
+      const route = missile.waypointRoute;
+      if (route?.reachedFirst) return this.pursue(route.first, route.directionPoint);
     }
 
-    // Mid-course phase: fly toward the assigned track. Track velocity is in
-    // px-per-scan (not physics units), so a lead intercept is unreliable — use
-    // pure pursuit toward the track position. The terminal seeker refines it.
+    // 4. Mid-course on the assigned track. Track velocity is in px-per-scan
+    // (not physics units), so pure pursuit, not a lead intercept.
     const track = missile.targetId !== undefined
       ? ctx.tracks.find(t => t.id === missile.targetId) ?? null
       : null;
     if (track) {
       return this.pursue(from, track.pos);
     }
+    return null;
+  }
+
+  // Fly to the route's first waypoint. Flips `reachedFirst` on arrival (which
+  // also activates the seeker) and then returns null so the search logic takes
+  // over. Returns null if there is no route or WP1 is already behind us.
+  private flyToFirstWaypoint(missile: ActiveRadarMissile): { x: number; y: number } | null {
+    const route = missile.waypointRoute;
+    if (!route || route.reachedFirst) return null;
+
+    const from = { x: missile.x, y: missile.y };
+    const distance = Phaser.Math.Distance.Between(from.x, from.y, route.first.x, route.first.y);
+    if (distance > WAYPOINT_REACHED_DISTANCE) return this.pursue(from, route.first);
+
+    route.reachedFirst = true;
     return null;
   }
 

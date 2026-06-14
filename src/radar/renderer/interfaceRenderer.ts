@@ -166,7 +166,7 @@ export class InterfaceRenderer {
         .setOrigin(0.5)
         .setVisible(false);
 
-        this.lockWarningText = this.scene.add.text(0, 0, '!!! MISSILE LOCK !!!', {
+        this.lockWarningText = this.scene.add.text(0, 0, 'MISSILE LOCK', {
             font: '28px Courier',
             color: '#ff0000',
             backgroundColor: '#000000',
@@ -376,9 +376,14 @@ export class InterfaceRenderer {
             const markerX = centerX + Math.cos(angleRad) * markerRadius;
             const markerY = centerY + Math.sin(angleRad) * markerRadius;
 
-            const color = contact.isLocked ? 0xff0000 : 0x00ff00;
+            // A locked contact is an incoming missile threat: draw a pulsating
+            // red flare pointing at it instead of a plain diamond.
+            if (contact.isLocked) {
+                this.drawMissileThreatFlare(markerX, markerY, centerX, centerY);
+                continue;
+            }
 
-            this.rwrDirectionGraphics.lineStyle(2, color, 1);
+            this.rwrDirectionGraphics.lineStyle(2, 0x00ff00, 1);
             this.rwrDirectionGraphics.beginPath();
             this.rwrDirectionGraphics.moveTo(markerX, markerY - diamondSize);
             this.rwrDirectionGraphics.lineTo(markerX + diamondSize, markerY);
@@ -387,6 +392,43 @@ export class InterfaceRenderer {
             this.rwrDirectionGraphics.closePath();
             this.rwrDirectionGraphics.strokePath();
         }
+    }
+
+    // Pulsating red "flurry" marking an incoming missile-lock threat on the RWR
+    // screen, at the bearing (markerX/Y) of the locking contact.
+    private drawMissileThreatFlare(markerX: number, markerY: number, centerX: number, centerY: number): void {
+        const g = this.rwrDirectionGraphics;
+        if (!g) return;
+
+        // 0..1 pulse from a sine wave driven by the scene clock (~2.5 Hz).
+        const pulse = 0.5 + 0.5 * Math.sin(this.scene.time.now / 120);
+        const baseRadius = 7;
+        const flareRadius = baseRadius + pulse * 7;
+        const alpha = 0.45 + pulse * 0.55;
+        const red = 0xff0000;
+
+        // Soft pulsing glow.
+        g.fillStyle(red, alpha * 0.35);
+        g.fillCircle(markerX, markerY, flareRadius + 4);
+
+        // Bright pulsing core.
+        g.fillStyle(red, alpha);
+        g.fillCircle(markerX, markerY, baseRadius);
+
+        // Radial spikes — the "flurry" — expanding with the pulse.
+        g.lineStyle(2, red, alpha);
+        const spikes = 8;
+        for (let i = 0; i < spikes; i++) {
+            const a = (Math.PI * 2 * i) / spikes;
+            g.beginPath();
+            g.moveTo(markerX + Math.cos(a) * baseRadius, markerY + Math.sin(a) * baseRadius);
+            g.lineTo(markerX + Math.cos(a) * (flareRadius + 6), markerY + Math.sin(a) * (flareRadius + 6));
+            g.strokePath();
+        }
+
+        // A line from the RWR centre toward the threat bearing, for direction.
+        g.lineStyle(2, red, alpha * 0.8);
+        g.lineBetween(centerX, centerY, markerX, markerY);
     }
 
     showGoSttWarning(): void {

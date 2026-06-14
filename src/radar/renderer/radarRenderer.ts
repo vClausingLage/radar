@@ -97,6 +97,12 @@ export class RadarRenderer implements IRadarRenderer {
   private renderVim220Waypoints(graphics: Phaser.GameObjects.Graphics, waypoints: Vector2[]): void {
     if (waypoints.length === 0) return;
 
+    // Direction leg between WP1 (steer-to) and WP2 (direction point).
+    if (waypoints.length >= 2) {
+      graphics.lineStyle(1, 0xffff00, 0.6);
+      graphics.lineBetween(waypoints[0].x, waypoints[0].y, waypoints[1].x, waypoints[1].y);
+    }
+
     graphics.fillStyle(0xffff00, 1);
     waypoints.forEach((point) => {
       graphics.fillCircle(point.x, point.y, 5);

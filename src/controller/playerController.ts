@@ -45,8 +45,11 @@ export class PlayerController {
   };
 
   // ── VIM-220 waypoint ──────────────────────────────────────────────────
+  // Shift+click places a mid-course waypoint (only while VIM-220 is selected).
   private onPointerDown = (pointer: Phaser.Input.Pointer) => {
     if (!this.ship.active || !this.ship.scene) return;
+    const shiftHeld = (pointer.event as MouseEvent | undefined)?.shiftKey;
+    if (!shiftHeld) return;
     this.ship.radar.addVim220Waypoint({ x: pointer.worldX, y: pointer.worldY });
   };
 

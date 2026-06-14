@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { PlayerShip, Target } from './ship';
 import { Radar } from '../radar/systems/radar';
 import { InterfaceRenderer } from '../radar/renderer/interfaceRenderer';
+import { RadarRenderer } from '../radar/renderer/radarRenderer';
 import { AiUnitController } from '../controller/aiUnitController';
 import { PlayerController } from '../controller/playerController';
 import { targetShipSettings } from '../settings';
@@ -37,6 +38,11 @@ export const createPlayerShipFactory = () => {
     // Matter physics doesn't use onCollide flag like Arcade
     ship.radar.attachTo(ship);
     ship.radar.start();
+
+    // Only the player's radar renders; target radars track silently.
+    const radarRenderer = new RadarRenderer();
+    radarRenderer.setScene(this.scene);
+    ship.radar.setRadarRenderer(radarRenderer);
 
     const interfaceRenderer = new InterfaceRenderer(this.scene, ship);
     interfaceRenderer.createInterface(ship);

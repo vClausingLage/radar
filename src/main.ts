@@ -93,15 +93,41 @@ class Game extends Phaser.Scene
       speed: .1,
       type: 'cruiser',
     });
-    this.targets.push(target1, target2);
-
-    // ASTEROIDS using factory
-    const asteroid1 = this.add.asteroid({
-      position: { x: 1800, y: 2300 },
-      direction: 120,
-      speed: 1
+    const target3 = this.add.target({
+      x: 1600,
+      y: 2100,
+      direction: 90,
+      speed: .1,
+      type: 'cruiser',
     });
-    this.asteroids.push(asteroid1);
+    const target4 = this.add.target({
+      x: 2300,
+      y: 2300,
+      direction: 270,
+      speed: .1,
+      type: 'cargo',
+    });
+    this.targets.push(target1, target2, target3, target4);
+
+    // ASTEROIDS — scattered randomly, clear of the player's start position.
+    const playerStart = playerShipSettings.START_POSITION;
+    const ASTEROID_COUNT = 8;
+    const SPAWN_MARGIN = 150;
+    const CLEAR_RADIUS = 400;
+    for (let i = 0; i < ASTEROID_COUNT; i++) {
+      let x = 0;
+      let y = 0;
+      do {
+        x = Phaser.Math.Between(SPAWN_MARGIN, this.world.width - SPAWN_MARGIN);
+        y = Phaser.Math.Between(SPAWN_MARGIN, this.world.height - SPAWN_MARGIN);
+      } while (Phaser.Math.Distance.Between(x, y, playerStart.x, playerStart.y) < CLEAR_RADIUS);
+
+      this.asteroids.push(this.add.asteroid({
+        position: { x, y },
+        direction: Phaser.Math.Between(0, 359),
+        speed: Phaser.Math.FloatBetween(0.2, 1.2),
+      }));
+    }
   }
 
   update(_: number, delta: number)
