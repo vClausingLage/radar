@@ -1,8 +1,29 @@
+import { RadarReturn } from '../../data/radarReturn';
+import { Vector2 } from '../../../types';
+
 export class Receiver {
+  // Radar equation: detection probability falls off with (range / maxRange)^4.
+  // Each return is accepted probabilistically so close targets are almost always
+  // detected and distant targets fade out naturally.
+  processHits(
+    hits: { point: Phaser.Math.Vector2 }[],
+    ownerPos: Vector2,
+    maxRange: number,
+  ): RadarReturn[] {
+    const returns: RadarReturn[] = [];
 
+    for (const hit of hits) {
+      const dx = hit.point.x - ownerPos.x;
+      const dy = hit.point.y - ownerPos.y;
+      const range = Math.sqrt(dx * dx + dy * dy);
+      const angle = Phaser.Math.RadToDeg(Math.atan2(dy, dx));
 
-  // Hier werden die Punkte des Emitters empfangen. Hir kommt die Radar Equation hin und Logik zur Bestimmung ob ein Signal zurückkehrt oder manipuliert wird (JAMMER -> sendet Fake Kontakte zurück) (ein RWR emitter (event)) (...)
+      const pd = 1 - Math.pow(range / maxRange, 4);
+      if (Math.random() > pd) continue;
 
-  // Der Receiver übermittelt Informationen and Tracking Computer, damit dieser die Tracks aktualisieren kann. Er könnte auch Informationen an die Interface Renderer weitergeben, damit diese die Anzeige aktualisieren können.
+      returns.push({ point: hit.point, range, angle });
+    }
 
+    return returns;
+  }
 }

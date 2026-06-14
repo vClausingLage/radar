@@ -100,6 +100,7 @@ export class PlayerShip extends Ship {
         radar: Radar;
     }) {
         super({ ...params, id: 0 });
+        this.setScale(.7);
     }
 }
 
@@ -124,7 +125,7 @@ export class Target extends Ship {
         this.shipType = params.shipType;
         
         this.setVisible(import.meta.env.DEV);
-        this.setScale(.7);
+        this.setScale(.4);
     }
 
     setController(controller: AiUnitController) {

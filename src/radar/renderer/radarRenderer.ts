@@ -1,7 +1,6 @@
 import { Track } from "../../radar/data/track";
 import { Asteroid } from "../../entities/asteroid";
 import { Missile } from "../../entities/missiles";
-import { Ship } from "../../entities/ship";
 import { Loadout } from "../../types";
 
 import { Pulse } from "../systems/modules/emitter";
@@ -18,6 +17,8 @@ interface IRadarRenderer {
     loadout: Loadout,
     vim220Waypoints: Vector2[],
     pulse?: Pulse,
+    sttMode?: boolean,
+    vim220TimeToActive?: number | null,
   ): void;
 }
 
@@ -31,12 +32,12 @@ export class RadarRenderer implements IRadarRenderer {
     this.scene = scene;
   }
 
-  private renderPulse(graphics: Phaser.GameObjects.Graphics, pulse: Pulse): void {
-    graphics.lineStyle(1, 0x00ff00, 0.5);
+  private renderPulse(graphics: Phaser.GameObjects.Graphics, pulse: Pulse, sttMode = false): void {
+    graphics.lineStyle(1, sttMode ? 0xff0000 : 0x00ff00, 0.5);
     graphics.strokeLineShape(pulse.line);
   }
 
-  renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, activeMissiles: Missile[], loadout: Loadout, vim220Waypoints: Vector2[] = []): void {
+  renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, activeMissiles: Missile[], loadout: Loadout, vim220Waypoints: Vector2[] = [], vim220TimeToActive: number | null = null): void {
     const endX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(endAngle));
     const endY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(endAngle));
     
@@ -74,6 +75,12 @@ export class RadarRenderer implements IRadarRenderer {
           loadoutText += `${missileType}\n ${missileData.load} `;
         }
       }
+      // Time-to-active readout for the last-fired VIM-220, beneath the loadout.
+      if (vim220TimeToActive !== null) {
+        loadoutText += vim220TimeToActive > 0
+          ? `\n TTA ${vim220TimeToActive}s`
+          : `\n RADAR ACTIVE`;
+      }
       if (this.activeLoadout) {
         this.activeLoadout.setText(`\n\n\n ${loadoutText}`);
       }
@@ -96,104 +103,35 @@ export class RadarRenderer implements IRadarRenderer {
     });
   }
 
-  renderRwsContacts(graphics: Phaser.GameObjects.Graphics, t: Ship, distance: number): void {
-    // Draw green rectangle at target position on separate graphics object
-    const rectGraphics = graphics.scene?.add.graphics();
-    if (rectGraphics) {
-      rectGraphics.fillStyle(0x00ff00, 0.7);
-      rectGraphics.fillRect(t.x - 5, t.y - 5, 10, 10);
-      graphics.scene?.tweens.add({
-        targets: rectGraphics,
-        alpha: 0,
-        duration: 3000,
-        onComplete: () => rectGraphics.destroy()
-      });
-    }
-      
-    // Display distance as text with fade out
-    // distance is shown as 'nautical miles' => calculated dist divided by 10
-    const distanceText = graphics.scene?.add.text(t.x + 18, t.y - 15, 
-      (distance / 10).toFixed(0), 
-      { fontSize: '12px', color: '#00ff00' }
-    );
-    if (distanceText) {
-      graphics.scene?.tweens.add({
-        targets: distanceText,
-        alpha: 0,
-        duration: 3000,
-        onComplete: () => distanceText.destroy()
-      });
-    }
-      
-    // Draw short line in direction of target with fade out
-    const lineLength = 20;
-    const angle = Phaser.Math.DegToRad(t.getDirection());
-    const endX = t.x + lineLength * Math.cos(angle);
-    const endY = t.y + lineLength * Math.sin(angle);
+  renderRwsContacts(graphics: Phaser.GameObjects.Graphics, track: Track): void {
+    const { x, y } = track.pos;
 
-    graphics.scene?.add.line(t.x, t.y, endX, endY, 0x00ff00, 1);
-    // Create a separate graphics object for the line to fade it
-    const lineGraphics = graphics.scene?.add.graphics();
-    if (lineGraphics) {
-      lineGraphics.lineStyle(2, 0x00ff00, 1);
-      lineGraphics.lineBetween(t.x, t.y, endX, endY);
-      graphics.scene?.tweens.add({
-        targets: lineGraphics,
-        alpha: 0,
-        duration: 3000,
-        onComplete: () => lineGraphics.destroy()
-      });
+    // Green box at track position
+    graphics.fillStyle(0x00ff00, 0.7);
+    graphics.fillRect(x - 5, y - 5, 10, 10);
+
+    // Velocity vector line
+    if (track.dir && track.speed > 0) {
+      const rad = Phaser.Math.DegToRad(track.dir);
+      const lineLength = 20;
+      graphics.lineStyle(2, 0x00ff00, 1);
+      graphics.lineBetween(x, y, x + Math.cos(rad) * lineLength, y + Math.sin(rad) * lineLength);
     }
   }
 
   renderStt(track: Track, graphics: Phaser.GameObjects.Graphics): void {
-    const rectGraphics = graphics.scene?.add.graphics();
-    if (rectGraphics) {
-      rectGraphics.fillStyle(0xff0000, 0.7)
-      rectGraphics.fillRect(track.pos.x - 5, track.pos.y - 5, 10, 10);
-      graphics.scene?.tweens.add({
-        targets: rectGraphics,
-        alpha: 0,
-        duration: 3000,
-        onComplete: () => rectGraphics.destroy()
-      });
-    }
-      
-    // Display distance as text with fade out
-    const distanceText = graphics.scene?.add.text(
-      track.pos.x + 18, 
-      track.pos.y - 15, 
-      (track.dist / 10).toFixed(0), 
-      { fontSize: '12px', color: '#ff0000' }
-    );
-    if (distanceText) {
-      graphics.scene?.tweens.add({
-        targets: distanceText,
-        alpha: 0,
-        duration: 3000,
-        onComplete: () => distanceText.destroy()
-      });
-    }
-      
-    // Draw short line in direction of target with fade out
-    if (track.dir) {
+    const { x, y } = track.pos;
+
+    // Box at track position
+    graphics.fillStyle(0xff0000, 0.7);
+    graphics.fillRect(x - 5, y - 5, 10, 10);
+
+    // Velocity vector line
+    if (track.dir && track.speed > 0) {
+      const rad = Phaser.Math.DegToRad(track.dir);
       const lineLength = 20;
-      const angle = Phaser.Math.DegToRad(track.dir);
-      const endX = track.pos.x + lineLength * Math.cos(angle);
-      const endY = track.pos.y + lineLength * Math.sin(angle);
-      
-      // Create a separate graphics object for the line to fade it
-      const lineGraphics = graphics.scene?.add.graphics();
-      if (lineGraphics) {
-        lineGraphics.lineStyle(2, 0xff0000, 1)
-        lineGraphics.lineBetween(track.pos.x, track.pos.y, endX, endY);
-        graphics.scene?.tweens.add({
-          targets: lineGraphics,
-          alpha: 0,
-          duration: 3000,
-          onComplete: () => lineGraphics.destroy()
-        });
-      }
+      graphics.lineStyle(2, 0xff0000, 1);
+      graphics.lineBetween(x, y, x + Math.cos(rad) * lineLength, y + Math.sin(rad) * lineLength);
     }
   }
 
@@ -226,9 +164,11 @@ export class RadarRenderer implements IRadarRenderer {
     loadout: Loadout,
     vim220Waypoints: Vector2[],
     pulse?: Pulse,
+    sttMode = false,
+    vim220TimeToActive: number | null = null,
   ): void {
     if (pulse) {
-      this.renderPulse(graphics, pulse);
+      this.renderPulse(graphics, pulse, sttMode);
     }
 
     this.renderRadarScanInterface(
@@ -240,6 +180,7 @@ export class RadarRenderer implements IRadarRenderer {
       activeMissiles,
       loadout,
       vim220Waypoints,
+      vim220TimeToActive,
     );
   }
 }

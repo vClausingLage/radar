@@ -1,5 +1,5 @@
 import { Radar } from "../systems/radar";
-import { RwrContact } from "../systems/rwr";
+import { RwrContact } from "../systems/modules/rwr";
 import { Ship } from "../../entities/ship";
 
 export class InterfaceRenderer {
@@ -38,7 +38,7 @@ export class InterfaceRenderer {
         .setInteractive()
         .setOrigin(0)
         .on('pointerdown', () => {
-            this.playerRadar.setMode('tws');
+            this.playerRadar.enterTws();
         });
         // STT BTN
         this.sttBtn = this.scene.add.text(0, 0, 'STT', { 
@@ -50,8 +50,7 @@ export class InterfaceRenderer {
         .setInteractive()
         .setOrigin(0)
         .on('pointerdown', () => {
-            if (this.playerRadar.getTracks().length === 0) return;
-            this.playerRadar.setMode('stt');
+            this.playerRadar.enterStt();
         });
         // RWS BTN
         this.rwsBtn = this.scene.add.text(0, 0, 'RWS', { 
@@ -63,8 +62,7 @@ export class InterfaceRenderer {
         .setInteractive()
         .setOrigin(0)
         .on('pointerdown', () => {
-            this.playerRadar.setTracks([]);
-            this.playerRadar.setMode('rws');
+            this.playerRadar.enterRws();
         });
         // SHOOT BTN
         this.shootBtn = this.scene.add.text(0, 0, 'SHOOT', {

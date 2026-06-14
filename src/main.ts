@@ -83,14 +83,14 @@ class Game extends Phaser.Scene
       x: 2000,
       y: 2000,
       direction: 180,
-      speed: 0,
+      speed: .1,
       type: 'cargo',
     });
     const target2 = this.add.target({
-      x: 2000,
+      x: 2200,
       y: 1800,
-      direction: 90,
-      speed: 0,
+      direction: 180,
+      speed: .1,
       type: 'cruiser',
     });
     this.targets.push(target1, target2);

@@ -10,11 +10,9 @@ export class Emitter {
   private pulse: Pulse | null = null;
   private range: number = 0;
 
-
   constructor(range: number) {
     this.range = range;
   }
-  
 
   sendPulse(origin: { x: number; y: number }, direction: number, sweepWidth: number = 60): Pulse {
     const directionRad = Phaser.Math.DegToRad(direction);
@@ -36,4 +34,5 @@ export class Emitter {
 
     return this.pulse;
   }
+
 }
