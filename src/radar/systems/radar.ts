@@ -16,7 +16,7 @@ import { Loadout, Vector2 } from "../../types";
 
 import { Ray } from "../../physics/ray";
 import { Receiver } from "./modules/receiver";
-import { Missile, ActiveRadarMissile } from "../../entities/missiles";
+import { Missile, ActiveRadarMissile, MISSILE_FLIGHT } from "../../entities/missiles";
 
 export interface IRadar {
     // TODO implement
@@ -31,6 +31,10 @@ const STT_LOCK_BREAK_FRAMES = 45;
 
 // TWS tracks at most this many targets simultaneously.
 const MAX_TWS_TRACKS = 3;
+
+// Physics steps per second (Matter default), used to convert the missiles'
+// per-step speed and per-second burn time into a max-range distance (px).
+const PHYSICS_FPS = 60;
 
 export class Radar implements IRadar {
     private owner: Entity | null = null;
@@ -293,14 +297,23 @@ export class Radar implements IRadar {
         if (noCollideGroup !== undefined) missile.setCollisionGroup(noCollideGroup);
     }
 
-    // Seconds until the last-fired VIM-220's onboard radar goes active, or null
-    // if none is in flight. Returns 0 once the seeker has already activated.
+    // Max range (px) of the currently selected weapon, for the range indicator.
+    getActiveMissileRange(): number | null {
+        const type = this.loadoutManager.getActiveType();
+        const flight = (MISSILE_FLIGHT as Record<string, { speed: number; burnTime: number }>)[type];
+        return flight ? flight.speed * PHYSICS_FPS * flight.burnTime : null;
+    }
+
+    // HUD readout for the last-fired VIM-220's seeker: 0 ("RADAR ACTIVE") once
+    // its onboard radar is online, otherwise null (the seeker arms by closing
+    // range, so there is no meaningful countdown to show). Null when none in
+    // flight.
     getLastVim220TimeToActive(): number | null {
         if (!this.lastVim220 || !this.lastVim220.active) {
             this.lastVim220 = null;
             return null;
         }
-        return this.lastVim220.getTimeToActive();
+        return this.lastVim220.isActiveRadarEnabled() ? 0 : null;
     }
 
     // ── Main update ───────────────────────────────────────────────────────
@@ -364,7 +377,7 @@ export class Radar implements IRadar {
             graphics, ownerPos, this.range,
             scanStartAngle, scanEndAngle,
             [], this.loadoutManager.getLoadout(), this.vim220Waypoints, pulse, false,
-            this.getLastVim220TimeToActive(),
+            this.getLastVim220TimeToActive(), this.getActiveMissileRange(),
         );
 
         const targets = entities.filter(e => e.id !== this.owner?.id);
@@ -449,7 +462,7 @@ export class Radar implements IRadar {
             graphics, ownerPos, this.range,
             shipDirection - rwsHalfAz, shipDirection + rwsHalfAz,
             [], this.loadoutManager.getLoadout(), this.vim220Waypoints, pulse, true,
-            this.getLastVim220TimeToActive(),
+            this.getLastVim220TimeToActive(), this.getActiveMissileRange(),
         );
 
         // Single ray pointed at locked target; processed immediately (no buffer).

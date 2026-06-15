@@ -19,6 +19,7 @@ interface IRadarRenderer {
     pulse?: Pulse,
     sttMode?: boolean,
     vim220TimeToActive?: number | null,
+    missileRange?: number | null,
   ): void;
 }
 
@@ -105,8 +106,18 @@ export class RadarRenderer implements IRadarRenderer {
 
     graphics.fillStyle(0xffff00, 1);
     waypoints.forEach((point) => {
-      graphics.fillCircle(point.x, point.y, 5);
+      this.fillPentagon(graphics, point.x, point.y, 5);
     });
+  }
+
+  // Draw a small filled pentagon centred on (cx, cy), pointing up.
+  private fillPentagon(graphics: Phaser.GameObjects.Graphics, cx: number, cy: number, radius: number): void {
+    const points: Phaser.Types.Math.Vector2Like[] = [];
+    for (let i = 0; i < 5; i++) {
+      const angle = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+      points.push({ x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius });
+    }
+    graphics.fillPoints(points, true);
   }
 
   renderRwsContacts(graphics: Phaser.GameObjects.Graphics, track: Track): void {
@@ -172,9 +183,16 @@ export class RadarRenderer implements IRadarRenderer {
     pulse?: Pulse,
     sttMode = false,
     vim220TimeToActive: number | null = null,
+    missileRange: number | null = null,
   ): void {
     if (pulse) {
       this.renderPulse(graphics, pulse, sttMode);
+    }
+
+    if (missileRange !== null) {
+      // Direction the ship is facing = midpoint of the scan cone.
+      const facing = (scanStartAngle + scanEndAngle) / 2;
+      this.renderMissileRange(graphics, radarPosition, facing, missileRange);
     }
 
     this.renderRadarScanInterface(
@@ -188,5 +206,30 @@ export class RadarRenderer implements IRadarRenderer {
       vim220Waypoints,
       vim220TimeToActive,
     );
+  }
+
+  // Green line straight ahead of the ship marking the selected missile's max
+  // range, with perpendicular "T" caps at both ends.
+  private renderMissileRange(
+    graphics: Phaser.GameObjects.Graphics,
+    position: Vector2,
+    facingDeg: number,
+    range: number,
+  ): void {
+    const rad = Phaser.Math.DegToRad(facingDeg);
+    const dx = Math.cos(rad);
+    const dy = Math.sin(rad);
+    const endX = position.x + dx * range;
+    const endY = position.y + dy * range;
+
+    // Perpendicular unit vector for the end caps.
+    const px = -dy;
+    const py = dx;
+    const cap = 12;
+
+    graphics.lineStyle(2, 0x00ff00, 0.9);
+    graphics.lineBetween(position.x, position.y, endX, endY);
+    graphics.lineBetween(position.x - px * cap, position.y - py * cap, position.x + px * cap, position.y + py * cap);
+    graphics.lineBetween(endX - px * cap, endY - py * cap, endX + px * cap, endY + py * cap);
   }
 }

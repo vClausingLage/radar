@@ -66,8 +66,10 @@ export const missileSettings = {
         SPEED: 6,
         TURN_SPEED: 0.5,
         BURN_TIME: 25,
-        ACTIVE_RADAR_ACTIVATION_TIME: 8,
-        ACTIVE_RADAR_RANGE: 220,
-        ACTIVE_RADAR_AZIMUTH: 10
+        // The onboard seeker comes online when this close (px) to its target,
+        // rather than after a fixed time.
+        ACTIVE_RADAR_ACTIVATION_RANGE: 250,
+        ACTIVE_RADAR_RANGE: 250,
+        ACTIVE_RADAR_AZIMUTH: 30
     }
 }

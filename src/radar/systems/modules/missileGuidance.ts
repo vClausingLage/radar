@@ -1,15 +1,8 @@
 import { Missile, SARHMissile, ActiveRadarMissile } from '../../../entities/missiles';
 import { Track } from '../../data/track';
+import type { GuidanceTarget } from './missileRadar';
 
-// Minimal target interface the guidance needs for active-radar acquisition.
-export type GuidanceTarget = {
-  id: number;
-  x: number;
-  y: number;
-  active: boolean;
-  getDirection(): number;
-  getSpeed(): number;
-};
+export type { GuidanceTarget };
 
 // Context supplied each frame so the guidance can resolve every missile's
 // current source of truth: the STT lock (SARH), the maintained tracks (VIM-220
@@ -28,12 +21,11 @@ export type GuidanceContext = {
 // lock the missile loses guidance and flies ballistic.
 //
 // VIM-220 (ARH): ship uplinks an intercept heading derived from its TWS track
-// until the missile's own seeker activates (missileAge >= activation age),
-// then the missile guides itself against any target inside its radar basket.
+// until the missile closes to activation range, when its own radar (MissileRadar)
+// comes online — searching (RWS) then locking and tracking (STT) a target it
+// finds, after which it guides itself.
 //
-// Guidance phases (mirroring real missile behaviour):
-//   age < 2  → flyInDirectionOfShip: hold launch heading off the rail
-//   age >= 2 → trackInDirectionOfTarget: steer toward intercept point
+// Boost phase (age < 2): hold launch heading off the rail before steering.
 
 // A waypoint counts as reached within this distance (px).
 const WAYPOINT_REACHED_DISTANCE = 24;
@@ -90,12 +82,12 @@ export class MissileGuidance {
     if (this.debugTimer >= 500) {
       this.debugTimer = 0;
       for (const m of live) {
-        if (m instanceof ActiveRadarMissile && m.isActiveRadarEnabled()) {
-          const tracked = m.activeRadarTargetId;
+        if (m instanceof ActiveRadarMissile && m.missileRadar.isActive()) {
+          const tracked = m.missileRadar.getLockedTargetId();
           console.log(
             tracked !== null
-              ? `VIM-220 active radar: tracking target ${tracked}`
-              : `VIM-220 active radar: tracking none (searching)`,
+              ? `VIM-220 active radar [STT]: tracking target ${tracked}`
+              : `VIM-220 active radar [RWS]: searching, no target`,
           );
         }
       }
@@ -128,11 +120,11 @@ export class MissileGuidance {
   // ARH (VIM-220) guidance, in priority order:
   //   1. If a waypoint route is set and WP1 not yet reached, fly to WP1 with the
   //      seeker still off.
-  //   2. Once the seeker is live (by age, or because WP1 was passed) search the
-  //      radar basket; if a target is acquired, home on it.
-  //   3. If the seeker is live but no target is acquired yet, keep steering the
-  //      WP1→WP2 direction leg (so a waypoint missile sweeps along its commanded
-  //      heading until it finds something).
+  //   2. Activate the onboard radar once within activation range of the assigned
+  //      target (or once past the first waypoint).
+  //   3. With the seeker live, let the missile radar search (RWS) and track
+  //      (STT); home on whatever it locks. If it is active but searching, keep
+  //      flying the commanded heading (WP2 leg, else the assigned track).
   //   4. Otherwise fly the assigned TWS track (mid-course) by pure pursuit.
   private guideActiveRadar(missile: ActiveRadarMissile, ctx: GuidanceContext): { x: number; y: number } | null {
     const from = { x: missile.x, y: missile.y };
@@ -141,9 +133,25 @@ export class MissileGuidance {
     const toFirst = this.flyToFirstWaypoint(missile);
     if (toFirst) return toFirst;
 
-    // 2 & 3. Seeker active — search and home, else continue the WP2 leg.
-    if (missile.isActiveRadarEnabled()) {
-      const target = this.acquireActiveRadarTarget(missile, ctx.targets);
+    // Assigned mid-course track handed over by the launching ship.
+    const track = missile.targetId !== undefined
+      ? ctx.tracks.find(t => t.id === missile.targetId) ?? null
+      : null;
+
+    // 2. Activate the seeker by proximity to the assigned target, or once the
+    //    missile has passed its first waypoint.
+    if (!missile.missileRadar.isActive()) {
+      const reachedWaypoint = missile.waypointRoute?.reachedFirst ?? false;
+      const nearTarget = track !== null &&
+        Phaser.Math.Distance.Between(from.x, from.y, track.pos.x, track.pos.y)
+          <= missile.activeRadarActivationRange;
+      if (reachedWaypoint || nearTarget) missile.missileRadar.activate();
+    }
+
+    // 3. Seeker live: run its RWS→STT loop and home on the locked target.
+    if (missile.missileRadar.isActive()) {
+      const headingDeg = Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x));
+      const target = missile.missileRadar.update(from, headingDeg, ctx.targets);
       if (target) {
         return this.interceptVector(
           from,
@@ -153,16 +161,15 @@ export class MissileGuidance {
           missile.missileSpeed,
         ) ?? this.pursue(from, target);
       }
-      // No lock yet: if on the direction leg, keep flying toward WP2.
+      // Active but still searching: keep flying the commanded heading.
       const route = missile.waypointRoute;
       if (route?.reachedFirst) return this.pursue(route.first, route.directionPoint);
+      if (track) return this.pursue(from, track.pos);
+      return null;
     }
 
     // 4. Mid-course on the assigned track. Track velocity is in px-per-scan
     // (not physics units), so pure pursuit, not a lead intercept.
-    const track = missile.targetId !== undefined
-      ? ctx.tracks.find(t => t.id === missile.targetId) ?? null
-      : null;
     if (track) {
       return this.pursue(from, track.pos);
     }
@@ -170,7 +177,7 @@ export class MissileGuidance {
   }
 
   // Fly to the route's first waypoint. Flips `reachedFirst` on arrival (which
-  // also activates the seeker) and then returns null so the search logic takes
+  // triggers seeker activation) and then returns null so the search logic takes
   // over. Returns null if there is no route or WP1 is already behind us.
   private flyToFirstWaypoint(missile: ActiveRadarMissile): { x: number; y: number } | null {
     const route = missile.waypointRoute;
@@ -191,48 +198,6 @@ export class MissileGuidance {
     const dy = to.y - from.y;
     const mag = Math.sqrt(dx * dx + dy * dy);
     return mag > 0 ? { x: dx / mag, y: dy / mag } : null;
-  }
-
-  // Pick a target for the missile's onboard radar: prefer the one it is already
-  // tracking, then the originally-assigned target, then the nearest in-basket.
-  private acquireActiveRadarTarget(
-    missile: ActiveRadarMissile,
-    targets: GuidanceTarget[],
-  ): GuidanceTarget | null {
-    const tracked = missile.activeRadarTargetId !== null
-      ? targets.find(t => t.id === missile.activeRadarTargetId && t.active) ?? null
-      : null;
-    if (tracked && this.isInsideBasket(missile, tracked, true)) return tracked;
-
-    const preferred = missile.targetId !== undefined
-      ? targets.find(t => t.id === missile.targetId && t.active) ?? null
-      : null;
-    if (preferred && this.isInsideBasket(missile, preferred, false)) {
-      missile.activeRadarTargetId = preferred.id;
-      return preferred;
-    }
-
-    const fallback = targets
-      .filter(t => t.active && this.isInsideBasket(missile, t, false))
-      .sort((a, b) =>
-        Phaser.Math.Distance.Between(missile.x, missile.y, a.x, a.y) -
-        Phaser.Math.Distance.Between(missile.x, missile.y, b.x, b.y))[0] ?? null;
-
-    missile.activeRadarTargetId = fallback?.id ?? null;
-    return fallback;
-  }
-
-  // Is the target within the missile radar's range and (unless already locked)
-  // its forward azimuth basket?
-  private isInsideBasket(missile: ActiveRadarMissile, target: GuidanceTarget, alreadyTracking: boolean): boolean {
-    const distance = Phaser.Math.Distance.Between(missile.x, missile.y, target.x, target.y);
-    if (distance > missile.activeRadarRange) return false;
-    if (alreadyTracking) return true;
-
-    const angleToTarget = Phaser.Math.RadToDeg(Math.atan2(target.y - missile.y, target.x - missile.x));
-    const heading = Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x));
-    const delta = Math.abs(Phaser.Math.Angle.WrapDegrees(angleToTarget - heading));
-    return delta <= missile.activeRadarAzimuth;
   }
 
   // Proportional Navigation intercept using quadratic time-of-flight solution.
