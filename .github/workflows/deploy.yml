@@ -46,6 +46,9 @@ jobs:
             echo "Node.js: $(node --version)"
             echo "pnpm: $(pnpm --version)"
 
+            # Ensure pnpm runs non-interactively in this CI/SSH session.
+            export CI=true
+
             cd "${{ secrets.PROD_APP_DIR }}"
 
             git fetch origin main
