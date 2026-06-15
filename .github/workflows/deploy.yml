@@ -24,7 +24,7 @@ jobs:
           script_stop: true
           command_timeout: 30m
           script: |
-            set -euo pipefail
+            set -eo pipefail
 
             export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 
@@ -36,8 +36,11 @@ jobs:
             . "$NVM_DIR/nvm.sh"
 
             # Check for and install the latest Node.js LTS and pnpm releases.
+            # nvm is not fully compatible with nounset (`set -u`) in some environments.
+            set +u
             nvm install --lts
             nvm use --lts
+            set -u
             npm install --global pnpm@latest
 
             echo "Node.js: $(node --version)"
