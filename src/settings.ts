@@ -55,6 +55,14 @@ export const targetShipSettings = {
     TURN_RATE_CARGO: 0.15,   // degrees per frame (at 60fps = 9°/sec)
 }
 
+// DECOYS (Täuschkörper / chaff)
+export const decoySettings = {
+    COUNT: 5,                 // how many the player carries
+    RADIUS: 70,               // px — size of the chaff cloud
+    LIFETIME_MS: 8000,        // how long a cloud lingers before dissipating
+    BLOCK_PROBABILITY: 0.5,   // chance a beam passing through is blocked
+}
+
 // MISSILES
 export const missileSettings = {
     "VIM-177": {

@@ -1,4 +1,9 @@
 import type { Vector2 } from '../../../types';
+import { decoySettings } from '../../../settings';
+
+// How many consecutive decoy-occluded frames an STT lock survives before it
+// breaks (~0.5 s at 60 fps).
+const MAX_MISSED_LOCK_FRAMES = 30;
 
 // Minimal target interface an onboard seeker needs to acquire and track.
 // Lives here (rather than in missileGuidance) so the missile entity can hold a
@@ -22,6 +27,7 @@ type MissileRadarMode = 'off' | 'rws' | 'stt';
 export class MissileRadar {
   private mode: MissileRadarMode = 'off';
   private lockedTargetId: number | null = null;
+  private missedLockFrames = 0;
 
   constructor(
     private readonly range: number,            // detection range (px)
@@ -39,23 +45,38 @@ export class MissileRadar {
   }
 
   // Run the seeker for one frame; returns the tracked target, or null.
-  update(pos: Vector2, headingDeg: number, targets: GuidanceTarget[]): GuidanceTarget | null {
+  // Chaff (decoyCircles) in the line to a target can mask its return.
+  update(
+    pos: Vector2,
+    headingDeg: number,
+    targets: GuidanceTarget[],
+    decoyCircles: Phaser.Geom.Circle[] = [],
+  ): GuidanceTarget | null {
     if (this.mode === 'off') return null;
 
-    // STT: stay locked while the target is alive and within range.
+    // STT: stay locked while the target is alive, in range and not masked.
     if (this.mode === 'stt' && this.lockedTargetId !== null) {
       const locked = targets.find(t => t.id === this.lockedTargetId && t.active);
-      if (locked && this.inRange(pos, locked)) return locked;
-      // Lock lost — fall back to search.
+      if (locked && this.inRange(pos, locked)) {
+        if (!this.isOccluded(pos, locked, decoyCircles)) {
+          this.missedLockFrames = 0;
+          return locked;
+        }
+        // Masked by chaff — hold the lock briefly, then let it break.
+        if (++this.missedLockFrames <= MAX_MISSED_LOCK_FRAMES) return null;
+      }
+      // Lock lost (gone, out of range, or chaff-broken) — fall back to search.
       this.mode = 'rws';
       this.lockedTargetId = null;
+      this.missedLockFrames = 0;
     }
 
-    // RWS: search the forward cone and lock the nearest target found.
-    const found = this.search(pos, headingDeg, targets);
+    // RWS: search the forward cone and lock the nearest unmasked target found.
+    const found = this.search(pos, headingDeg, targets, decoyCircles);
     if (found) {
       this.mode = 'stt';
       this.lockedTargetId = found.id;
+      this.missedLockFrames = 0;
       return found;
     }
     return null;
@@ -65,12 +86,33 @@ export class MissileRadar {
     return Phaser.Math.Distance.Between(pos.x, pos.y, t.x, t.y) <= this.range;
   }
 
-  private search(pos: Vector2, headingDeg: number, targets: GuidanceTarget[]): GuidanceTarget | null {
+  private search(
+    pos: Vector2,
+    headingDeg: number,
+    targets: GuidanceTarget[],
+    decoyCircles: Phaser.Geom.Circle[],
+  ): GuidanceTarget | null {
     return targets
-      .filter(t => t.active && this.inRange(pos, t) && this.inCone(pos, headingDeg, t))
+      .filter(t =>
+        t.active &&
+        this.inRange(pos, t) &&
+        this.inCone(pos, headingDeg, t) &&
+        !this.isOccluded(pos, t, decoyCircles))
       .sort((a, b) =>
         Phaser.Math.Distance.Between(pos.x, pos.y, a.x, a.y) -
         Phaser.Math.Distance.Between(pos.x, pos.y, b.x, b.y))[0] ?? null;
+  }
+
+  // True if chaff between the seeker and the target masks the return this frame.
+  private isOccluded(pos: Vector2, t: GuidanceTarget, decoyCircles: Phaser.Geom.Circle[]): boolean {
+    if (decoyCircles.length === 0) return false;
+    const line = new Phaser.Geom.Line(pos.x, pos.y, t.x, t.y);
+    for (const circle of decoyCircles) {
+      if (Phaser.Geom.Intersects.LineToCircle(line, circle) && Math.random() < decoySettings.BLOCK_PROBABILITY) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private inCone(pos: Vector2, headingDeg: number, t: GuidanceTarget): boolean {

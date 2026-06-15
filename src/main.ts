@@ -146,10 +146,13 @@ class Game extends Phaser.Scene
     const playerSpeed = player.getCurrentSpeed?.() ?? playerShipSettings.SPEED;
     player.controller?.update(playerSpeed);
 
+    // Player chaff clouds (pruned/faded here); their circles block radar beams.
+    const decoyCircles = player.getActiveDecoys().map(d => d.getCircle());
+
     // Radar scan (pass all ships; radar excludes its owner internally)
     const allShips = [player, ...this.targets];
     allShips.forEach(ship => {
-      ship.radar.update(delta, ship.getDirection(), [...allShips, ...this.asteroids], this.graphics!);
+      ship.radar.update(delta, ship.getDirection(), [...allShips, ...this.asteroids], this.graphics!, decoyCircles);
     });
 
     // Update AI continuous (every frame)

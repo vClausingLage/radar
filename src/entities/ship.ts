@@ -3,6 +3,8 @@ import { AiUnitController } from "../controller/aiUnitController";
 import { Vector2 } from "../types";
 import { PlayerController } from "../controller/playerController";
 import { createEntityId } from './entityId';
+import { Decoy } from "./decoy";
+import { decoySettings } from "../settings";
 
 export abstract class Ship extends Phaser.Physics.Matter.Sprite {
     public readonly id: number;
@@ -91,6 +93,9 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
 export class PlayerShip extends Ship {
     public controller?: PlayerController;
 
+    private decoys: Decoy[] = [];
+    private remainingDecoys = decoySettings.COUNT;
+
     constructor(params: {
         scene: Phaser.Scene;
         x: number;
@@ -101,6 +106,31 @@ export class PlayerShip extends Ship {
     }) {
         super({ ...params, id: 0 });
         this.setScale(.7);
+    }
+
+    // Deploy a chaff cloud at the ship's current position.
+    deployDecoy(): void {
+        if (this.remainingDecoys <= 0) return;
+        this.decoys.push(new Decoy(this.scene, this.x, this.y));
+        this.remainingDecoys--;
+    }
+
+    getRemainingDecoys(): number {
+        return this.remainingDecoys;
+    }
+
+    // Prune expired clouds (and fade the live ones), then return the survivors.
+    getActiveDecoys(): Decoy[] {
+        const now = this.scene.time.now;
+        this.decoys = this.decoys.filter(d => {
+            if (d.isExpired(now)) {
+                d.destroy();
+                return false;
+            }
+            d.update(now);
+            return true;
+        });
+        return this.decoys;
     }
 }
 

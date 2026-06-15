@@ -21,10 +21,10 @@ export class PlayerController {
     if (!this.ship.active || !this.ship.scene) return;
     this.ship.radar.enterRws();
   };
-  // T → TWS (track-while-scan)
+  // T → deploy a decoy (chaff). TWS remains available via its on-screen button.
   private onKeyDownT = () => {
     if (!this.ship.active || !this.ship.scene) return;
-    this.ship.radar.enterTws();
+    this.ship.deployDecoy();
   };
   // Escape → exit STT, return to RWS
   private onKeyDownEsc = () => {

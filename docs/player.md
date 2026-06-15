@@ -41,16 +41,26 @@ See [radar.md](radar.md) for how the simulation actually works under the hood.
 |-------|--------|
 | **A / D** | Turn left / right |
 | **R** | Switch to **RWS** (search) |
-| **T** | Switch to **TWS** (track-while-scan) |
 | **E** | Enter **STT** — lock the best current track |
 | **Esc** | Break STT lock, return to RWS |
 | **Q** | Cycle active weapon (VIM-177 ↔ VIM-220) |
 | **Space** | Fire the active weapon |
+| **T** | Deploy a decoy (chaff) |
 | **Shift + Click** | Place a VIM-220 mid-course waypoint (VIM-220 selected) |
 | **Mouse + / −** buttons | Zoom the camera |
 
-On-screen buttons next to the ship mirror the mode and fire controls, and the
-speed buttons (1/3, 2/3, FULL) set throttle.
+**TWS** has no key binding — use its on-screen button. On-screen buttons next to
+the ship mirror the mode and fire controls, and the speed buttons (1/3, 2/3,
+FULL) set throttle.
+
+## Decoys (chaff)
+
+You carry **5** decoys. Press **T** to drop a chaff cloud at your current
+position. A cloud lingers for a few seconds and fades out. While a radar beam
+passes through a cloud, the return may be lost — so if you manoeuvre so a cloud
+sits **between your ship and a threat radar (or an incoming missile)**, you can
+break its lock. It's probabilistic: a single cloud won't always work, and
+stacking several in the line improves your odds.
 
 ---
 
@@ -68,7 +78,7 @@ speed buttons (1/3, 2/3, FULL) set throttle.
    missile loses guidance.
 
 ### With the VIM-220 (ARH — fire and forget)
-1. Press **T** for **TWS**. Build up to 3 tracks by sweeping the contacts.
+1. Click the **TWS** button. Build up to 3 tracks by sweeping the contacts.
 2. Press **Q** until **VIM-220** is active.
 3. *(Optional)* **Shift+Click** on the map to set a mid-course route:
    - First Shift+click = **waypoint 1** (a point to fly to).

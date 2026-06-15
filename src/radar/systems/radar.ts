@@ -318,7 +318,13 @@ export class Radar implements IRadar {
 
     // ── Main update ───────────────────────────────────────────────────────
 
-    update(delta: number, _direction: number, entities: Entity[], graphics: Phaser.GameObjects.Graphics): void {
+    update(
+        delta: number,
+        _direction: number,
+        entities: Entity[],
+        graphics: Phaser.GameObjects.Graphics,
+        decoyCircles: Phaser.Geom.Circle[] = [],
+    ): void {
         if (!this.owner || !('getDirection' in this.owner)) return;
 
         const ownerPos = this.owner.getPosition();
@@ -349,12 +355,13 @@ export class Radar implements IRadar {
             sttTargetEntity: sttEntity,
             tracks: this.trackingComputer.getTracks(),
             targets: targetShips,
+            decoyCircles,
         });
 
         if (this.mode === 'stt') {
-            this.updateStt(ownerPos, shipDirection, entities, graphics);
+            this.updateStt(ownerPos, shipDirection, entities, graphics, decoyCircles);
         } else {
-            this.updateRws(ownerPos, shipDirection, entities, graphics);
+            this.updateRws(ownerPos, shipDirection, entities, graphics, decoyCircles);
         }
     }
 
@@ -365,6 +372,7 @@ export class Radar implements IRadar {
         shipDirection: number,
         entities: Entity[],
         graphics: Phaser.GameObjects.Graphics,
+        decoyCircles: Phaser.Geom.Circle[],
     ): void {
         const scanWidth = this.antenna.getAzimuth(this.mode);
         const scanStartAngle = shipDirection - scanWidth / 2;
@@ -387,7 +395,10 @@ export class Radar implements IRadar {
         this.illuminateRwr(targets, pulse.line, ownerPos, false);
 
         const nearestPoint = this.nearestHit(pulse.line, ownerPos, targets);
-        if (nearestPoint) this.sweepBuffer.push({ point: nearestPoint });
+        // Chaff between the antenna and the target can swallow the return.
+        if (nearestPoint && !this.receiver.isBlockedByDecoy(ownerPos, nearestPoint, decoyCircles)) {
+            this.sweepBuffer.push({ point: nearestPoint });
+        }
 
         if (sweepComplete) {
             const returns = this.receiver.processHits(this.sweepBuffer, ownerPos, this.range);
@@ -409,6 +420,7 @@ export class Radar implements IRadar {
         shipDirection: number,
         entities: Entity[],
         graphics: Phaser.GameObjects.Graphics,
+        decoyCircles: Phaser.Geom.Circle[],
     ): void {
         const rwsHalfAz = this.antenna.getAzimuth('rws') / 2;
         // Narrow tracking cone — wide enough to tolerate inter-frame target movement,
@@ -466,7 +478,12 @@ export class Radar implements IRadar {
         );
 
         // Single ray pointed at locked target; processed immediately (no buffer).
-        const hit = this.nearestHit(pulse.line, ownerPos, targets);
+        // Chaff in the beam can swallow the return, starving the lock until it
+        // breaks (the missed-frame counter below handles that).
+        const rawHit = this.nearestHit(pulse.line, ownerPos, targets);
+        const hit = rawHit && !this.receiver.isBlockedByDecoy(ownerPos, rawHit, decoyCircles)
+            ? rawHit
+            : null;
         const rawHits = hit ? [{ point: hit }] : [];
 
         // Lock illumination: any ship in the beam detects a locked (red) RWR
