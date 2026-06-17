@@ -1,3 +1,5 @@
+import { RADAR_DEFAULT_SWEEP_WIDTH_DEG } from '../../data/radarGameSettings';
+
 export type Pulse = {
   energy: number;
   direction: number;
@@ -14,7 +16,7 @@ export class Emitter {
     this.range = range;
   }
 
-  sendPulse(origin: { x: number; y: number }, direction: number, sweepWidth: number = 60): Pulse {
+  sendPulse(origin: { x: number; y: number }, direction: number, sweepWidth: number = RADAR_DEFAULT_SWEEP_WIDTH_DEG): Pulse {
     const directionRad = Phaser.Math.DegToRad(direction);
     const halfSweep = sweepWidth / 2;
     const line = new Phaser.Geom.Line(

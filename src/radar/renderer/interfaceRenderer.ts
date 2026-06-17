@@ -1,6 +1,24 @@
 import { Radar } from "../systems/radar";
 import { RwrContact } from "../systems/modules/rwr";
 import { Ship } from "../../entities/ship";
+import {
+    GO_STT_WARNING_OFFSET_Y_PX,
+    LOCK_WARNING_OFFSET_Y_PX,
+    MISSILE_TTA_OFFSET_Y_PX,
+    RADAR_BUTTON_SPACING_X_PX,
+    RADAR_BUTTON_SPACING_Y_PX,
+    RADAR_WARNING_OFFSET_Y_PX,
+    RWR_CONTACT_DIAMOND_SIZE_PX,
+    RWR_MARKER_RADIUS_FACTOR,
+    RWR_THREAT_ALPHA_RANGE,
+    RWR_THREAT_BASE_RADIUS_PX,
+    RWR_THREAT_FLARE_RADIUS_PX,
+    RWR_THREAT_MIN_ALPHA,
+    RWR_THREAT_PULSE_TIME_DIVISOR_MS,
+    RWR_THREAT_SPIKES,
+    RWR_WIDGET_HEIGHT_PX,
+    SPEED_BUTTON_OFFSET_X_PX,
+} from "../data/radarGameSettings";
 
 export class InterfaceRenderer {
     private sttBtn?: Phaser.GameObjects.Text;
@@ -200,8 +218,7 @@ export class InterfaceRenderer {
             .setDepth(1000);
 
         // Keep RWR image at a practical HUD size while preserving aspect ratio
-        const targetRwrHeight = 270;
-        const rwrScale = targetRwrHeight / this.rwrImage.height;
+        const rwrScale = RWR_WIDGET_HEIGHT_PX / this.rwrImage.height;
         this.rwrImage.setScale(rwrScale);
 
         this.rwrDirectionGraphics = this.scene.add.graphics()
@@ -248,8 +265,8 @@ export class InterfaceRenderer {
         const verticalOffset = (radius + 16) * (isPointingDown ? -1 : 1);
         const topY = shipY + verticalOffset;
 
-        const spacingX = 12;
-        const spacingY = 6;
+        const spacingX = RADAR_BUTTON_SPACING_X_PX;
+        const spacingY = RADAR_BUTTON_SPACING_Y_PX;
 
         const sttW = this.sttBtn.width;
         const rwsW = this.rwsBtn.width;
@@ -274,7 +291,7 @@ export class InterfaceRenderer {
 
         // Position speed buttons to the right, stacked vertically
         if (this.speedOneThirdBtn && this.speedTwoThirdBtn && this.speedFullBtn) {
-            const speedX = shipX + 120; // Distance to the right of ship
+            const speedX = shipX + SPEED_BUTTON_OFFSET_X_PX;
             const speedTopY = topY;
             
             if (isPointingDown) {
@@ -290,22 +307,22 @@ export class InterfaceRenderer {
 
         // Position warning texts above ship
         if (this.warningText) {
-            const warningY = shipY - 100;
+            const warningY = shipY + RADAR_WARNING_OFFSET_Y_PX;
             this.warningText.setPosition(shipX, warningY);
         }
 
         if (this.lockWarningText) {
-            const lockWarningY = shipY - 140;
+            const lockWarningY = shipY + LOCK_WARNING_OFFSET_Y_PX;
             this.lockWarningText.setPosition(shipX, lockWarningY);
         }
 
         if (this.goSttWarning) {
-            const goSttY = shipY - 180;
+            const goSttY = shipY + GO_STT_WARNING_OFFSET_Y_PX;
             this.goSttWarning.setPosition(shipX, goSttY);
         }
 
         if (this.missileTtaText) {
-            const missileTtaY = shipY - 220;
+            const missileTtaY = shipY + MISSILE_TTA_OFFSET_Y_PX;
             this.missileTtaText.setPosition(shipX, missileTtaY);
         }
 
@@ -368,8 +385,8 @@ export class InterfaceRenderer {
 
         const centerX = this.rwrImage.x + this.rwrImage.displayWidth / 2;
         const centerY = this.rwrImage.y - this.rwrImage.displayHeight / 2;
-        const markerRadius = Math.min(this.rwrImage.displayWidth, this.rwrImage.displayHeight) * 0.35;
-        const diamondSize = 8;
+        const markerRadius = Math.min(this.rwrImage.displayWidth, this.rwrImage.displayHeight) * RWR_MARKER_RADIUS_FACTOR;
+        const diamondSize = RWR_CONTACT_DIAMOND_SIZE_PX;
 
         for (const contact of contacts) {
             const angleRad = Phaser.Math.DegToRad(contact.bearingDeg);
@@ -401,10 +418,10 @@ export class InterfaceRenderer {
         if (!g) return;
 
         // 0..1 pulse from a sine wave driven by the scene clock (~2.5 Hz).
-        const pulse = 0.5 + 0.5 * Math.sin(this.scene.time.now / 120);
-        const baseRadius = 7;
-        const flareRadius = baseRadius + pulse * 7;
-        const alpha = 0.45 + pulse * 0.55;
+        const pulse = 0.5 + 0.5 * Math.sin(this.scene.time.now / RWR_THREAT_PULSE_TIME_DIVISOR_MS);
+        const baseRadius = RWR_THREAT_BASE_RADIUS_PX;
+        const flareRadius = baseRadius + pulse * RWR_THREAT_FLARE_RADIUS_PX;
+        const alpha = RWR_THREAT_MIN_ALPHA + pulse * RWR_THREAT_ALPHA_RANGE;
         const red = 0xff0000;
 
         // Soft pulsing glow.
@@ -417,7 +434,7 @@ export class InterfaceRenderer {
 
         // Radial spikes — the "flurry" — expanding with the pulse.
         g.lineStyle(2, red, alpha);
-        const spikes = 8;
+        const spikes = RWR_THREAT_SPIKES;
         for (let i = 0; i < spikes; i++) {
             const a = (Math.PI * 2 * i) / spikes;
             g.beginPath();

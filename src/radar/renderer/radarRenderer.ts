@@ -5,7 +5,14 @@ import { Loadout } from "../data/types";
 
 import { Pulse } from "../systems/modules/emitter";
 import { Vector2 } from "../../types";
-import { JAMMER_CONE_DEG } from "../data/radarGameSettings";
+import {
+  JAMMER_CONE_DEG,
+  MISSILE_RANGE_CAP_LENGTH_PX,
+  RADAR_CONTACT_MARKER_SIZE_PX,
+  RADAR_TRACK_VECTOR_LENGTH_PX,
+  VIM220_WAYPOINT_MARKER_RADIUS_PX,
+  VIM220_WAYPOINT_MARKER_SIDES,
+} from "../data/radarGameSettings";
 import { JammerHudStatus } from "../systems/modules/jammer";
 
 export class RadarRenderer {
@@ -107,15 +114,15 @@ export class RadarRenderer {
 
     graphics.fillStyle(0xffff00, alpha);
     waypoints.forEach((point) => {
-      this.fillPentagon(graphics, point.x, point.y, 5);
+      this.fillPentagon(graphics, point.x, point.y, VIM220_WAYPOINT_MARKER_RADIUS_PX);
     });
   }
 
   // Draw a small filled pentagon centred on (cx, cy), pointing up.
   private fillPentagon(graphics: Phaser.GameObjects.Graphics, cx: number, cy: number, radius: number): void {
     const points: Phaser.Types.Math.Vector2Like[] = [];
-    for (let i = 0; i < 5; i++) {
-      const angle = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+    for (let i = 0; i < VIM220_WAYPOINT_MARKER_SIDES; i++) {
+      const angle = -Math.PI / 2 + (i * 2 * Math.PI) / VIM220_WAYPOINT_MARKER_SIDES;
       points.push({ x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius });
     }
     graphics.fillPoints(points, true);
@@ -142,35 +149,57 @@ export class RadarRenderer {
     graphics.fillPath();
   }
 
+  // Onboard-seeker cone for a VIM-220 whose active radar has gone live. Drawn
+  // like the ship's radar cone (two edge lines + a bounding arc) but stripped
+  // of every readout — purely a visual reference for what the missile can
+  // currently "see".
+  renderMissileSeekerCone(
+    graphics: Phaser.GameObjects.Graphics,
+    position: Vector2,
+    headingDeg: number,
+    range: number,
+    halfAngleDeg: number,
+  ): void {
+    const startRad = Phaser.Math.DegToRad(headingDeg - halfAngleDeg);
+    const endRad = Phaser.Math.DegToRad(headingDeg + halfAngleDeg);
+
+    graphics.lineStyle(1, 0x000080, 0.4);
+    graphics.lineBetween(position.x, position.y, position.x + Math.cos(startRad) * range, position.y + Math.sin(startRad) * range);
+    graphics.lineBetween(position.x, position.y, position.x + Math.cos(endRad) * range, position.y + Math.sin(endRad) * range);
+    graphics.beginPath();
+    graphics.arc(position.x, position.y, range, startRad, endRad, false);
+    graphics.strokePath();
+  }
+
   renderRwsContacts(graphics: Phaser.GameObjects.Graphics, track: Track): void {
     const { x, y } = track.pos;
+    const halfMarker = RADAR_CONTACT_MARKER_SIZE_PX / 2;
 
     // Green box at track position
     graphics.fillStyle(0x00ff00, 0.7);
-    graphics.fillRect(x - 5, y - 5, 10, 10);
+    graphics.fillRect(x - halfMarker, y - halfMarker, RADAR_CONTACT_MARKER_SIZE_PX, RADAR_CONTACT_MARKER_SIZE_PX);
 
     // Velocity vector line
     if (track.dir && track.speed > 0) {
       const rad = Phaser.Math.DegToRad(track.dir);
-      const lineLength = 20;
       graphics.lineStyle(2, 0x00ff00, 1);
-      graphics.lineBetween(x, y, x + Math.cos(rad) * lineLength, y + Math.sin(rad) * lineLength);
+      graphics.lineBetween(x, y, x + Math.cos(rad) * RADAR_TRACK_VECTOR_LENGTH_PX, y + Math.sin(rad) * RADAR_TRACK_VECTOR_LENGTH_PX);
     }
   }
 
   renderStt(track: Track, graphics: Phaser.GameObjects.Graphics): void {
     const { x, y } = track.pos;
+    const halfMarker = RADAR_CONTACT_MARKER_SIZE_PX / 2;
 
     // Box at track position
     graphics.fillStyle(0xff0000, 0.7);
-    graphics.fillRect(x - 5, y - 5, 10, 10);
+    graphics.fillRect(x - halfMarker, y - halfMarker, RADAR_CONTACT_MARKER_SIZE_PX, RADAR_CONTACT_MARKER_SIZE_PX);
 
     // Velocity vector line
     if (track.dir && track.speed > 0) {
       const rad = Phaser.Math.DegToRad(track.dir);
-      const lineLength = 20;
       graphics.lineStyle(2, 0xff0000, 1);
-      graphics.lineBetween(x, y, x + Math.cos(rad) * lineLength, y + Math.sin(rad) * lineLength);
+      graphics.lineBetween(x, y, x + Math.cos(rad) * RADAR_TRACK_VECTOR_LENGTH_PX, y + Math.sin(rad) * RADAR_TRACK_VECTOR_LENGTH_PX);
     }
   }
 
@@ -253,7 +282,7 @@ export class RadarRenderer {
     // Perpendicular unit vector for the end caps.
     const px = -dy;
     const py = dx;
-    const cap = 12;
+    const cap = MISSILE_RANGE_CAP_LENGTH_PX;
 
     graphics.lineStyle(1, 0x00ff00, 0.3);
     graphics.lineBetween(position.x, position.y, endX, endY);

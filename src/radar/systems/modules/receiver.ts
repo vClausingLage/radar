@@ -2,6 +2,7 @@ import { RadarReturn } from '../../data/radarReturn';
 import { Vector2 } from '../../../types';
 import { decoySettings } from '../../../settings';
 import { JammerError } from './jammer';
+import { RADAR_DETECTION_RANGE_POWER } from '../../data/radarGameSettings';
 
 export class Receiver {
   // A beam from `from` to `to` may be blocked by chaff: for each decoy cloud the
@@ -39,7 +40,7 @@ export class Receiver {
       const range = Math.sqrt(dx * dx + dy * dy);
       const angle = Phaser.Math.RadToDeg(Math.atan2(dy, dx));
 
-      const pd = 1 - Math.pow(range / maxRange, 4);
+      const pd = 1 - Math.pow(range / maxRange, RADAR_DETECTION_RANGE_POWER);
       if (Math.random() > pd) continue;
 
       returns.push({ point: hit.point, range, angle });

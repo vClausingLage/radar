@@ -1,8 +1,9 @@
 import { Mode } from "../../data/types";
+import { ANTENNA_AZIMUTH_DEG_BY_MODE, ANTENNA_SWEEP_STEP_DEG } from "../../data/radarGameSettings";
 
 export class Antenna {
     private angleOffset: number = 0;
-    private step: number = 1;
+    private step: number = ANTENNA_SWEEP_STEP_DEG;
     private sweepDirection: 1 | -1 = 1;
 
     update(mode: Mode, shipDirection: number): { direction: number; sweepComplete: boolean } {
@@ -30,10 +31,6 @@ export class Antenna {
     }
 
     public getAzimuth(mode: Mode): number {
-        switch (mode) {
-            case 'rws': return 60;
-            case 'tws': return 45;
-            case 'stt': return 60; // same cone as rws; STT locks beam direction, not cone width
-        }
+        return ANTENNA_AZIMUTH_DEG_BY_MODE[mode];
     }
 }

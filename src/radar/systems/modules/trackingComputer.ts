@@ -1,22 +1,14 @@
 import { RadarReturn } from '../../data/radarReturn';
 import { Track } from '../../data/track';
 import { Vector2 } from '../../../types';
-
-// Returns within this distance (px) of each other belong to the same contact.
-const CLUSTER_RADIUS = 80;
-// Gate radius (px) around the predicted track position for association.
-const GATE_RADIUS = 200;
-// Drop a track after this many consecutive scans with no return.
-const MAX_MISSED_SCANS = 4;
-
-// α-trimmed mean: discard this fraction of cluster points from each angular
-// end before computing the centroid. Removes unstable polygon-edge hits.
-const TRIM_FRACTION = 0.15;
-
-// α-β filter gains. α smooths position, β smooths velocity.
-// Lower α → smoother track, higher lag. Tune to target speed vs update rate.
-const ALPHA = 0.35;
-const BETA = 0.08;
+import {
+  TRACK_CLUSTER_RADIUS_PX,
+  TRACK_FILTER_ALPHA,
+  TRACK_FILTER_BETA,
+  TRACK_GATE_RADIUS_PX,
+  TRACK_MAX_MISSED_SCANS,
+  TRACK_TRIM_FRACTION,
+} from '../../data/radarGameSettings';
 
 type TrackState = {
   track: Track;
@@ -38,7 +30,7 @@ export class TrackingComputer {
   update(
     returns: RadarReturn[],
     _ownerPos: Vector2,
-    maxMissedScans = MAX_MISSED_SCANS,
+    maxMissedScans = TRACK_MAX_MISSED_SCANS,
     maxTracks = Infinity,
   ): Track[] {
     const centroids = this.cluster(returns);
@@ -46,7 +38,7 @@ export class TrackingComputer {
 
     for (const centroid of centroids) {
       let bestIdx = -1;
-      let bestDist = GATE_RADIUS;
+      let bestDist = TRACK_GATE_RADIUS_PX;
 
       for (let i = 0; i < this.states.length; i++) {
         const gateCenter = this.predictedPos(this.states[i]);
@@ -103,7 +95,7 @@ export class TrackingComputer {
         const pivot = group[frontier++];
         for (let j = 0; j < returns.length; j++) {
           if (used[j]) continue;
-          if (Phaser.Math.Distance.BetweenPoints(pivot.point, returns[j].point) < CLUSTER_RADIUS) {
+          if (Phaser.Math.Distance.BetweenPoints(pivot.point, returns[j].point) < TRACK_CLUSTER_RADIUS_PX) {
             group.push(returns[j]);
             used[j] = true;
           }
@@ -117,14 +109,14 @@ export class TrackingComputer {
   }
 
   // Sort cluster members by their sweep angle and discard the outer
-  // TRIM_FRACTION on each side before computing the mean. This eliminates
+  // configured trim fraction on each side before computing the mean. This eliminates
   // the unstable edge hits that cause centroid drift when a target is only
   // partially within the scan cone.
   private trimmedCentroid(group: RadarReturn[]): RadarReturn {
     const sorted = [...group].sort((a, b) => a.angle - b.angle);
 
     const trim = group.length >= 6
-      ? Math.floor(sorted.length * TRIM_FRACTION)
+      ? Math.floor(sorted.length * TRACK_TRIM_FRACTION)
       : 0;
     const core = sorted.slice(trim, sorted.length - trim);
 
@@ -157,10 +149,10 @@ export class TrackingComputer {
     const innY = centroid.point.y - predicted.y;
 
     // Corrected position and velocity
-    const newX = predicted.x + ALPHA * innX;
-    const newY = predicted.y + ALPHA * innY;
-    state.velX += BETA * innX;
-    state.velY += BETA * innY;
+    const newX = predicted.x + TRACK_FILTER_ALPHA * innX;
+    const newY = predicted.y + TRACK_FILTER_ALPHA * innY;
+    state.velX += TRACK_FILTER_BETA * innX;
+    state.velY += TRACK_FILTER_BETA * innY;
 
     state.track.pos = { x: newX, y: newY };
     state.track.dist = centroid.range;

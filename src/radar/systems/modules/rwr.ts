@@ -9,14 +9,13 @@
 //   Enemy Emitter hits this ship → RadarEventEmitter fires 'rwr-warn'/'rwr-lock'
 //   → RwrReceiver records a RwrContact → InterfaceRenderer displays it.
 
+import { RWR_CONTACT_TTL_MS } from '../../data/radarGameSettings';
+
 export type RwrContact = {
   bearingDeg: number;
   isLocked: boolean;     // true when source is in STT (fire-control lock)
   lastSeenAt: number;    // Phaser.time.now for aging out stale contacts
 };
-
-// How long (ms) to keep a contact alive without a refresh signal.
-const CONTACT_TTL_MS = 2500;
 
 export class RwrReceiver {
   private contacts: Map<string, RwrContact> = new Map();
@@ -31,7 +30,7 @@ export class RwrReceiver {
   // Purge contacts whose signal has not been refreshed within the TTL.
   tick(now: number): void {
     for (const [key, contact] of this.contacts) {
-      if (now - contact.lastSeenAt > CONTACT_TTL_MS) {
+      if (now - contact.lastSeenAt > RWR_CONTACT_TTL_MS) {
         this.contacts.delete(key);
       }
     }

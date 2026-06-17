@@ -1,9 +1,6 @@
 import type { Vector2 } from '../../../types';
 import { decoySettings } from '../../../settings';
-
-// How many consecutive decoy-occluded frames an STT lock survives before it
-// breaks (~0.5 s at 60 fps).
-const MAX_MISSED_LOCK_FRAMES = 30;
+import { MISSILE_RADAR_MAX_MISSED_LOCK_FRAMES } from '../../data/radarGameSettings';
 
 // Minimal target interface an onboard seeker needs to acquire and track.
 // Lives here (rather than in missileGuidance) so the missile entity can hold a
@@ -37,6 +34,10 @@ export class MissileRadar {
   isActive(): boolean { return this.mode !== 'off'; }
   getMode(): MissileRadarMode { return this.mode; }
   getLockedTargetId(): number | null { return this.lockedTargetId; }
+  // Seeker envelope, exposed so the HUD can draw the "what the missile sees"
+  // cone once the radar is live.
+  getRange(): number { return this.range; }
+  getSearchAzimuth(): number { return this.searchAzimuthDeg; }
 
   // The launching ship's radar tells the missile to bring its seeker online
   // (enters RWS search). No-op once already active.
@@ -63,7 +64,7 @@ export class MissileRadar {
           return locked;
         }
         // Masked by chaff — hold the lock briefly, then let it break.
-        if (++this.missedLockFrames <= MAX_MISSED_LOCK_FRAMES) return null;
+        if (++this.missedLockFrames <= MISSILE_RADAR_MAX_MISSED_LOCK_FRAMES) return null;
       }
       // Lock lost (gone, out of range, or chaff-broken) — fall back to search.
       this.mode = 'rws';

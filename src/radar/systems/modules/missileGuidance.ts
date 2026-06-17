@@ -1,6 +1,12 @@
 import { Missile, SARHMissile, ActiveRadarMissile } from '../../../entities/missiles';
 import { Track } from '../../data/track';
 import type { GuidanceTarget } from './missileRadar';
+import {
+  MISSILE_AGE_TICK_MS,
+  MISSILE_BOOST_PHASE_MAX_AGE,
+  MISSILE_DEBUG_LOG_INTERVAL_MS,
+  VIM220_WAYPOINT_REACHED_DISTANCE_PX,
+} from '../../data/radarGameSettings';
 
 export type { GuidanceTarget };
 
@@ -28,9 +34,6 @@ export type GuidanceContext = {
 //
 // Boost phase (age < 2): hold launch heading off the rail before steering.
 
-// A waypoint counts as reached within this distance (px).
-const WAYPOINT_REACHED_DISTANCE = 24;
-
 export class MissileGuidance {
   private ageTimer = 0;
   private debugTimer = 0;
@@ -40,10 +43,10 @@ export class MissileGuidance {
     this.ageTimer += delta;
     let live = missiles.filter(m => m.active);
 
-    if (this.ageTimer >= 1000) {
+    if (this.ageTimer >= MISSILE_AGE_TICK_MS) {
       live = live.filter(m => {
         m.missileAge++;
-        if (m.missileAge > m.missileBurnTime) {
+      if (m.missileAge > m.missileBurnTime) {
           m.destroy();
           return false;
         }
@@ -57,7 +60,7 @@ export class MissileGuidance {
       const currentDirY = missile.direction.y;
 
       // Phase 1 — fly straight off the rail (boost phase).
-      if (missile.missileAge < 2) {
+      if (missile.missileAge < MISSILE_BOOST_PHASE_MAX_AGE) {
         missile.updateHeading(currentDirX, currentDirY);
         continue;
       }
@@ -77,10 +80,10 @@ export class MissileGuidance {
       missile.updateHeading(nx / mag, ny / mag);
     }
 
-    // Throttled debug (~500ms): report each active-radar VIM-220's tracking
+    // Throttled debug: report each active-radar VIM-220's tracking
     // state after guidance has run, so the target id reflects this frame.
     this.debugTimer += delta;
-    if (this.debugTimer >= 500) {
+    if (this.debugTimer >= MISSILE_DEBUG_LOG_INTERVAL_MS) {
       this.debugTimer = 0;
       for (const m of live) {
         if (m instanceof ActiveRadarMissile && m.missileRadar.isActive()) {
@@ -186,7 +189,7 @@ export class MissileGuidance {
 
     const from = { x: missile.x, y: missile.y };
     const distance = Phaser.Math.Distance.Between(from.x, from.y, route.first.x, route.first.y);
-    if (distance > WAYPOINT_REACHED_DISTANCE) return this.pursue(from, route.first);
+    if (distance > VIM220_WAYPOINT_REACHED_DISTANCE_PX) return this.pursue(from, route.first);
 
     route.reachedFirst = true;
     return null;

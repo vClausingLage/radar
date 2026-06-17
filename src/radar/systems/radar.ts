@@ -20,13 +20,21 @@ import { Ray } from "../../physics/ray";
 import { RadarEventEmitter } from "./game/radarEventEmitter";
 
 import { Missile, ActiveRadarMissile, MISSILE_FLIGHT } from "../../entities/missiles";
-import { MAX_TWS_TRACKS, PHYSICS_FPS, STT_LOCK_BREAK_FRAMES, JAMMER_STT_DEGRADE_PROB, VIM220_WAYPOINT_FADE_MS } from "../data/radarGameSettings";
+import {
+    JAMMER_STT_DEGRADE_PROB,
+    MAX_TWS_TRACKS,
+    PHYSICS_FPS,
+    RADAR_DEFAULT_RANGE_PX,
+    STT_BEAM_DEG,
+    STT_LOCK_BREAK_FRAMES,
+    VIM220_WAYPOINT_FADE_MS,
+} from "../data/radarGameSettings";
 
 export class Radar {
     private owner: Entity | null = null;
 
     private mode: Mode = 'rws';
-    private range: number = 700;
+    private range: number = RADAR_DEFAULT_RANGE_PX;
     private antenna = new Antenna();
     private emitter: Emitter = new Emitter(this.range);
     private receiver: Receiver = new Receiver();
@@ -421,6 +429,25 @@ export class Radar {
         } else {
             this.updateRws(ownerPos, shipDirection, entities, graphics, decoyCircles);
         }
+
+        this.renderMissileSeekerCones(graphics);
+    }
+
+    // Draw the seeker cone for every in-flight VIM-220 whose onboard radar has
+    // gone active, so the player can see what each missile can currently "see".
+    private renderMissileSeekerCones(graphics: Phaser.GameObjects.Graphics): void {
+        if (!this.radarRenderer) return;
+        for (const missile of this.activeMissiles) {
+            if (!(missile instanceof ActiveRadarMissile) || !missile.isActiveRadarEnabled()) continue;
+            const headingDeg = Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x));
+            this.radarRenderer.renderMissileSeekerCone(
+                graphics,
+                { x: missile.x, y: missile.y },
+                headingDeg,
+                missile.missileRadar.getRange(),
+                missile.missileRadar.getSearchAzimuth(),
+            );
+        }
     }
 
     // ── RWS sweep ─────────────────────────────────────────────────────────
@@ -497,10 +524,6 @@ export class Radar {
         decoyCircles: Phaser.Geom.Circle[],
     ): void {
         const rwsHalfAz = this.antenna.getAzimuth('rws') / 2;
-        // Narrow tracking cone — wide enough to tolerate inter-frame target movement,
-        // narrow enough to concentrate illumination energy on the locked target.
-        const STT_BEAM_DEG = 25;
-
         const currentSttTrack = this.getSttTrack();
         const targets = entities.filter(e => e.id !== this.owner?.id);
 
