@@ -1,21 +1,21 @@
 import { decoySettings } from '../settings';
 
-// A deployed chaff cloud. Represented geometrically as a Phaser circle: when a
+// A deployed chaff cloud. Represented visually as a sprite and geometrically as
+// a circle: when a
 // radar beam (raycast line) passes through it, the receiver may fail to return
 // the signal (see Receiver.isBlockedByDecoy). It drifts nowhere — it lingers in
 // place and fades over its lifetime, so the player can manoeuvre to put it
 // between their ship and a threat radar.
 export class Decoy {
-  private readonly visual: Phaser.GameObjects.Arc;
+  private readonly visual: Phaser.GameObjects.Image;
   private readonly createdAt: number;
   private readonly radius: number;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     this.radius = decoySettings.RADIUS;
     this.createdAt = scene.time.now;
-    this.visual = scene.add
-      .circle(x, y, this.radius, 0xffaa00, 0.18)
-      .setStrokeStyle(1, 0xffaa00, 0.5);
+    this.visual = scene.add.image(x, y, 'chaff').setAlpha(0.75);
+    this.visual.setDisplaySize(this.radius * 2, this.radius * 2);
   }
 
   // Geometry used for beam-intersection tests.
@@ -30,7 +30,7 @@ export class Decoy {
   // Fade the cloud out across its lifetime.
   update(now: number): void {
     const t = (now - this.createdAt) / decoySettings.LIFETIME_MS;
-    this.visual.setAlpha(Math.max(0, 0.18 * (1 - t)));
+    this.visual.setAlpha(Math.max(0, 0.75 * (1 - t)));
   }
 
   destroy(): void {

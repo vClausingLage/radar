@@ -1,32 +1,19 @@
 import { Track } from "../../radar/data/track";
 import { Asteroid } from "../../entities/asteroid";
 import { Missile } from "../../entities/missiles";
-import { Loadout } from "../../types";
+import { Loadout } from "../data/types";
 
 import { Pulse } from "../systems/modules/emitter";
 import { Vector2 } from "../../types";
+import { JAMMER_CONE_DEG } from "../data/radarGameSettings";
+import { JammerHudStatus } from "../systems/modules/jammer";
 
-interface IRadarRenderer {
-  update(
-    graphics: Phaser.GameObjects.Graphics,
-    radarPosition: Vector2,
-    radarRange: number,
-    scanStartAngle: number,
-    scanEndAngle: number,
-    activeMissiles: Missile[],
-    loadout: Loadout,
-    vim220Waypoints: Vector2[],
-    pulse?: Pulse,
-    sttMode?: boolean,
-    vim220TimeToActive?: number | null,
-    missileRange?: number | null,
-  ): void;
-}
-
-export class RadarRenderer implements IRadarRenderer {
+export class RadarRenderer {
 
   private rangeText: Phaser.GameObjects.Text | undefined;
   private activeLoadout: Phaser.GameObjects.Text | undefined;
+  // Jammer status readout, pinned to the left (start-angle) edge of the cone.
+  private jammerText: Phaser.GameObjects.Text | undefined;
   private scene: Phaser.Scene | null = null;
 
   setScene(scene: Phaser.Scene) {
@@ -38,7 +25,7 @@ export class RadarRenderer implements IRadarRenderer {
     graphics.strokeLineShape(pulse.line);
   }
 
-  renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, activeMissiles: Missile[], loadout: Loadout, vim220Waypoints: Vector2[] = [], vim220TimeToActive: number | null = null): void {
+  renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, activeMissiles: Missile[], loadout: Loadout, vim220Waypoints: Vector2[] = [], vim220TimeToActive: number | null = null, jammerStatus: JammerHudStatus | null = null, vim220WaypointAlpha = 1): void {
     const endX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(endAngle));
     const endY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(endAngle));
     
@@ -91,20 +78,34 @@ export class RadarRenderer implements IRadarRenderer {
       }
     }
 
-    this.renderVim220Waypoints(graphics, vim220Waypoints);
+    // Jammer status on the left (start-angle) cone edge, mirroring the loadout
+    // readout on the right edge.
+    if (jammerStatus) {
+      if (!this.jammerText && this.scene) {
+        this.jammerText = this.scene.add.text(startX, startY, '', { color: jammerStatus.color });
+      }
+      if (this.jammerText) {
+        this.jammerText.setText(`\n ${jammerStatus.label}`);
+        this.jammerText.setColor(jammerStatus.color);
+        this.jammerText.setPosition(startX, startY);
+        this.jammerText.setRotation(Phaser.Math.DegToRad(startAngle + 90));
+      }
+    }
+
+    this.renderVim220Waypoints(graphics, vim220Waypoints, vim220WaypointAlpha);
   }
 
 
-  private renderVim220Waypoints(graphics: Phaser.GameObjects.Graphics, waypoints: Vector2[]): void {
-    if (waypoints.length === 0) return;
+  private renderVim220Waypoints(graphics: Phaser.GameObjects.Graphics, waypoints: Vector2[], alpha = 1): void {
+    if (waypoints.length === 0 || alpha <= 0) return;
 
     // Direction leg between WP1 (steer-to) and WP2 (direction point).
     if (waypoints.length >= 2) {
-      graphics.lineStyle(1, 0xffff00, 0.6);
+      graphics.lineStyle(1, 0xffff00, 0.6 * alpha);
       graphics.lineBetween(waypoints[0].x, waypoints[0].y, waypoints[1].x, waypoints[1].y);
     }
 
-    graphics.fillStyle(0xffff00, 1);
+    graphics.fillStyle(0xffff00, alpha);
     waypoints.forEach((point) => {
       this.fillPentagon(graphics, point.x, point.y, 5);
     });
@@ -118,6 +119,27 @@ export class RadarRenderer implements IRadarRenderer {
       points.push({ x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius });
     }
     graphics.fillPoints(points, true);
+  }
+
+  // Jamming cone projected ahead of the ship while its jammer is active. Drawn
+  // as a translucent red wedge so the player can see the spoofing coverage.
+  renderJammerCone(
+    graphics: Phaser.GameObjects.Graphics,
+    position: Vector2,
+    facingDeg: number,
+    range: number,
+  ): void {
+    const half = JAMMER_CONE_DEG / 2;
+    const startRad = Phaser.Math.DegToRad(facingDeg - half);
+    const endRad = Phaser.Math.DegToRad(facingDeg + half);
+
+    graphics.fillStyle(0xff0000, 0.12);
+    graphics.beginPath();
+    graphics.moveTo(position.x, position.y);
+    graphics.lineTo(position.x + Math.cos(startRad) * range, position.y + Math.sin(startRad) * range);
+    graphics.arc(position.x, position.y, range, startRad, endRad, false);
+    graphics.closePath();
+    graphics.fillPath();
   }
 
   renderRwsContacts(graphics: Phaser.GameObjects.Graphics, track: Track): void {
@@ -167,8 +189,10 @@ export class RadarRenderer implements IRadarRenderer {
   destroy(): void {
     this.rangeText?.destroy();
     this.activeLoadout?.destroy();
+    this.jammerText?.destroy();
     this.rangeText = undefined;
     this.activeLoadout = undefined;
+    this.jammerText = undefined;
   }
 
   update(
@@ -184,6 +208,8 @@ export class RadarRenderer implements IRadarRenderer {
     sttMode = false,
     vim220TimeToActive: number | null = null,
     missileRange: number | null = null,
+    jammerStatus: JammerHudStatus | null = null,
+    vim220WaypointAlpha = 1,
   ): void {
     if (pulse) {
       this.renderPulse(graphics, pulse, sttMode);
@@ -205,6 +231,8 @@ export class RadarRenderer implements IRadarRenderer {
       loadout,
       vim220Waypoints,
       vim220TimeToActive,
+      jammerStatus,
+      vim220WaypointAlpha,
     );
   }
 
@@ -227,7 +255,7 @@ export class RadarRenderer implements IRadarRenderer {
     const py = dx;
     const cap = 12;
 
-    graphics.lineStyle(2, 0x00ff00, 0.9);
+    graphics.lineStyle(1, 0x00ff00, 0.3);
     graphics.lineBetween(position.x, position.y, endX, endY);
     graphics.lineBetween(position.x - px * cap, position.y - py * cap, position.x + px * cap, position.y + py * cap);
     graphics.lineBetween(endX - px * cap, endY - py * cap, endX + px * cap, endY + py * cap);

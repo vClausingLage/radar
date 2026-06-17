@@ -36,6 +36,11 @@ export class PlayerController {
     if (!this.ship.active || !this.ship.scene) return;
     this.ship.radar.cycleLoadout();
   };
+  // J → activate the jammer (10 s burst, 20 s cooldown from activation)
+  private onKeyDownJ = () => {
+    if (!this.ship.active || !this.ship.scene) return;
+    this.ship.radar.activateJammer();
+  };
 
   // ── Weapons ───────────────────────────────────────────────────────────
   // Space → fire (VIM-177 requires STT lock)
@@ -71,6 +76,7 @@ export class PlayerController {
     kb?.on('keydown-T', this.onKeyDownT);
     kb?.on('keydown-ESC', this.onKeyDownEsc);
     kb?.on('keydown-Q', this.onKeyDownQ);
+    kb?.on('keydown-J', this.onKeyDownJ);
     kb?.on('keydown-SPACE', this.onKeyDownSpace);
     this.scene.input.on('pointerdown', this.onPointerDown);
   }
@@ -86,6 +92,7 @@ export class PlayerController {
     kb?.off('keydown-T', this.onKeyDownT);
     kb?.off('keydown-ESC', this.onKeyDownEsc);
     kb?.off('keydown-Q', this.onKeyDownQ);
+    kb?.off('keydown-J', this.onKeyDownJ);
     kb?.off('keydown-SPACE', this.onKeyDownSpace);
     this.scene.input.off('pointerdown', this.onPointerDown);
   }

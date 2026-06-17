@@ -1,6 +1,7 @@
 import { Radar } from '../radar/systems/radar';
 import { Target } from '../entities/ship';
 import { Track } from '../radar/data/track';
+import { world } from '../settings';
 
 enum AIState {
     PATROL,      // No contacts, wandering
@@ -130,8 +131,41 @@ export class AiUnitController {
                 break;
         }
 
+        // Border avoidance overrides the state's steering when the ship is about
+        // to drive off the edge of the world.
+        this.avoidBorder();
+
         this.applyMovement();
         this.updateDebugText();
+    }
+
+    // If the ship is within BORDER_MARGIN of an edge *and heading further toward
+    // it*, steer back inward. Only the outward axes are corrected, so a ship
+    // skimming a wall parallel to it is left alone. Returns true if it steered.
+    private avoidBorder(): boolean {
+        const margin = world.BORDER_MARGIN;
+        const { x, y } = this.ship;
+        const rad = Phaser.Math.DegToRad(this.ship.angle);
+        const dirX = Math.cos(rad);
+        const dirY = Math.sin(rad);
+
+        let steerX = 0;
+        if (x < margin && dirX < 0) steerX = 1;
+        else if (x > world.WIDTH - margin && dirX > 0) steerX = -1;
+
+        let steerY = 0;
+        if (y < margin && dirY < 0) steerY = 1;
+        else if (y > world.HEIGHT - margin && dirY > 0) steerY = -1;
+
+        if (steerX === 0 && steerY === 0) return false;
+
+        // Steer toward a point inward on the offending axis, keeping the current
+        // heading on the axis that is still safe.
+        this.turnToward({
+            x: x + (steerX !== 0 ? steerX : dirX) * 1000,
+            y: y + (steerY !== 0 ? steerY : dirY) * 1000,
+        });
+        return true;
     }
 
     private updateSttLockTracking(sttTargetId: number | null): void {

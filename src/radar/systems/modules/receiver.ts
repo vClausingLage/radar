@@ -1,6 +1,7 @@
 import { RadarReturn } from '../../data/radarReturn';
 import { Vector2 } from '../../../types';
 import { decoySettings } from '../../../settings';
+import { JammerError } from './jammer';
 
 export class Receiver {
   // A beam from `from` to `to` may be blocked by chaff: for each decoy cloud the
@@ -45,5 +46,32 @@ export class Receiver {
     }
 
     return returns;
+  }
+
+  // Jamming variant of processHits: every real hit is displaced by the *same*
+  // bearing/range offset before the normal detection test runs. Because the
+  // offset is shared, the spoofed returns stay clustered and the tracking
+  // computer forms a single coherent false track — offset from (and replacing)
+  // the real contact, since the genuine returns are discarded here.
+  createFakeHits(
+    hits: { point: Phaser.Math.Vector2 }[],
+    ownerPos: Vector2,
+    maxRange: number,
+    error: JammerError,
+  ): RadarReturn[] {
+    const spoofed = hits.map((hit) => {
+      const dx = hit.point.x - ownerPos.x;
+      const dy = hit.point.y - ownerPos.y;
+      const range = Math.max(0, Math.sqrt(dx * dx + dy * dy) + error.distance);
+      const angleRad = Math.atan2(dy, dx) + Phaser.Math.DegToRad(error.angle);
+      return {
+        point: new Phaser.Math.Vector2(
+          ownerPos.x + Math.cos(angleRad) * range,
+          ownerPos.y + Math.sin(angleRad) * range,
+        ),
+      };
+    });
+
+    return this.processHits(spoofed, ownerPos, maxRange);
   }
 }

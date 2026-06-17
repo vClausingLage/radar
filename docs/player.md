@@ -46,6 +46,7 @@ See [radar.md](radar.md) for how the simulation actually works under the hood.
 | **Q** | Cycle active weapon (VIM-177 ↔ VIM-220) |
 | **Space** | Fire the active weapon |
 | **T** | Deploy a decoy (chaff) |
+| **J** | Activate the jammer (10 s burst, 20 s cooldown) |
 | **Shift + Click** | Place a VIM-220 mid-course waypoint (VIM-220 selected) |
 | **Mouse + / −** buttons | Zoom the camera |
 
@@ -61,6 +62,30 @@ passes through a cloud, the return may be lost — so if you manoeuvre so a clou
 sits **between your ship and a threat radar (or an incoming missile)**, you can
 break its lock. It's probabilistic: a single cloud won't always work, and
 stacking several in the line improves your odds.
+
+## Jammer (active deception)
+
+Press **J** to fire up the jammer for **10 seconds**; it then needs **20 seconds**
+(from the moment you switched it on) before it can run again. While active, a
+translucent red wedge shows the **jamming cone** — a 20° arc straight ahead of
+your ship, out to radar range.
+
+Any enemy radar that **paints your ship while sitting inside that cone** gets
+fooled: instead of seeing you where you are, its search/track modes (RWS/TWS)
+build a **false contact** offset from your real position by a random bearing and
+range. Your real return vanishes and the ghost takes its place, so the enemy
+chases a target that isn't there.
+
+A few things to keep in mind:
+
+- **Point the cone at the threat.** The jammer only works against radars in the
+  20° arc in front of you — turn to keep the threat boxed in.
+- **It won't fake an STT lock.** A radar that has already locked you (pouring all
+  its energy into one beam) is too strong to spoof — but jamming can still
+  *flicker* the return and, with luck, **break the lock**. Combine it with chaff
+  (**T**) for the best chance.
+- **Mind the cooldown.** Ten seconds on, then a forced wait — don't waste a burst
+  before the threat is actually looking at you.
 
 ---
 
@@ -84,7 +109,9 @@ stacking several in the line improves your odds.
    - First Shift+click = **waypoint 1** (a point to fly to).
    - Second Shift+click = **waypoint 2** (sets the heading after WP1).
    - A third Shift+click starts a new route.
-   The route is drawn in yellow and is handed to each VIM-220 you fire.
+   The route is drawn in yellow and is handed to each VIM-220 you fire. It
+   fades away once the missile carrying it passes the first waypoint or is
+   destroyed.
 4. Press **Space**. Each press launches one missile at the **nearest**
    un-engaged track; the next press takes the next-nearest, and so on.
 5. The missile flies the waypoints / its assigned track until its own radar
@@ -98,7 +125,10 @@ stacking several in the line improves your odds.
 
 - **Contact boxes** — tracked targets. Red = your STT lock.
 - **Cone-edge readout** — active weapon name, remaining rounds, current range,
-  and the **TTA** line for the last VIM-220 fired.
+  and the **TTA** line for the last VIM-220 fired (right edge of the cone).
+- **Jammer status** — on the **left** edge of the cone: green `JAM RDY` when
+  available, red `JAM 9s` counting down while active, grey `JAM CD 14s` during
+  cooldown.
 - **Yellow dots / line** — your placed VIM-220 waypoints and the direction leg.
 - **RWR panel (bottom-left)** — diamonds on bearings where something is
   emitting at you; red means you are locked.

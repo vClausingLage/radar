@@ -2,8 +2,6 @@ import Phaser from 'phaser';
 import { SARHMissile, ActiveRadarMissile } from './missiles';
 import type { Ship } from './ship';
 
-/* eslint-disable @typescript-eslint/no-namespace */
-
 const missileCategoryByScene = new WeakMap<Phaser.Scene, number>();
 
 const getMissileCollisionCategory = (scene: Phaser.Scene): number => {

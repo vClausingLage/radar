@@ -108,10 +108,15 @@ export class PlayerShip extends Ship {
         this.setScale(.7);
     }
 
-    // Deploy a chaff cloud at the ship's current position.
+    // Deploy a chaff cloud at the ship's current position (slightly behind the ship).
     deployDecoy(): void {
         if (this.remainingDecoys <= 0) return;
-        this.decoys.push(new Decoy(this.scene, this.x, this.y));
+        const spawnDistance = this.getCircle().radius;
+        const rearDirectionRad = Phaser.Math.DegToRad(this.getDirection() + 180);
+        const decoyX = this.x + Math.cos(rearDirectionRad) * spawnDistance;
+        const decoyY = this.y + Math.sin(rearDirectionRad) * spawnDistance;
+
+        this.decoys.push(new Decoy(this.scene, decoyX, decoyY));
         this.remainingDecoys--;
     }
 
@@ -119,7 +124,7 @@ export class PlayerShip extends Ship {
         return this.remainingDecoys;
     }
 
-    // Prune expired clouds (and fade the live ones), then return the survivors.
+    // Prune expired chaff (and fade the live ones), then return the survivors.
     getActiveDecoys(): Decoy[] {
         const now = this.scene.time.now;
         this.decoys = this.decoys.filter(d => {

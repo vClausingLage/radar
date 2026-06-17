@@ -55,10 +55,7 @@ export class SARHMissile extends Phaser.Physics.Matter.Sprite implements BaseMis
         super(scene.matter.world, params.x, params.y, 'missile');
         this.direction = { x: params.dirX, y: params.dirY };
         scene.add.existing(this);
-        // Remove air friction for space physics
-        this.setFrictionAir(0);
-        // Set collision body size (width, height)
-        // this.setSize(50, 50);
+        this.setFrictionAir(0); // Remove air friction for space physics
         this.updateHeading(params.dirX, params.dirY);
     }
 }
@@ -98,10 +95,7 @@ export class ActiveRadarMissile extends Phaser.Physics.Matter.Sprite implements 
         super(scene.matter.world, params.x, params.y, 'missile');
         this.direction = { x: params.dirX, y: params.dirY };
         scene.add.existing(this);
-        // Remove air friction for space physics
-        this.setFrictionAir(0);
-        // Set collision body size (width, height)
-        // this.setSize(8, 8);
+        this.setFrictionAir(0); // Remove air friction for space physics
         this.updateHeading(params.dirX, params.dirY);
     }
 }

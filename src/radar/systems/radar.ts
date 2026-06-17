@@ -1,42 +1,28 @@
 import { PlayerShip, Target } from "../../entities/ship";
-import { Asteroid } from "../../entities/asteroid";
-import { Track } from "../data/track";
 
+import { Antenna } from "./modules/antenna";
 import { Emitter } from "./modules/emitter";
+import { Receiver } from "./modules/receiver";
 import { TrackingComputer } from "./modules/trackingComputer";
-import { MissileGuidance } from "./modules/missileGuidance";
-
 import { RwrReceiver } from "./modules/rwr";
+import { MissileGuidance } from "./modules/missileGuidance";
+import { LoadoutManager } from "./modules/loadoutManager";
+import { Jammer, JammerError, JammerHudStatus } from "./modules/jammer";
+
+import { Track } from "../data/track";
+import { Entity, Mode } from "../data/types";
 
 import { InterfaceRenderer } from "../renderer/interfaceRenderer";
 import { RadarRenderer } from "../renderer/radarRenderer";
 
-import { playerShipSettings } from "../../settings";
-import { Loadout, Vector2 } from "../../types";
-
+import { Vector2 } from "../../types";
 import { Ray } from "../../physics/ray";
-import { Receiver } from "./modules/receiver";
+import { RadarEventEmitter } from "./game/radarEventEmitter";
+
 import { Missile, ActiveRadarMissile, MISSILE_FLIGHT } from "../../entities/missiles";
+import { MAX_TWS_TRACKS, PHYSICS_FPS, STT_LOCK_BREAK_FRAMES, JAMMER_STT_DEGRADE_PROB, VIM220_WAYPOINT_FADE_MS } from "../data/radarGameSettings";
 
-export interface IRadar {
-    // TODO implement
-}
-
-type Mode = 'rws' | 'tws' | 'stt';
-
-type Entity = PlayerShip | Target | Asteroid;
-
-// Frames without a return before STT lock breaks (~0.75 s at 60 fps).
-const STT_LOCK_BREAK_FRAMES = 45;
-
-// TWS tracks at most this many targets simultaneously.
-const MAX_TWS_TRACKS = 3;
-
-// Physics steps per second (Matter default), used to convert the missiles'
-// per-step speed and per-second burn time into a max-range distance (px).
-const PHYSICS_FPS = 60;
-
-export class Radar implements IRadar {
+export class Radar {
     private owner: Entity | null = null;
 
     private mode: Mode = 'rws';
@@ -63,6 +49,11 @@ export class Radar implements IRadar {
 
     public rwrReceiver = new RwrReceiver();
     public loadoutManager = new LoadoutManager();
+    public jammer = new Jammer();
+
+    // Error captured if an enemy jammer spoofed this radar during the current
+    // RWS sweep; applied to the buffered hits at sweepComplete, then cleared.
+    private sweepJammerError: JammerError | null = null;
 
     public eventEmitter = new RadarEventEmitter();
 
@@ -73,6 +64,11 @@ export class Radar implements IRadar {
     // VIM-220 mid-course waypoints (player-placed, up to two: a steer-to point
     // and a direction point). Assigned to each VIM-220 fired while present.
     private vim220Waypoints: Vector2[] = [];
+    // The most recently fired VIM-220 carrying the displayed route. Once it
+    // passes its first waypoint or is destroyed, the displayed route fades out.
+    private vim220RouteMissile: ActiveRadarMissile | null = null;
+    // Timestamp (scene.time.now) the waypoint fade-out began, or null.
+    private vim220WaypointsFadeStart: number | null = null;
 
     private raycaster = new Ray();
 
@@ -172,6 +168,18 @@ export class Radar implements IRadar {
         return this.trackingComputer.getTracks().find(t => t.id === this.sttTrackId) ?? null;
     }
 
+    // ── Jammer ─────────────────────────────────────────────────────────────
+
+    // Trigger a jamming burst (player input). No-op while active or cooling down.
+    activateJammer(): void {
+        this.jammer.activate(this.scene.time.now);
+    }
+
+    // Cone-readout status for the jammer (active/cooldown/ready countdown).
+    getJammerHudStatus(): JammerHudStatus {
+        return this.jammer.getHudStatus(this.scene.time.now);
+    }
+
     // ── Loadout ────────────────────────────────────────────────────────────
 
     cycleLoadout(): void {
@@ -184,11 +192,19 @@ export class Radar implements IRadar {
     addVim220Waypoint(point: { x: number; y: number }): void {
         if (this.loadoutManager.getActiveType() !== 'VIM-220') return;
         if (this.vim220Waypoints.length >= 2) this.vim220Waypoints = [];
+        // A freshly-placed route shows solid and is owned by no missile yet.
+        this.cancelVim220WaypointFade();
         this.vim220Waypoints.push({ x: point.x, y: point.y });
     }
 
     clearVim220Waypoints(): void {
         this.vim220Waypoints = [];
+        this.cancelVim220WaypointFade();
+    }
+
+    private cancelVim220WaypointFade(): void {
+        this.vim220WaypointsFadeStart = null;
+        this.vim220RouteMissile = null;
     }
 
     // Build a per-missile route copy from the current waypoints, or null if none
@@ -200,6 +216,38 @@ export class Radar implements IRadar {
             ? { ...this.vim220Waypoints[1] }
             : { ...this.vim220Waypoints[0] };
         return { first, directionPoint, reachedFirst: false };
+    }
+
+    // Fade and eventually clear the displayed waypoints once the missile that
+    // owns them has passed its first waypoint (route consumed) or been destroyed.
+    private updateVim220WaypointFade(): void {
+        if (this.vim220Waypoints.length === 0) return;
+
+        // Begin the fade on the triggering event.
+        if (this.vim220WaypointsFadeStart === null && this.vim220RouteMissile) {
+            const missile = this.vim220RouteMissile;
+            const passed = missile.waypointRoute?.reachedFirst ?? false;
+            const destroyed = !missile.active;
+            if (passed || destroyed) {
+                this.vim220WaypointsFadeStart = this.scene.time.now;
+            }
+        }
+
+        // Advance the fade; clear the route once it completes.
+        if (this.vim220WaypointsFadeStart !== null) {
+            const elapsed = this.scene.time.now - this.vim220WaypointsFadeStart;
+            if (elapsed >= VIM220_WAYPOINT_FADE_MS) {
+                this.vim220Waypoints = [];
+                this.cancelVim220WaypointFade();
+            }
+        }
+    }
+
+    // Current opacity (0–1) for the displayed waypoints, driving the fade-out.
+    private getVim220WaypointAlpha(): number {
+        if (this.vim220WaypointsFadeStart === null) return 1;
+        const elapsed = this.scene.time.now - this.vim220WaypointsFadeStart;
+        return Phaser.Math.Clamp(1 - elapsed / VIM220_WAYPOINT_FADE_MS, 0, 1);
     }
 
     // ── Firing ────────────────────────────────────────────────────────────
@@ -286,6 +334,12 @@ export class Radar implements IRadar {
 
         this.activeMissiles.push(missile);
         this.lastVim220 = missile;
+        // If this shot carries a route, it now owns the displayed waypoints —
+        // they fade once it passes them or dies (see updateVim220WaypointFade).
+        if (missile.waypointRoute) {
+            this.vim220RouteMissile = missile;
+            this.vim220WaypointsFadeStart = null;
+        }
         this.loadoutManager.decrementLoad('VIM-220');
     }
 
@@ -332,6 +386,8 @@ export class Radar implements IRadar {
 
         // Age out stale RWR contacts (incoming-emission warnings).
         this.rwrReceiver.tick(this.scene.time.now);
+        // Advance jammer active/cooldown state before any isActive() check.
+        this.jammer.tick(this.scene.time.now);
 
         // If the locked STT target was destroyed, drop the dangling reference
         // before anything reads its (now-undefined) body position.
@@ -357,6 +413,8 @@ export class Radar implements IRadar {
             targets: targetShips,
             decoyCircles,
         });
+
+        this.updateVim220WaypointFade();
 
         if (this.mode === 'stt') {
             this.updateStt(ownerPos, shipDirection, entities, graphics, decoyCircles);
@@ -386,13 +444,24 @@ export class Radar implements IRadar {
             scanStartAngle, scanEndAngle,
             [], this.loadoutManager.getLoadout(), this.vim220Waypoints, pulse, false,
             this.getLastVim220TimeToActive(), this.getActiveMissileRange(),
+            this.getJammerHudStatus(), this.getVim220WaypointAlpha(),
         );
+
+        // Render our own jamming cone while the jammer is running.
+        if (this.jammer.isActive()) {
+            this.radarRenderer?.renderJammerCone(graphics, ownerPos, shipDirection, this.range);
+        }
 
         const targets = entities.filter(e => e.id !== this.owner?.id);
 
         // Search illumination: any ship the beam touches detects the emission as
         // a (non-locked) RWR contact — shown as a green diamond on its RWR.
         this.illuminateRwr(targets, pulse.line, ownerPos, false);
+
+        // If an enemy jammer paints us this frame, remember its spoof error for
+        // the rest of the sweep — the buffered hits are rewritten at sweepComplete.
+        const jamError = this.detectJamming(targets, pulse.line, ownerPos);
+        if (jamError) this.sweepJammerError = jamError;
 
         const nearestPoint = this.nearestHit(pulse.line, ownerPos, targets);
         // Chaff between the antenna and the target can swallow the return.
@@ -401,11 +470,16 @@ export class Radar implements IRadar {
         }
 
         if (sweepComplete) {
-            const returns = this.receiver.processHits(this.sweepBuffer, ownerPos, this.range);
+            // A jammed sweep rewrites every buffered hit into one coherent false
+            // track (replacing the real return); an un-jammed sweep is normal.
+            const returns = this.sweepJammerError
+                ? this.receiver.createFakeHits(this.sweepBuffer, ownerPos, this.range, this.sweepJammerError)
+                : this.receiver.processHits(this.sweepBuffer, ownerPos, this.range);
             // TWS caps simultaneous tracks; RWS searches without a cap.
             const maxTracks = this.mode === 'tws' ? MAX_TWS_TRACKS : Infinity;
             this.trackingComputer.update(returns, ownerPos, undefined, maxTracks);
             this.sweepBuffer = [];
+            this.sweepJammerError = null;
         }
 
         for (const track of this.trackingComputer.getTracks()) {
@@ -475,13 +549,24 @@ export class Radar implements IRadar {
             shipDirection - rwsHalfAz, shipDirection + rwsHalfAz,
             [], this.loadoutManager.getLoadout(), this.vim220Waypoints, pulse, true,
             this.getLastVim220TimeToActive(), this.getActiveMissileRange(),
+            this.getJammerHudStatus(), this.getVim220WaypointAlpha(),
         );
+
+        // Render our own jamming cone while the jammer is running.
+        if (this.jammer.isActive()) {
+            this.radarRenderer?.renderJammerCone(graphics, ownerPos, shipDirection, this.range);
+        }
 
         // Single ray pointed at locked target; processed immediately (no buffer).
         // Chaff in the beam can swallow the return, starving the lock until it
         // breaks (the missed-frame counter below handles that).
         const rawHit = this.nearestHit(pulse.line, ownerPos, targets);
-        const hit = rawHit && !this.receiver.isBlockedByDecoy(ownerPos, rawHit, decoyCircles)
+        // STT energy overpowers the jammer, so the return is not spoofed — but a
+        // jammed frame has a chance to swallow it, feeding the lock-break counter.
+        const jammed = this.detectJamming(targets, pulse.line, ownerPos) !== null;
+        const hit = rawHit
+            && !this.receiver.isBlockedByDecoy(ownerPos, rawHit, decoyCircles)
+            && !(jammed && Math.random() < JAMMER_STT_DEGRADE_PROB)
             ? rawHit
             : null;
         const rawHits = hit ? [{ point: hit }] : [];
@@ -539,6 +624,29 @@ export class Radar implements IRadar {
         }
     }
 
+    // Return the spoof error of the first enemy jammer affecting us this frame,
+    // or null. A jammer affects us only when our beam actually paints the
+    // jamming ship *and* we (the emitter) sit inside its jamming cone.
+    private detectJamming(
+        targets: Entity[],
+        line: Phaser.Geom.Line,
+        ownerPos: { x: number; y: number },
+    ): JammerError | null {
+        for (const entity of targets) {
+            if (!('radar' in entity)) continue;
+            const tgt = entity as PlayerShip | Target;
+            if (!tgt.radar.jammer.isActive()) continue;
+
+            const polygon = this.raycaster.getBodyPolygons(entity);
+            if (!Phaser.Geom.Intersects.GetLineToPolygon(line, polygon)) continue;
+
+            if (tgt.radar.jammer.covers(tgt.getPosition(), tgt.getDirection(), ownerPos, this.range)) {
+                return tgt.radar.jammer.getError();
+            }
+        }
+        return null;
+    }
+
     private nearestHit(
         line: Phaser.Geom.Line,
         ownerPos: { x: number; y: number },
@@ -577,97 +685,5 @@ export class Radar implements IRadar {
     }
     getTracks(): Track[] {
         return this.trackingComputer.getTracks();
-    }
-}
-
-// ── Supporting classes ────────────────────────────────────────────────────
-
-class RadarEventEmitter {
-    private emitter: Phaser.Events.EventEmitter = new Phaser.Events.EventEmitter();
-
-    emitLockEvent(): void {
-        this.emitter.emit('lock');
-    }
-
-    // Called on the TARGET's radar when it is being STT-illuminated.
-    onRwrLock(): void {
-        this.emitter.emit('rwr-lock');
-    }
-
-    on(event: string, callback: () => void): void {
-        this.emitter.on(event, callback);
-    }
-    off(event: string, callback: () => void): void {
-        this.emitter.off(event, callback);
-    }
-}
-
-
-class LoadoutManager {
-    private loadout: Loadout = playerShipSettings.LOADOUT;
-    private activeType: string = 'VIM-177';
-
-    setLoadout(loadout: Loadout): void {
-        this.loadout = loadout;
-    }
-    getLoadout(): Loadout {
-        return this.loadout;
-    }
-    getActiveType(): string {
-        return this.activeType;
-    }
-
-    cycleActive(): void {
-        const types = Object.keys(this.loadout);
-        const idx = types.indexOf(this.activeType);
-        this.activeType = types[(idx + 1) % types.length];
-        // Sync the per-entry active flag so the HUD and firing logic agree.
-        for (const type of types) {
-            this.loadout[type].active = type === this.activeType;
-        }
-    }
-
-    decrementLoad(type: string): void {
-        if (this.loadout[type]) {
-            this.loadout[type].load = Math.max(0, this.loadout[type].load - 1);
-        }
-    }
-}
-
-class Antenna {
-    private angleOffset: number = 0;
-    private step: number = 1;
-    private sweepDirection: 1 | -1 = 1;
-
-    update(mode: Mode, shipDirection: number): { direction: number; sweepComplete: boolean } {
-        let sweepComplete = false;
-        const halfAzimuth = this.getAzimuth(mode) / 2;
-
-        if (this.angleOffset < -halfAzimuth || this.angleOffset > halfAzimuth) {
-            this.angleOffset = -halfAzimuth;
-            this.sweepDirection = 1;
-        }
-
-        this.angleOffset += this.step * this.sweepDirection;
-
-        if (this.angleOffset >= halfAzimuth) {
-            this.angleOffset = halfAzimuth;
-            this.sweepDirection = -1;
-            sweepComplete = true;
-        } else if (this.angleOffset <= -halfAzimuth) {
-            this.angleOffset = -halfAzimuth;
-            this.sweepDirection = 1;
-            sweepComplete = true;
-        }
-
-        return { direction: shipDirection + this.angleOffset, sweepComplete };
-    }
-
-    public getAzimuth(mode: Mode): number {
-        switch (mode) {
-            case 'rws': return 60;
-            case 'tws': return 45;
-            case 'stt': return 60; // same cone as rws; STT locks beam direction, not cone width
-        }
     }
 }

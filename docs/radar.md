@@ -83,6 +83,32 @@ frame):
 > scan**, not physics pixels-per-step. Missile guidance must not feed
 > `track.speed` into a lead-intercept solver directly (see MissileGuidance).
 
+`createFakeHits()` is the jamming variant of `processHits()`: it displaces every
+buffered hit by a *single shared* bearing/range offset before running the same
+detection test. The shared offset keeps the spoofed returns clustered, so the
+tracking computer forms one coherent **false track** that replaces the real
+contact (the genuine returns are discarded). See `Jammer` below.
+
+### `modules/jammer.ts` — `Jammer`
+Active radar deception. Owned by every ship's radar (like `RwrReceiver`), though
+only the player triggers it (key **J**). A burst runs for `JAMMER_DURATION_MS`,
+then sits on cooldown until `JAMMER_COOLDOWN_MS` have elapsed *from activation*.
+While active it projects a `JAMMER_CONE_DEG` cone ahead of the ship.
+
+The victim radar drives the effect, not the jammer: each frame `Radar.detectJamming()`
+checks every contact and a jammer "takes" if **(a)** the victim's beam actually
+paints the jamming ship and **(b)** the victim sits inside that jammer's cone
+(`Jammer.covers()`). On a hit:
+
+- **RWS/TWS** — the sweep's hits are routed through `Receiver.createFakeHits()`
+  with the jammer's error, producing a ghost track offset from (and replacing)
+  the real one. The error is rolled once per activation, so the ghost is stable.
+- **STT** — the concentrated beam is *not* spoofed; instead each jammed frame has
+  a `JAMMER_STT_DEGRADE_PROB` chance to swallow the return, feeding the existing
+  missed-frame lock-break counter. So a jammer can *starve* a lock but not fake it.
+
+All tunables live in `radar/data/radarGameSettings.ts`.
+
 ### `modules/rwr.ts` — `RwrReceiver`
 Radar Warning Receiver. A passive receiver: when another ship's emission hits
 this ship it records an `RwrContact` (bearing, locked?, timestamp). Contacts
@@ -109,7 +135,8 @@ fallback that simply points at the target's current position.
 
 ### `renderer/radarRenderer.ts` — `RadarRenderer`
 Draws the cone, sweep/lock beam, contact boxes, the loadout/range/TTA readout
-at the cone edge, and VIM-220 waypoints. **Player-only** — created in the ship
+on the right cone edge, the jammer status readout on the left cone edge, the
+jamming cone wedge, and VIM-220 waypoints. **Player-only** — created in the ship
 factory and injected via `radar.setRadarRenderer()`. Draws directly to the
 scene's shared `Graphics` object, which `main.ts` clears each frame.
 
@@ -156,3 +183,5 @@ for the VIM-220 the active-radar activation time, range and azimuth.
 - Tracking behaviour is tuned entirely by the constants at the top of
   `trackingComputer.ts` (`CLUSTER_RADIUS`, `GATE_RADIUS`, `TRIM_FRACTION`,
   `ALPHA`, `BETA`, `MAX_MISSED_SCANS`).
+- Jammer behaviour (duration, cooldown, cone width, error magnitude, STT degrade
+  chance) is tuned by the `JAMMER_*` constants in `radar/data/radarGameSettings.ts`.

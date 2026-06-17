@@ -4,6 +4,14 @@ import { Vector2 } from "./types"
 export const IMAGE_SCALE = 1
 export const CAMERA_ZOOM = .8
 
+// WORLD bounds (matches matter.world.setBounds in main.ts).
+export const world = {
+    WIDTH: 2500,
+    HEIGHT: 2500,
+    // How close (px) to an edge a ship may get before AI steers away from it.
+    BORDER_MARGIN: 300,
+}
+
 // PLAYER SHIP
 export const playerShipSettings = {
     SPEED: .1,
@@ -58,9 +66,9 @@ export const targetShipSettings = {
 // DECOYS (Täuschkörper / chaff)
 export const decoySettings = {
     COUNT: 5,                 // how many the player carries
-    RADIUS: 70,               // px — size of the chaff cloud
+    RADIUS: 50,               // px — size of the chaff cloud
     LIFETIME_MS: 8000,        // how long a cloud lingers before dissipating
-    BLOCK_PROBABILITY: 0.5,   // chance a beam passing through is blocked
+    BLOCK_PROBABILITY: 0.7,   // chance a beam passing through is blocked
 }
 
 // MISSILES

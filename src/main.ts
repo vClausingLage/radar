@@ -4,7 +4,7 @@ import { createPlayerShipFactory } from "./entities/shipFactory";
 import { createAsteroidFactory } from "./entities/asteroidFactory";
 import { Asteroid } from "./entities/asteroid";
 import { PlayerShip, Target } from "./entities/ship";
-import { CAMERA_ZOOM, playerShipSettings } from "./settings";
+import { CAMERA_ZOOM, playerShipSettings, world } from "./settings";
 import { createMissileFactory } from "./entities/missileFactory";
 import { CollisionRegistrar } from "./physics/collisionRegistrar";
 import { PhysicsRenderer } from "./physics/renderer/physicsRenderer";
@@ -12,8 +12,8 @@ import { PhysicsRenderer } from "./physics/renderer/physicsRenderer";
 class Game extends Phaser.Scene
 {
   private world = {
-    width: 2500,
-    height: 2500
+    width: world.WIDTH,
+    height: world.HEIGHT
   };
   private graphics?: Phaser.GameObjects.Graphics;
   private player?: PlayerShip;
@@ -36,6 +36,7 @@ class Game extends Phaser.Scene
     this.load.image('explosion', 'explosion.png');
     this.load.image('asteroid', 'asteroid.png');
     this.load.image('flares', 'flares.png');
+    this.load.image('chaff', 'chaff.png');
     this.load.image('cargo', 'cargo.png');
   }
 
