@@ -62,30 +62,3 @@ export const targetShipSettings = {
     TURN_RATE_CRUISER: 0.3,  // degrees per frame (at 60fps = 18°/sec)
     TURN_RATE_CARGO: 0.15,   // degrees per frame (at 60fps = 9°/sec)
 }
-
-// DECOYS (Täuschkörper / chaff)
-export const decoySettings = {
-    COUNT: 5,                 // how many the player carries
-    RADIUS: 50,               // px — size of the chaff cloud
-    LIFETIME_MS: 8000,        // how long a cloud lingers before dissipating
-    BLOCK_PROBABILITY: 0.7,   // chance a beam passing through is blocked
-}
-
-// MISSILES
-export const missileSettings = {
-    "VIM-177": {
-        SPEED: 7,
-        TURN_SPEED: 0.7,
-        BURN_TIME: 20
-    },
-    "VIM-220": {
-        SPEED: 6,
-        TURN_SPEED: 0.5,
-        BURN_TIME: 25,
-        // The onboard seeker comes online when this close (px) to its target,
-        // rather than after a fixed time.
-        ACTIVE_RADAR_ACTIVATION_RANGE: 250,
-        ACTIVE_RADAR_RANGE: 250,
-        ACTIVE_RADAR_AZIMUTH: 30
-    }
-}

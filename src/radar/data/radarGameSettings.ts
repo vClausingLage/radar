@@ -141,6 +141,9 @@ export const MISSILE_RANGE_CAP_LENGTH_PX = 12;
 // Desired RWR screen image height in fixed-screen HUD pixels.
 export const RWR_WIDGET_HEIGHT_PX = 270;
 
+// Margin of the RWR widget from the bottom-left viewport corner, in screen px.
+export const RWR_WIDGET_MARGIN_PX = 20;
+
 // Spacing between ship-local radar buttons.
 export const RADAR_BUTTON_SPACING_X_PX = 12;
 export const RADAR_BUTTON_SPACING_Y_PX = 6;
@@ -165,3 +168,11 @@ export const RWR_THREAT_FLARE_RADIUS_PX = 7;
 export const RWR_THREAT_MIN_ALPHA = 0.45;
 export const RWR_THREAT_ALPHA_RANGE = 0.55;
 export const RWR_THREAT_SPIKES = 8;
+
+// ── Decoys ───────────────────────────────────────────────────────────────────
+export const decoySettings = {
+    COUNT: 5,                 // how many the player carries
+    RADIUS: 50,               // px — size of the chaff cloud
+    LIFETIME_MS: 8000,        // how long a cloud lingers before dissipating
+    BLOCK_PROBABILITY: 0.7,   // chance a beam passing through is blocked
+}

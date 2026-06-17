@@ -1,5 +1,5 @@
 import type { Vector2 } from '../../../types';
-import { decoySettings } from '../../../settings';
+import { decoySettings } from '../../data/radarGameSettings';
 import { MISSILE_RADAR_MAX_MISSED_LOCK_FRAMES } from '../../data/radarGameSettings';
 
 // Minimal target interface an onboard seeker needs to acquire and track.

@@ -1,6 +1,6 @@
 import { RadarReturn } from '../../data/radarReturn';
 import { Vector2 } from '../../../types';
-import { decoySettings } from '../../../settings';
+import { decoySettings } from '../../data/radarGameSettings';
 import { JammerError } from './jammer';
 import { RADAR_DETECTION_RANGE_POWER } from '../../data/radarGameSettings';
 

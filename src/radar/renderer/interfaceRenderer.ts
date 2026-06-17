@@ -17,6 +17,7 @@ import {
     RWR_THREAT_PULSE_TIME_DIVISOR_MS,
     RWR_THREAT_SPIKES,
     RWR_WIDGET_HEIGHT_PX,
+    RWR_WIDGET_MARGIN_PX,
     SPEED_BUTTON_OFFSET_X_PX,
 } from "../data/radarGameSettings";
 
@@ -211,8 +212,9 @@ export class InterfaceRenderer {
         .setOrigin(0.5)
         .setVisible(false);
 
-        // RWR screen image fixed to bottom-left of camera viewport
-        this.rwrImage = this.scene.add.image(20, camera.height - 20, 'rwr')
+        // RWR screen image fixed to bottom-left of camera viewport. Final
+        // placement (zoom-corrected) happens in updateLayout via positionRwr().
+        this.rwrImage = this.scene.add.image(0, 0, 'rwr')
             .setOrigin(0, 1)
             .setScrollFactor(0)
             .setDepth(1000);
@@ -327,10 +329,30 @@ export class InterfaceRenderer {
         }
 
         // Keep RWR widget pinned to camera bottom-left
-        if (this.rwrImage) {
-            const camera = this.scene.cameras.main;
-            this.rwrImage.setPosition(20, camera.height - 20);
-        }
+        this.positionRwr();
+    }
+
+    // Pin the RWR widget to the bottom-left viewport corner.
+    //
+    // The image uses setScrollFactor(0) so it ignores camera scroll, but Phaser
+    // still applies the camera's zoom about its centre to fixed objects. That
+    // means a fixed object at screen-pixel (sx, sy) must be placed at the
+    // *local* coordinate that maps back to (sx, sy) after the zoom transform:
+    //
+    //   screen = (local - centre) * zoom + centre
+    //   local  = (screen - centre) / zoom + centre
+    //
+    // Computing it this way keeps the widget in the true corner at any zoom
+    // level (the zoom buttons change it at runtime) and any viewport size.
+    private positionRwr(): void {
+        if (!this.rwrImage) return;
+        const cam = this.scene.cameras.main;
+        const centreX = cam.width * cam.originX;
+        const centreY = cam.height * cam.originY;
+        const margin = RWR_WIDGET_MARGIN_PX;
+        const localX = (margin - centreX) / cam.zoom + centreX;
+        const localY = (cam.height - margin - centreY) / cam.zoom + centreY;
+        this.rwrImage.setPosition(localX, localY);
     }
 
     updateWarnings(isTracked: boolean, isLocked: boolean): void {

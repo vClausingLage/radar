@@ -4,7 +4,7 @@ import { Vector2 } from "../types";
 import { PlayerController } from "../controller/playerController";
 import { createEntityId } from './entityId';
 import { Decoy } from "./decoy";
-import { decoySettings } from "../settings";
+import { decoySettings } from "../radar/data/radarGameSettings";
 
 export abstract class Ship extends Phaser.Physics.Matter.Sprite {
     public readonly id: number;

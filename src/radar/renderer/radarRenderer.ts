@@ -89,11 +89,16 @@ export class RadarRenderer {
     // readout on the right edge.
     if (jammerStatus) {
       if (!this.jammerText && this.scene) {
-        this.jammerText = this.scene.add.text(startX, startY, '', { color: jammerStatus.color });
+        // Right-aligned origin (1, 0) so the label grows outward — to the left
+        // of the start edge — instead of back into the cone interior.
+        this.jammerText = this.scene.add.text(startX, startY, '', { color: jammerStatus.color }).setOrigin(1, 0);
       }
       if (this.jammerText) {
-        this.jammerText.setText(`\n ${jammerStatus.label}`);
+        this.jammerText.setText(`\n ${jammerStatus.label} `);
         this.jammerText.setColor(jammerStatus.color);
+        // Anchor to the start-edge tip and rotate tangent to the arc, mirroring
+        // the loadout readout on the end edge. This tracks the cone at any
+        // orientation, unlike a fixed pixel offset.
         this.jammerText.setPosition(startX, startY);
         this.jammerText.setRotation(Phaser.Math.DegToRad(startAngle + 90));
       }

@@ -1,5 +1,5 @@
 import type { Ship } from './ship';
-import { missileSettings } from '../settings';
+import { missileSettings } from './entitySettings';
 import type { Vector2 } from '../types';
 import { MissileRadar } from '../radar/systems/modules/missileRadar';
 
@@ -8,8 +8,8 @@ import { MissileRadar } from '../radar/systems/modules/missileRadar';
 // missile classes initialise their fields from here, and the radar derives the
 // max-range indicator from it — so there is only one place to retune.
 export const MISSILE_FLIGHT = {
-    'VIM-177': { speed: 0.6, burnTime: 14, turnSpeed: 0.7 },
-    'VIM-220': { speed: 0.6, burnTime: 14, turnSpeed: 0.8 },
+    'VIM-177': { speed: missileSettings['VIM-177'].SPEED, burnTime: missileSettings['VIM-177'].BURN_TIME, turnSpeed: missileSettings['VIM-177'].TURN_SPEED },
+    'VIM-220': { speed: missileSettings['VIM-220'].SPEED, burnTime: missileSettings['VIM-220'].BURN_TIME, turnSpeed: missileSettings['VIM-220'].TURN_SPEED },
 } as const;
 
 export interface BaseMissile {

@@ -62,13 +62,13 @@ export class Jammer {
     if (this.activatedAt !== null) {
       const elapsed = now - this.activatedAt;
       if (elapsed < JAMMER_DURATION_MS) {
-        return { label: `JAM ${Math.ceil((JAMMER_DURATION_MS - elapsed) / 1000)}s`, color: '#ff3030' };
+        return { label: `JAMMING ${Math.ceil((JAMMER_DURATION_MS - elapsed) / 1000)}s`, color: '#ff3030' };
       }
       if (elapsed < JAMMER_COOLDOWN_MS) {
-        return { label: `JAM CD ${Math.ceil((JAMMER_COOLDOWN_MS - elapsed) / 1000)}s`, color: '#888888' };
+        return { label: `XMIT ${Math.ceil((JAMMER_COOLDOWN_MS - elapsed) / 1000)}s`, color: '#888888' };
       }
     }
-    return { label: 'JAM RDY', color: '#00ff00' };
+    return { label: 'JAMMER RDY', color: '#00ff00' };
   }
 
   // True when `point` (an enemy emitter) lies inside the jamming cone projected

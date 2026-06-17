@@ -1,4 +1,4 @@
-import { decoySettings } from '../settings';
+import { decoySettings } from '../radar/data/radarGameSettings';
 
 // A deployed chaff cloud. Represented visually as a sprite and geometrically as
 // a circle: when a
