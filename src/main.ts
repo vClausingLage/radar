@@ -81,15 +81,15 @@ class Game extends Phaser.Scene
 
     // TARGETS using factory
     const target1 = this.add.target({
-      x: 2000,
-      y: 2000,
+      x: 1200,
+      y: 700,
       direction: 180,
       speed: .1,
       type: 'cargo',
     });
     const target2 = this.add.target({
-      x: 2200,
-      y: 1800,
+      x: 2000,
+      y: 1200,
       direction: 180,
       speed: .1,
       type: 'cruiser',

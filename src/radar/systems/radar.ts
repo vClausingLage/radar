@@ -5,29 +5,25 @@ import { Emitter } from "./modules/emitter";
 import { Receiver } from "./modules/receiver";
 import { TrackingComputer } from "./modules/trackingComputer";
 import { RwrReceiver } from "./modules/rwr";
-import { MissileGuidance } from "./modules/missileGuidance";
-import { LoadoutManager } from "./modules/loadoutManager";
 import { Jammer, JammerError, JammerHudStatus } from "./modules/jammer";
 
+import { FireControl } from "./fireControl";
+
 import { Track } from "../data/track";
-import { Entity, Mode } from "../data/types";
+import { Entity, Loadout, Mode } from "../data/types";
 
 import { InterfaceRenderer } from "../renderer/interfaceRenderer";
 import { RadarRenderer } from "../renderer/radarRenderer";
 
-import { Vector2 } from "../../types";
 import { Ray } from "../../physics/ray";
 import { RadarEventEmitter } from "./game/radarEventEmitter";
 
-import { Missile, ActiveRadarMissile, MISSILE_FLIGHT } from "../../entities/missiles";
 import {
     JAMMER_STT_DEGRADE_PROB,
     MAX_TWS_TRACKS,
-    PHYSICS_FPS,
     RADAR_DEFAULT_RANGE_PX,
     STT_BEAM_DEG,
     STT_LOCK_BREAK_FRAMES,
-    VIM220_WAYPOINT_FADE_MS,
 } from "../data/radarGameSettings";
 
 export class Radar {
@@ -49,14 +45,12 @@ export class Radar {
     // TODO: replace with proper angle-tracking loop once chicken-and-egg is resolved.
     private sttTargetEntity: Entity | null = null;
 
-    // Missile management
-    private activeMissiles: Missile[] = [];
-    private missileGuidance: MissileGuidance = new MissileGuidance();
-    // Most recently fired VIM-220, for the time-to-active-radar HUD readout.
-    private lastVim220: ActiveRadarMissile | null = null;
+    // Weapons system. The radar (sensor) produces tracks; FireControl consumes
+    // them to launch and guide missiles. Constructed in the constructor (needs
+    // the scene).
+    private fireControl: FireControl;
 
     public rwrReceiver = new RwrReceiver();
-    public loadoutManager = new LoadoutManager();
     public jammer = new Jammer();
 
     // Error captured if an enemy jammer spoofed this radar during the current
@@ -69,26 +63,19 @@ export class Radar {
     // Only the player's radar has a renderer; target radars track silently.
     private radarRenderer: RadarRenderer | null = null;
 
-    // VIM-220 mid-course waypoints (player-placed, up to two: a steer-to point
-    // and a direction point). Assigned to each VIM-220 fired while present.
-    private vim220Waypoints: Vector2[] = [];
-    // The most recently fired VIM-220 carrying the displayed route. Once it
-    // passes its first waypoint or is destroyed, the displayed route fades out.
-    private vim220RouteMissile: ActiveRadarMissile | null = null;
-    // Timestamp (scene.time.now) the waypoint fade-out began, or null.
-    private vim220WaypointsFadeStart: number | null = null;
-
     private raycaster = new Ray();
 
     private scene: Phaser.Scene;
 
     constructor(_params: { scene: Phaser.Scene }) {
         this.scene = _params.scene;
+        this.fireControl = new FireControl(this.scene);
     }
 
     // Attach the visual renderer. Called by the player ship factory only.
     setRadarRenderer(renderer: RadarRenderer): void {
         this.radarRenderer = renderer;
+        this.fireControl.setRadarRenderer(renderer);
     }
 
     setInterfaceRenderer(renderer: InterfaceRenderer): void {
@@ -188,194 +175,38 @@ export class Radar {
         return this.jammer.getHudStatus(this.scene.time.now);
     }
 
-    // ── Loadout ────────────────────────────────────────────────────────────
+    // ── Fire control (delegated to FireControl) ────────────────────────────
 
     cycleLoadout(): void {
-        this.loadoutManager.cycleActive();
+        this.fireControl.cycleLoadout();
     }
 
-    // Place a VIM-220 mid-course waypoint (Shift+click). The first click sets
-    // the steer-to point, the second sets the direction point. A third click
-    // starts a fresh route. Only meaningful while VIM-220 is the active weapon.
+    setLoadout(loadout: Loadout): void {
+        this.fireControl.setLoadout(loadout);
+    }
+
+    // Place a VIM-220 mid-course waypoint (Shift+click). See FireControl.
     addVim220Waypoint(point: { x: number; y: number }): void {
-        if (this.loadoutManager.getActiveType() !== 'VIM-220') return;
-        if (this.vim220Waypoints.length >= 2) this.vim220Waypoints = [];
-        // A freshly-placed route shows solid and is owned by no missile yet.
-        this.cancelVim220WaypointFade();
-        this.vim220Waypoints.push({ x: point.x, y: point.y });
+        this.fireControl.addVim220Waypoint(point);
     }
 
     clearVim220Waypoints(): void {
-        this.vim220Waypoints = [];
-        this.cancelVim220WaypointFade();
+        this.fireControl.clearVim220Waypoints();
     }
 
-    private cancelVim220WaypointFade(): void {
-        this.vim220WaypointsFadeStart = null;
-        this.vim220RouteMissile = null;
-    }
-
-    // Build a per-missile route copy from the current waypoints, or null if none
-    // are placed. `reachedFirst` is missile-local so each missile flies its own.
-    private buildVim220Route(): ActiveRadarMissile['waypointRoute'] {
-        if (this.vim220Waypoints.length === 0) return null;
-        const first = { ...this.vim220Waypoints[0] };
-        const directionPoint = this.vim220Waypoints.length >= 2
-            ? { ...this.vim220Waypoints[1] }
-            : { ...this.vim220Waypoints[0] };
-        return { first, directionPoint, reachedFirst: false };
-    }
-
-    // Fade and eventually clear the displayed waypoints once the missile that
-    // owns them has passed its first waypoint (route consumed) or been destroyed.
-    private updateVim220WaypointFade(): void {
-        if (this.vim220Waypoints.length === 0) return;
-
-        // Begin the fade on the triggering event.
-        if (this.vim220WaypointsFadeStart === null && this.vim220RouteMissile) {
-            const missile = this.vim220RouteMissile;
-            const passed = missile.waypointRoute?.reachedFirst ?? false;
-            const destroyed = !missile.active;
-            if (passed || destroyed) {
-                this.vim220WaypointsFadeStart = this.scene.time.now;
-            }
-        }
-
-        // Advance the fade; clear the route once it completes.
-        if (this.vim220WaypointsFadeStart !== null) {
-            const elapsed = this.scene.time.now - this.vim220WaypointsFadeStart;
-            if (elapsed >= VIM220_WAYPOINT_FADE_MS) {
-                this.vim220Waypoints = [];
-                this.cancelVim220WaypointFade();
-            }
-        }
-    }
-
-    // Current opacity (0–1) for the displayed waypoints, driving the fade-out.
-    private getVim220WaypointAlpha(): number {
-        if (this.vim220WaypointsFadeStart === null) return 1;
-        const elapsed = this.scene.time.now - this.vim220WaypointsFadeStart;
-        return Phaser.Math.Clamp(1 - elapsed / VIM220_WAYPOINT_FADE_MS, 0, 1);
-    }
-
-    // ── Firing ────────────────────────────────────────────────────────────
-
+    // Fire the weapon matching the current mode (STT → VIM-177, TWS → VIM-220).
+    // The radar supplies the track picture; FireControl owns the launch.
     shoot(_angle: number): void {
-        if (this.mode === 'stt') {
-            this.fireVim177();
-        } else if (this.mode === 'tws') {
-            this.fireVim220();
-        }
-    }
-
-    // VIM-177 (SARH): requires an STT lock; rides the ship's illumination.
-    private fireVim177(): void {
-        const ship = this.ownerShip();
-        if (!ship) return;
-
-        const sttTrack = this.getSttTrack();
-        if (!sttTrack) return;
-
-        if (this.loadoutManager.getActiveType() !== 'VIM-177') return;
-        const loadout = this.loadoutManager.getLoadout();
-        if (!loadout['VIM-177'] || loadout['VIM-177'].load <= 0) return;
-
-        // Launch along the ship's heading — the missile flies straight off the
-        // rail during its boost phase (age < 2) before the seeker steers it
-        // toward the intercept point. MissileGuidance handles the turn.
-        const ownerPos = ship.getPosition();
-        const rad = Phaser.Math.DegToRad(ship.getDirection());
-
-        // Built via the factory so the shared missile collision category is
-        // applied — missiles never collide with one another.
-        const missile = this.scene.add.sarhMissile({
-            x: ownerPos.x,
-            y: ownerPos.y,
-            dirX: Math.cos(rad),
-            dirY: Math.sin(rad),
+        this.fireControl.shoot(this.mode, {
+            ship: this.ownerShip(),
+            sttTrack: this.getSttTrack(),
+            tracks: this.trackingComputer.getTracks(),
         });
-        this.armMissile(missile, ship);
-
-        this.activeMissiles.push(missile);
-        this.loadoutManager.decrementLoad('VIM-177');
-    }
-
-    // VIM-220 (ARH): TWS fire — assigns the missile to the next un-engaged
-    // track. Ship guides it mid-course; its own radar takes over at terminal.
-    private fireVim220(): void {
-        const ship = this.ownerShip();
-        if (!ship) return;
-
-        if (this.loadoutManager.getActiveType() !== 'VIM-220') return;
-        const loadout = this.loadoutManager.getLoadout();
-        if (!loadout['VIM-220'] || loadout['VIM-220'].load <= 0) return;
-
-        const ownerPos = ship.getPosition();
-
-        // Engage the nearest track not already assigned to a live missile, so
-        // successive shots walk outward from the closest contact.
-        const engaged = new Set(
-            this.activeMissiles
-                .map(m => m.targetId)
-                .filter((id): id is number => id !== undefined),
-        );
-        const target = this.trackingComputer.getTracks()
-            .filter(t => !engaged.has(t.id))
-            .sort((a, b) =>
-                Phaser.Math.Distance.Between(ownerPos.x, ownerPos.y, a.pos.x, a.pos.y) -
-                Phaser.Math.Distance.Between(ownerPos.x, ownerPos.y, b.pos.x, b.pos.y))[0];
-        if (!target) return;
-
-        const rad = Phaser.Math.DegToRad(ship.getDirection());
-
-        // Built via the factory so the shared missile collision category is
-        // applied — missiles never collide with one another.
-        const missile = this.scene.add.activeRadarMissile({
-            x: ownerPos.x,
-            y: ownerPos.y,
-            dirX: Math.cos(rad),
-            dirY: Math.sin(rad),
-        });
-        missile.targetId = target.id;
-        missile.waypointRoute = this.buildVim220Route();
-        this.armMissile(missile, ship);
-
-        this.activeMissiles.push(missile);
-        this.lastVim220 = missile;
-        // If this shot carries a route, it now owns the displayed waypoints —
-        // they fade once it passes them or dies (see updateVim220WaypointFade).
-        if (missile.waypointRoute) {
-            this.vim220RouteMissile = missile;
-            this.vim220WaypointsFadeStart = null;
-        }
-        this.loadoutManager.decrementLoad('VIM-220');
-    }
-
-    // Tag a freshly-spawned missile with its owner and the owner's no-collide
-    // group so it cannot detonate against the launching ship.
-    private armMissile(missile: Missile, ship: PlayerShip | Target): void {
-        missile.owner = ship;
-        const noCollideGroup = ship.getMissileNoCollideGroup();
-        if (noCollideGroup !== undefined) missile.setCollisionGroup(noCollideGroup);
     }
 
     // Max range (px) of the currently selected weapon, for the range indicator.
     getActiveMissileRange(): number | null {
-        const type = this.loadoutManager.getActiveType();
-        const flight = (MISSILE_FLIGHT as Record<string, { speed: number; burnTime: number }>)[type];
-        return flight ? flight.speed * PHYSICS_FPS * flight.burnTime : null;
-    }
-
-    // HUD readout for the last-fired VIM-220's seeker: 0 ("RADAR ACTIVE") once
-    // its onboard radar is online, otherwise null (the seeker arms by closing
-    // range, so there is no meaningful countdown to show). Null when none in
-    // flight.
-    getLastVim220TimeToActive(): number | null {
-        if (!this.lastVim220 || !this.lastVim220.active) {
-            this.lastVim220 = null;
-            return null;
-        }
-        return this.lastVim220.isActiveRadarEnabled() ? 0 : null;
+        return this.fireControl.getActiveMissileRange();
     }
 
     // ── Main update ───────────────────────────────────────────────────────
@@ -403,8 +234,9 @@ export class Radar {
             this.sttTargetEntity = null;
         }
 
-        // Update missile guidance every frame regardless of radar mode.
-        const sttTrack = this.getSttTrack();
+        // Update the weapons system every frame regardless of radar mode. The
+        // radar supplies the track picture and live entities; FireControl runs
+        // missile guidance, the waypoint fade and the seeker-cone rendering.
         const sttEntity = this.sttTargetEntity && 'getPosition' in this.sttTargetEntity
             ? this.sttTargetEntity as PlayerShip | Target
             : null;
@@ -414,39 +246,18 @@ export class Radar {
             (e): e is PlayerShip | Target =>
                 e.id !== this.owner?.id && 'getDirection' in e && e.active && Boolean(e.body),
         );
-        this.activeMissiles = this.missileGuidance.update(this.activeMissiles, delta, {
-            sttTrack,
+        this.fireControl.update(delta, {
+            sttTrack: this.getSttTrack(),
             sttTargetEntity: sttEntity,
             tracks: this.trackingComputer.getTracks(),
             targets: targetShips,
             decoyCircles,
-        });
-
-        this.updateVim220WaypointFade();
+        }, graphics);
 
         if (this.mode === 'stt') {
             this.updateStt(ownerPos, shipDirection, entities, graphics, decoyCircles);
         } else {
             this.updateRws(ownerPos, shipDirection, entities, graphics, decoyCircles);
-        }
-
-        this.renderMissileSeekerCones(graphics);
-    }
-
-    // Draw the seeker cone for every in-flight VIM-220 whose onboard radar has
-    // gone active, so the player can see what each missile can currently "see".
-    private renderMissileSeekerCones(graphics: Phaser.GameObjects.Graphics): void {
-        if (!this.radarRenderer) return;
-        for (const missile of this.activeMissiles) {
-            if (!(missile instanceof ActiveRadarMissile) || !missile.isActiveRadarEnabled()) continue;
-            const headingDeg = Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x));
-            this.radarRenderer.renderMissileSeekerCone(
-                graphics,
-                { x: missile.x, y: missile.y },
-                headingDeg,
-                missile.missileRadar.getRange(),
-                missile.missileRadar.getSearchAzimuth(),
-            );
         }
     }
 
@@ -469,9 +280,9 @@ export class Radar {
         this.radarRenderer?.update(
             graphics, ownerPos, this.range,
             scanStartAngle, scanEndAngle,
-            [], this.loadoutManager.getLoadout(), this.vim220Waypoints, pulse, false,
-            this.getLastVim220TimeToActive(), this.getActiveMissileRange(),
-            this.getJammerHudStatus(), this.getVim220WaypointAlpha(),
+            [], this.fireControl.getLoadout(), this.fireControl.getWaypoints(), pulse, false,
+            this.fireControl.getLastVim220TimeToActive(), this.fireControl.getActiveMissileRange(),
+            this.getJammerHudStatus(), this.fireControl.getWaypointAlpha(),
         );
 
         // Render our own jamming cone while the jammer is running.
@@ -570,9 +381,9 @@ export class Radar {
         this.radarRenderer?.update(
             graphics, ownerPos, this.range,
             shipDirection - rwsHalfAz, shipDirection + rwsHalfAz,
-            [], this.loadoutManager.getLoadout(), this.vim220Waypoints, pulse, true,
-            this.getLastVim220TimeToActive(), this.getActiveMissileRange(),
-            this.getJammerHudStatus(), this.getVim220WaypointAlpha(),
+            [], this.fireControl.getLoadout(), this.fireControl.getWaypoints(), pulse, true,
+            this.fireControl.getLastVim220TimeToActive(), this.fireControl.getActiveMissileRange(),
+            this.getJammerHudStatus(), this.fireControl.getWaypointAlpha(),
         );
 
         // Render our own jamming cone while the jammer is running.

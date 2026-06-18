@@ -79,7 +79,7 @@ export const createPlayerShipFactory = () => {
       controller.setTurnRate(targetShipSettings.TURN_RATE_CRUISER);
     }
     target.controller = controller;
-    target.radar.loadoutManager.setLoadout(targetShipSettings.LOADOUT);
+    target.radar.setLoadout(targetShipSettings.LOADOUT);
     target.radar.attachTo(target);
     target.radar.start();
     return target;

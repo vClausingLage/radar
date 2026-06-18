@@ -20,13 +20,30 @@ nothing, so they can detect, track and shoot silently.
 ## Modules
 
 ### `systems/radar.ts` — `Radar`
-The orchestrator. Holds the current mode, owns the subsystem instances, runs
-the per-frame `update()` and dispatches to `updateRws()` or `updateStt()`.
-Also owns firing (`shoot`), STT lock management, the VIM-220 waypoint buffer
-and active-missile guidance.
+The sensor and orchestrator. Holds the current mode, owns the signal-path
+subsystem instances, runs the per-frame `update()` and dispatches to
+`updateRws()` or `updateStt()`. Also owns STT lock management and the
+world-interrogation helpers (`nearestHit`, `illuminateRwr`, `detectJamming`).
+
+Weapons are *not* its job — it delegates firing and missile concerns to
+`FireControl`, supplying it the track picture each frame (and per shot). The
+weapon-facing methods on `Radar` (`shoot`, `cycleLoadout`, `addVim220Waypoint`,
+`clearVim220Waypoints`, `getActiveMissileRange`, `setLoadout`) are thin
+forwarders to `FireControl`, kept so callers talk only to the radar.
 
 Key collaborators it constructs/holds: `Antenna`, `Emitter`, `Receiver`,
-`TrackingComputer`, `MissileGuidance`, `RwrReceiver`, `LoadoutManager`.
+`TrackingComputer`, `RwrReceiver`, `Jammer`, `FireControl`.
+
+### `systems/fireControl.ts` — `FireControl`
+The weapons system. The radar produces tracks; FireControl consumes them to
+launch and guide missiles. It holds the weapon inventory (`LoadoutManager`), the
+in-flight missiles and their `MissileGuidance`, and the VIM-220 mid-course
+datalink (waypoint buffer + fade). It deliberately holds **no** radar/signal-path
+state — the radar feeds it a per-frame `GuidanceContext` (STT track, live
+entities, decoys) via `update()` and a per-shot `ShootContext` (owner ship, STT
+track, tracks) via `shoot()`. The mode→weapon mapping (STT → VIM-177, TWS →
+VIM-220) lives here. Also draws the live seeker cones; like the radar renderer,
+that runs player-only (the renderer is injected via `setRadarRenderer`).
 
 ### `Antenna` (in `radar.ts`)
 Models the mechanically/electronically scanned beam. Each frame it advances the
@@ -179,7 +196,7 @@ for the VIM-220 the active-radar activation time, range and azimuth.
 - New mode → add to the `Mode` union, give `Antenna.getAzimuth` a case, and
   branch in `Radar.update`.
 - New missile → add an entity class, a guidance branch in
-  `MissileGuidance.update`, and a fire path in `Radar.shoot`.
+  `MissileGuidance.update`, and a fire path in `FireControl.shoot`.
 - Tracking behaviour is tuned entirely by the constants at the top of
   `trackingComputer.ts` (`CLUSTER_RADIUS`, `GATE_RADIUS`, `TRIM_FRACTION`,
   `ALPHA`, `BETA`, `MAX_MISSED_SCANS`).
