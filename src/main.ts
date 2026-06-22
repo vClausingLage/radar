@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-// import StartMenu from "./scenes/startMenu";
+import StartMenu, { ScenarioKey } from "./scenes/startMenu";
 import { createPlayerShipFactory } from "./entities/shipFactory";
 import { createAsteroidFactory } from "./entities/asteroidFactory";
 import { Asteroid } from "./entities/asteroid";
@@ -21,10 +21,16 @@ class Game extends Phaser.Scene
   private asteroids: Asteroid[] = [];
   // Matter physics uses collision categories instead of groups
   private physicsRenderer!: PhysicsRenderer;
+  private scenario: ScenarioKey = 'skirmish';
 
   constructor()
   {
     super('Game');
+  }
+
+  init(data: { scenario?: ScenarioKey })
+  {
+    this.scenario = data?.scenario ?? 'skirmish';
   }
   
   preload()
@@ -79,7 +85,80 @@ class Game extends Phaser.Scene
       collisionRegistrar.register();
     }
 
-    // TARGETS using factory
+    // Populate the world for the chosen scenario.
+    switch (this.scenario) {
+      case 'duel':
+        this.buildDuel();
+        break;
+      case 'occluded':
+        this.buildOccluded();
+        break;
+      case 'skirmish':
+      default:
+        this.buildSkirmish();
+        break;
+    }
+
+    this.showBriefing();
+  }
+
+  // Short scenario briefing, pinned to the camera and removed after 10 s.
+  private showBriefing(): void {
+    const messages: Record<ScenarioKey, string> = {
+      duel: 'There is an inactive drone in front of you. Use it to practise different radar modes and weapons.',
+      occluded: 'There is an inactive drone behind the asteroid. Use your VIM-220 with waypoints to destroy it.',
+      skirmish: 'Free scenario.',
+    };
+
+    const cam = this.cameras.main;
+    const briefing = this.add.text(cam.width / 2, 60, messages[this.scenario], {
+      font: '20px Courier',
+      color: '#00ff00',
+      align: 'center',
+      backgroundColor: '#000000aa',
+      padding: { x: 16, y: 10 },
+      wordWrap: { width: Math.min(cam.width - 80, 700) },
+    }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(1000);
+
+    this.tweens.add({
+      targets: briefing,
+      alpha: 0,
+      delay: 9000,
+      duration: 1000,
+      onComplete: () => briefing.destroy(),
+    });
+  }
+
+  // Scenario 1 — a single idle ship, within radar range, for the player to engage.
+  private buildDuel(): void {
+    this.targets.push(this.add.target({
+      x: 1500,
+      y: 1750,
+      direction: 270,
+      speed: 0,
+      type: 'cruiser',
+    }));
+  }
+
+  // Scenario 2 — an idle ship in range but hidden behind a stationary asteroid.
+  private buildOccluded(): void {
+    this.targets.push(this.add.target({
+      x: 1500,
+      y: 1800,
+      direction: 270,
+      speed: 0,
+      type: 'cruiser',
+    }));
+    // Asteroid sits between the player's start and the target, blocking line of sight.
+    this.asteroids.push(this.add.asteroid({
+      position: { x: 1500, y: 1950 },
+      direction: 0,
+      speed: 0,
+    }));
+  }
+
+  // Scenario 3 — the original mixed scene: several ships and scattered asteroids.
+  private buildSkirmish(): void {
     const target1 = this.add.target({
       x: 1200,
       y: 700,
@@ -213,7 +292,7 @@ const debugConfig = import.meta.env.DEV ? {
 
 const config = {
   type: Phaser.AUTO,
-  scene: Game,
+  scene: [StartMenu, Game],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
