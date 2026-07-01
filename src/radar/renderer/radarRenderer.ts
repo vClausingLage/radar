@@ -9,6 +9,7 @@ import {
   JAMMER_CONE_DEG,
   MISSILE_RANGE_CAP_LENGTH_PX,
   RADAR_CONTACT_MARKER_SIZE_PX,
+  RADAR_TRACK_HISTORY_DOT_RADIUS_PX,
   RADAR_TRACK_VECTOR_LENGTH_PX,
   VIM220_WAYPOINT_MARKER_RADIUS_PX,
   VIM220_WAYPOINT_MARKER_SIDES,
@@ -176,9 +177,25 @@ export class RadarRenderer {
     graphics.strokePath();
   }
 
+  // Past track positions as a trail of small dots that fade with age — oldest
+  // (history[0]) dimmest, most recent brightest. Drawn in the track's colour.
+  private renderTrackHistory(graphics: Phaser.GameObjects.Graphics, track: Track, color: number): void {
+    const { history } = track;
+    if (!history || history.length === 0) return;
+
+    for (let i = 0; i < history.length; i++) {
+      const alpha = 0.12 + 0.4 * ((i + 1) / history.length);
+      graphics.fillStyle(color, alpha);
+      graphics.fillCircle(history[i].x, history[i].y, RADAR_TRACK_HISTORY_DOT_RADIUS_PX);
+    }
+  }
+
   renderRwsContacts(graphics: Phaser.GameObjects.Graphics, track: Track): void {
     const { x, y } = track.pos;
     const halfMarker = RADAR_CONTACT_MARKER_SIZE_PX / 2;
+
+    // Fading dot trail of past positions, behind the current marker.
+    this.renderTrackHistory(graphics, track, 0x00ff00);
 
     // Green box at track position
     graphics.fillStyle(0x00ff00, 0.7);
@@ -195,6 +212,9 @@ export class RadarRenderer {
   renderStt(track: Track, graphics: Phaser.GameObjects.Graphics): void {
     const { x, y } = track.pos;
     const halfMarker = RADAR_CONTACT_MARKER_SIZE_PX / 2;
+
+    // Fading dot trail of past positions, behind the current marker.
+    this.renderTrackHistory(graphics, track, 0xff0000);
 
     // Box at track position
     graphics.fillStyle(0xff0000, 0.7);

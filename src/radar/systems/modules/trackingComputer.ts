@@ -2,6 +2,7 @@ import { RadarReturn } from '../../data/radarReturn';
 import { Track } from '../../data/track';
 import { Vector2 } from '../../../types';
 import {
+  RADAR_TRACK_HISTORY_LENGTH,
   TRACK_CLUSTER_RADIUS_PX,
   TRACK_FILTER_ALPHA,
   TRACK_FILTER_BETA,
@@ -154,6 +155,12 @@ export class TrackingComputer {
     state.velX += TRACK_FILTER_BETA * innX;
     state.velY += TRACK_FILTER_BETA * innY;
 
+    // Record the position we're leaving as trail history (oldest first, capped).
+    state.track.history.push(state.track.pos);
+    if (state.track.history.length > RADAR_TRACK_HISTORY_LENGTH) {
+      state.track.history.shift();
+    }
+
     state.track.pos = { x: newX, y: newY };
     state.track.dist = centroid.range;
     state.track.dir = Phaser.Math.RadToDeg(Math.atan2(state.velY, state.velX));
@@ -178,6 +185,7 @@ export class TrackingComputer {
         age: 0,
         lastUpdate: 0,
         confidence: 0.3,
+        history: [],
       },
     };
   }

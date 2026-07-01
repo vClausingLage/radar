@@ -133,6 +133,12 @@ export const RADAR_CONTACT_MARKER_SIZE_PX = 10;
 // Length of the rendered track velocity vector.
 export const RADAR_TRACK_VECTOR_LENGTH_PX = 20;
 
+// Number of past track positions retained and drawn as a fading dot trail.
+export const RADAR_TRACK_HISTORY_LENGTH = 7;
+
+// Radius of each track-history trail dot.
+export const RADAR_TRACK_HISTORY_DOT_RADIUS_PX = 1.5;
+
 // Length of the perpendicular caps on the selected missile max-range indicator.
 export const MISSILE_RANGE_CAP_LENGTH_PX = 12;
 

@@ -5,6 +5,7 @@ import { PlayerController } from "../controller/playerController";
 import { createEntityId } from './entityId';
 import { Decoy } from "./decoy";
 import { decoySettings } from "../radar/data/radarGameSettings";
+import { Exhaust, EXHAUST_NOZZLES, SHIP_EXHAUST } from "./exhaust";
 
 export abstract class Ship extends Phaser.Physics.Matter.Sprite {
     public readonly id: number;
@@ -13,6 +14,7 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
     private currentSpeed: number;
     private missileNoCollideGroup?: number;
     public readonly radar: Radar;
+    private readonly exhaust: Exhaust;
 
     constructor(params: {
         scene: Phaser.Scene;
@@ -45,6 +47,20 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
         this.radar.setMode('rws');
         this.angle = this.direction;
         this.currentSpeed = this.speed;
+
+        // Orange/yellow engine exhaust from the hull's nozzles (texture-specific).
+        const nozzles = EXHAUST_NOZZLES[this.texture.key] ?? EXHAUST_NOZZLES.ship;
+        this.exhaust = new Exhaust(this.scene, this, nozzles, SHIP_EXHAUST);
+    }
+
+    preUpdate(time: number, delta: number): void {
+        super.preUpdate(time, delta);
+        this.exhaust.update();
+    }
+
+    destroy(fromScene?: boolean): void {
+        this.exhaust?.destroy();
+        super.destroy(fromScene);
     }
 
     getCircle(): Phaser.Geom.Circle {

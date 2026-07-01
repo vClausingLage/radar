@@ -43,10 +43,10 @@ const speech = await openai.audio.speech.create({
   model: "gpt-4o-mini-tts",
   speed: 1.5,
   voice: "ash",
-  input: "Zero."
+  input: "one thousand"
 });
 
 const buffer = Buffer.from(await speech.arrayBuffer());
-const outputFilePath = path.resolve(currentDirPath, "..", "public", "zero.mp3");
+const outputFilePath = path.resolve(currentDirPath, "..", "public", "1000.mp3");
 fs.mkdirSync(path.dirname(outputFilePath), { recursive: true });
 fs.writeFileSync(outputFilePath, buffer);

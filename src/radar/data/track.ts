@@ -8,4 +8,7 @@ export interface Track {
     age: number
     lastUpdate: number
     confidence: number
+    // Recent past positions, oldest first, for the rendered dot trail. Capped to
+    // RADAR_TRACK_HISTORY_LENGTH; updated once per scan in TrackingComputer.
+    history: Vector2[]
 }

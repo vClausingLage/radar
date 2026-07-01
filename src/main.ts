@@ -8,6 +8,8 @@ import { CAMERA_ZOOM, playerShipSettings, world } from "./settings";
 import { createMissileFactory } from "./entities/missileFactory";
 import { CollisionRegistrar } from "./physics/collisionRegistrar";
 import { PhysicsRenderer } from "./physics/renderer/physicsRenderer";
+import { AudioPlayer } from "./audio/audioPlayer";
+import { RadarVoice } from "./audio/radarVoice";
 
 class Game extends Phaser.Scene
 {
@@ -22,6 +24,8 @@ class Game extends Phaser.Scene
   // Matter physics uses collision categories instead of groups
   private physicsRenderer!: PhysicsRenderer;
   private scenario: ScenarioKey = 'skirmish';
+  // Player-only radio callouts (new-contact BRA calls). Created in create().
+  private radarVoice?: RadarVoice;
 
   constructor()
   {
@@ -44,6 +48,15 @@ class Game extends Phaser.Scene
     this.load.image('flares', 'flares.png');
     this.load.image('chaff', 'chaff.png');
     this.load.image('cargo', 'cargo.png');
+
+    // Voice-callout clips (stitched into radio calls by RadarVoice).
+    const audioClips = [
+      'new-radar-contact', 'bra', 'for', 'hot', 'cold', 'flanking',
+      'zero', 'one', 'two', 'three', 'four',
+      'five', 'six', 'seven', 'eight', 'nine',
+      '100', '200', '300', '400', '500', '600', '700', '800', '900', '1000',
+    ];
+    audioClips.forEach(key => this.load.audio(key, `audio/${key}.mp3`));
   }
 
   create()
@@ -68,6 +81,9 @@ class Game extends Phaser.Scene
       direction: playerShipSettings.DIRECTION,
       speed: playerShipSettings.SPEED,
     });
+
+    // Player-only voice callouts driven off the player's radar tracks.
+    this.radarVoice = new RadarVoice(new AudioPlayer(this));
 
     // CAMERA
     this.cameras.main.setBounds(0, 0, this.world.width, this.world.height);
@@ -132,7 +148,7 @@ class Game extends Phaser.Scene
   // Scenario 1 — a single idle ship, within radar range, for the player to engage.
   private buildDuel(): void {
     this.targets.push(this.add.target({
-      x: 1500,
+      x: 1370,
       y: 1750,
       direction: 270,
       speed: 0,
@@ -239,6 +255,9 @@ class Game extends Phaser.Scene
     this.targets.forEach(t => {
       t.controller?.updateContinuous();
     });
+
+    // Player radio callouts (announces newly-formed radar tracks).
+    this.radarVoice?.update(player);
 
     // Update interface with warnings
     if (player.radar) {

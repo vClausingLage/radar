@@ -2,6 +2,7 @@ import type { Ship } from './ship';
 import { missileSettings } from './entitySettings';
 import type { Vector2 } from '../types';
 import { MissileRadar } from '../radar/systems/modules/missileRadar';
+import { Exhaust, EXHAUST_NOZZLES, MISSILE_EXHAUST } from './exhaust';
 
 // Single source of truth for missile flight envelopes. `speed` is per physics
 // step (px), `burnTime` is in seconds, `turnSpeed` is the steering rate. The
@@ -41,6 +42,7 @@ export class SARHMissile extends Phaser.Physics.Matter.Sprite implements BaseMis
     missileTurnSpeed = MISSILE_FLIGHT['VIM-177'].turnSpeed;
     missileAge: number = 0;
     missileWarhead: 'high-explosive' | 'fragmentation' = 'high-explosive';
+    private readonly exhaust: Exhaust;
     updateHeading(dirX: number, dirY: number): void {
         // normalize
         const mag = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
@@ -57,6 +59,17 @@ export class SARHMissile extends Phaser.Physics.Matter.Sprite implements BaseMis
         scene.add.existing(this);
         this.setFrictionAir(0); // Remove air friction for space physics
         this.updateHeading(params.dirX, params.dirY);
+        this.exhaust = new Exhaust(scene, this, EXHAUST_NOZZLES.missile, MISSILE_EXHAUST);
+    }
+
+    preUpdate(time: number, delta: number): void {
+        super.preUpdate(time, delta);
+        this.exhaust.update();
+    }
+
+    destroy(fromScene?: boolean): void {
+        this.exhaust?.destroy();
+        super.destroy(fromScene);
     }
 }
 
@@ -79,6 +92,7 @@ export class ActiveRadarMissile extends Phaser.Physics.Matter.Sprite implements 
         missileSettings['VIM-220'].ACTIVE_RADAR_AZIMUTH,
     );
     waypointRoute: { first: Vector2; directionPoint: Vector2; reachedFirst: boolean } | null = null;
+    private readonly exhaust: Exhaust;
 
     isActiveRadarEnabled(): boolean {
         return this.missileRadar.isActive();
@@ -97,5 +111,16 @@ export class ActiveRadarMissile extends Phaser.Physics.Matter.Sprite implements 
         scene.add.existing(this);
         this.setFrictionAir(0); // Remove air friction for space physics
         this.updateHeading(params.dirX, params.dirY);
+        this.exhaust = new Exhaust(scene, this, EXHAUST_NOZZLES.missile, MISSILE_EXHAUST);
+    }
+
+    preUpdate(time: number, delta: number): void {
+        super.preUpdate(time, delta);
+        this.exhaust.update();
+    }
+
+    destroy(fromScene?: boolean): void {
+        this.exhaust?.destroy();
+        super.destroy(fromScene);
     }
 }
