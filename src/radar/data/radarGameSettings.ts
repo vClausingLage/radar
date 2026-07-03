@@ -175,6 +175,24 @@ export const RWR_THREAT_MIN_ALPHA = 0.45;
 export const RWR_THREAT_ALPHA_RANGE = 0.55;
 export const RWR_THREAT_SPIKES = 8;
 
+// ── Terrain mapping (systems/modules/terrainMapper.ts) ─────────────────────
+// Asteroids are painted like a ground-mapping radar, not tracked: raw beam
+// returns persist briefly (phosphor decay) and render as blurry green blobs
+// with a radar shadow cast away from the antenna.
+
+// How long a terrain return stays on screen before fading out entirely.
+export const TERRAIN_SAMPLE_TTL_MS = 5000;
+
+// Cap on stored terrain returns (oldest dropped first).
+export const TERRAIN_MAX_SAMPLES = 600;
+
+// Radius of the largest (outermost, faintest) blob layer per return.
+export const TERRAIN_BLOB_RADIUS_PX = 7;
+
+// Radar shadow cast behind each return: stroke width and peak opacity.
+export const TERRAIN_SHADOW_WIDTH_PX = 10;
+export const TERRAIN_SHADOW_ALPHA = 0.30;
+
 // ── Decoys ───────────────────────────────────────────────────────────────────
 export const decoySettings = {
     COUNT: 5,                 // how many the player carries

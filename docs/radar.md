@@ -126,6 +126,19 @@ paints the jamming ship and **(b)** the victim sits inside that jammer's cone
 
 All tunables live in `radar/data/radarGameSettings.ts`.
 
+### `modules/terrainMapper.ts` — `TerrainMapper` (+ `renderer/terrainRenderer.ts`)
+The ground-mapping half of the radar. Asteroids are **not** trackable entities:
+they are passed to `Radar.update` as a separate `terrain` list. Terrain and
+ship returns compete for the beam — the nearer return wins — so terrain still
+masks ships behind it (and a near ship masks the terrain behind it), but a
+terrain hit never enters the receiver/tracking pipeline. Instead the raw hit
+point goes to the `TerrainMapper`, which keeps a short phosphor-decay buffer
+(`TERRAIN_SAMPLE_TTL_MS`) and hands it to the `TerrainRenderer`: soft stacked
+green blobs that blur into a coherent shape as the sweep paints neighbouring
+returns, plus a dark radar shadow cast from each return away from the antenna
+out to max range. Player-only, like the `RadarRenderer` — AI radars discard
+terrain returns (but their beams are still blocked by terrain).
+
 ### `modules/rwr.ts` — `RwrReceiver`
 Radar Warning Receiver. A passive receiver: when another ship's emission hits
 this ship it records an `RwrContact` (bearing, locked?, timestamp). Contacts

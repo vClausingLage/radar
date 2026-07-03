@@ -17,6 +17,12 @@ export class Asteroid extends Phaser.Physics.Matter.Sprite {
         this.direction = params.direction;
         this.speed = params.speed;
         this.setPosition(params.position.x, params.position.y);
+        // Circular Matter body instead of the default rectangle. The body is the
+        // single source of truth for the radar raycast (Ray.getBodyPolygons reads
+        // body.vertices; a Matter circle is internally a ~25-gon), so terrain
+        // returns trace the round silhouette — and getCircle() matches exactly.
+        // Must run before the velocity/spin below: setBody resets them.
+        this.setBody({ type: 'circle', radius: Math.max(this.width, this.height) / 2 });
         this.setAngle(Phaser.Math.Between(0, 359));
         this.scene.add.existing(this);
         // Remove air friction for space physics

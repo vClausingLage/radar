@@ -3,22 +3,57 @@ import { Target } from '../entities/ship';
 import { Track } from '../radar/data/track';
 import { world } from '../settings';
 
+// Behaviour states. The engagement flow is a cycle rather than a single state:
+//   INVESTIGATE → ENGAGE (shoot) → CRANK (support + open range) → SKATE (bug out)
+// EVADE pre-empts everything the moment an enemy fire-control lock is detected.
 enum AIState {
-    PATROL,      // No contacts, wandering
-    INVESTIGATE, // Has radar track, moving toward it
-    ENGAGE,      // Has STT lock, actively fighting
-    EVADE        // Being tracked by enemy radar/STT
+    PATROL,      // No contacts — flying a search ladder
+    INVESTIGATE, // Radar contact, closing to lock
+    ENGAGE,      // STT lock held — shooting
+    CRANK,       // Just fired: turn target to the cone edge to open range (F-pole)
+    SKATE,       // Missile away/spent: break lock and run
+    EVADE,       // Being locked by an enemy — defend the shot
 }
+
+type Personality = 'aggressive' | 'defensive';
+
+// ── Tunables ───────────────────────────────────────────────────────────────
+const FIRE_COOLDOWN_MS = 2500;
+const STT_LOCK_DELAY_MS = 2500;       // lock must be held this long before firing
+const INVESTIGATE_STT_MIN_AGE = 2;    // wait ~2 scans of a track before locking it
+const CRANK_DURATION_MS = 6000;       // how long to support/crank after a shot
+const CRANK_OFFSET_DEG = 25;          // STT: hold target this far off boresight (<30° cone)
+const CRANK_OFFSET_TWS_DEG = 18;      // TWS: tighter, its half-azimuth is only 22.5°
+const SKATE_MS_AGGRESSIVE = 3000;
+const SKATE_MS_DEFENSIVE = 6000;
+const DECOY_COOLDOWN_MS = 1200;       // min gap between chaff drops
+const PATROL_LEG_PX = 500;            // straight leg of the search ladder
+const PATROL_STEP_PX = 150;           // sideways step between legs
+const PATROL_MARGIN_PX = 300;         // keep the ladder this far off the world edge
 
 export class AiUnitController {
     private state: AIState = AIState.PATROL;
-    private patrolTarget: { x: number; y: number } | null = null;
+    private readonly personality: Personality;
+
     private debugText?: Phaser.GameObjects.Text;
-    private readonly fireCooldownMs = 2500;
-    private readonly sttLockDelayMs = 2500; // 2.5 seconds from lock to first shot
+
+    // Engagement timing.
     private nextShotAt = 0;
     private sttLockAcquiredAt: number | null = null;
     private currentSttTargetId: number | null = null;
+    private crankUntil = 0;
+    private crankSide = 1;             // +1/−1: which way to crank the nose
+    private skateUntil = 0;
+    private evadeSide = 1;
+
+    // Last known contact position, so SKATE/EVADE can flee a direction even after
+    // the lock (and thus the live track) is gone.
+    private lastTargetPos: { x: number; y: number } | null = null;
+    private nextDecoyAt = 0;
+
+    // Patrol search ladder.
+    private patrolRoute: { x: number; y: number }[] = [];
+    private patrolIndex = 0;
     private cargoWaypoints: { x: number; y: number }[] = [];
     private cargoWaypointIndex = 0;
 
@@ -29,12 +64,18 @@ export class AiUnitController {
         private sttTracked = false,
         private readonly radar: Radar | null = null,
         private readonly id: number | null = null,
-
     ) {
-        this.setupRadarListeners();
+        // Cargo is always defensive; cruisers get a coin-flip personality so both
+        // aggressive and defensive behaviours show up in a scene.
+        this.personality = ship.shipType === 'cargo'
+            ? 'defensive'
+            : (Phaser.Math.Between(0, 1) === 0 ? 'aggressive' : 'defensive');
+
         this.createDebugText();
         if (ship.shipType === 'cargo') {
             this.cargoWaypoints = this.generateCargoRoute();
+        } else {
+            this.patrolRoute = this.generatePatrolRoute();
         }
     }
 
@@ -45,51 +86,31 @@ export class AiUnitController {
         this.turnRate = turnRate;
     }
 
-    private setupRadarListeners(): void {
-        if (!this.radar || this.id === null) return;
-
-        // Listen for STT tracking
-        
-        // this.sttTracked = this.radar.eventEmitter.emitLockEvent(trackedId);
-        // this.radar?.events.on('stt-track', (trackedId: number | null) => {
-        //     if (trackedId === this.id) {
-        //         this.sttTracked = true;
-        //         console.log(`Target ${this.id}: STT LOCK DETECTED!`);
-        //     } else {
-        //         this.sttTracked = false;
-        //     }
-        // });
-
-    }
-
     private createDebugText(): void {
-        const isDev = import.meta.env.DEV;
-        if (!isDev) return;
-
+        if (!import.meta.env.DEV) return;
         this.debugText = this.scene.add.text(this.ship.x, this.ship.y - 24, '', {
             fontSize: '11px',
             color: '#00ff88',
-            backgroundColor: '#001a11'
+            backgroundColor: '#001a11',
         }).setOrigin(0.5, 1);
     }
 
     private updateDebugText(): void {
         if (!this.debugText) return;
-
-        const stateNames = ['PATROL', 'INVESTIGATE', 'ENGAGE', 'EVADE'];
-        const nearestTrackId = this.radar?.getTracks()?.[0]?.id ?? 'none';
-        const lockStatus = this.sttLockAcquiredAt !== null 
+        const stateNames = ['PATROL', 'INVESTIGATE', 'ENGAGE', 'CRANK', 'SKATE', 'EVADE'];
+        const lock = this.sttLockAcquiredAt !== null
             ? `L:${Math.floor((this.scene.time.now - this.sttLockAcquiredAt) / 1000)}s`
             : 'L:--';
+        const w220 = this.radar?.getWeaponLoad('VIM-220') ?? 0;
+        const w177 = this.radar?.getWeaponLoad('VIM-177') ?? 0;
         this.debugText.setText(
-            `AI ${this.id} [${stateNames[this.state]}] T:${nearestTrackId} ${lockStatus}`
+            `AI ${this.id} ${this.personality[0].toUpperCase()} [${stateNames[this.state]}] ${lock} D:${this.ship.getRemainingDecoys()} M:${w220}/${w177}`,
         );
         this.debugText.setPosition(this.ship.x, this.ship.y - 24);
     }
 
-    // Called every frame for continuous updates
+    // Called every frame.
     updateContinuous(): void {
-        // Don't update if ship is destroyed or inactive
         if (!this.ship.active || !this.ship.body) {
             this.debugText?.destroy();
             this.debugText = undefined;
@@ -98,50 +119,300 @@ export class AiUnitController {
 
         const radar = this.radar;
         const tracks = radar?.getTracks() ?? [];
-        // Tracks carry no entity ID (geometry-only), so engage the
-        // highest-confidence contact rather than a hard-coded "player" id.
+        // Tracks are geometry-only (no entity id): engage the highest-confidence one.
         const preferredTrack = tracks.reduce<Track | undefined>(
             (best, t) => (!best || t.confidence > best.confidence ? t : best),
             undefined,
         );
-        // Our own radar's current STT lock (the contact we are illuminating).
-        const sttTargetId = radar?.getSttTrack()?.id ?? null;
-        // Are we being locked by someone else's fire-control radar? (RWR)
+        const sttTrack = radar?.getSttTrack() ?? null;
+
+        // Weapon doctrine: spend the fire-and-forget VIM-220s first (TWS shots,
+        // no lock needed), then fall back to the SARH VIM-177 (needs STT).
+        const weapon = this.engagementWeapon();
+        // The track the current weapon engages with: the STT lock for the 177,
+        // any maintained TWS track for the 220.
+        const engagementTrack = weapon === 'VIM-220' ? (preferredTrack ?? null) : sttTrack;
+
+        // Are we being locked by an enemy fire-control radar? (from our RWR)
         this.sttTracked = radar?.rwrReceiver.getPrimaryRwrContact()?.isLocked ?? false;
 
-        // Track STT lock duration for fire delay
-        this.updateSttLockTracking(sttTargetId);
+        this.updateSttLockTracking(sttTrack?.id ?? null);
+        this.updateState(preferredTrack, weapon, engagementTrack);
 
-        // State transitions
-        this.updateState(preferredTrack);
-
-        // Execute current state behavior
         switch (this.state) {
-            case AIState.EVADE:
-                this.executeEvade(preferredTrack);
-                break;
-            case AIState.ENGAGE:
-                this.executeEngage(preferredTrack, sttTargetId);
-                break;
-            case AIState.INVESTIGATE:
-                this.executeInvestigate(preferredTrack);
-                break;
-            case AIState.PATROL:
-                this.executePatrol();
-                break;
+            case AIState.EVADE: this.executeEvade(); break;
+            case AIState.SKATE: this.executeSkate(); break;
+            case AIState.CRANK: this.executeCrank(weapon, engagementTrack); break;
+            case AIState.ENGAGE: this.executeEngage(weapon, engagementTrack); break;
+            case AIState.INVESTIGATE: this.executeInvestigate(preferredTrack, weapon); break;
+            case AIState.PATROL: this.executePatrol(); break;
         }
 
-        // Border avoidance overrides the state's steering when the ship is about
-        // to drive off the edge of the world.
+        // Border avoidance overrides state steering at the world edge.
         this.avoidBorder();
-
         this.applyMovement();
         this.updateDebugText();
     }
 
-    // If the ship is within BORDER_MARGIN of an edge *and heading further toward
-    // it*, steer back inward. Only the outward axes are corrected, so a ship
-    // skimming a wall parallel to it is left alone. Returns true if it steered.
+    // ── State machine ──────────────────────────────────────────────────────
+
+    // Which weapon the next engagement uses: fire-and-forget VIM-220s first,
+    // then the SARH VIM-177s.
+    private engagementWeapon(): 'VIM-220' | 'VIM-177' {
+        return (this.radar?.getWeaponLoad('VIM-220') ?? 0) > 0 ? 'VIM-220' : 'VIM-177';
+    }
+
+    private updateState(
+        track: Track | undefined,
+        weapon: 'VIM-220' | 'VIM-177',
+        engagementTrack: Track | null,
+    ): void {
+        const now = this.scene.time.now;
+        const isCargo = this.ship.shipType === 'cargo';
+
+        // Highest priority: an enemy has a fire-control lock on us → defend.
+        if (this.sttTracked) {
+            this.enter(AIState.EVADE);
+            return;
+        }
+
+        // Cargo never prosecutes an attack; it just flies its route (evade above
+        // still applies).
+        if (isCargo) {
+            this.enter(AIState.PATROL);
+            return;
+        }
+
+        // Post-shot maneuvers run to completion before re-evaluating.
+        if (this.state === AIState.SKATE && now < this.skateUntil) return;
+        if (this.state === AIState.CRANK) {
+            // Keep cranking while the window is open and the engagement source
+            // (STT lock / TWS track) survives; otherwise bug out.
+            if (now < this.crankUntil && engagementTrack) return;
+            this.enter(AIState.SKATE);
+            return;
+        }
+
+        // Ready to shoot? The 177 needs its STT lock; the 220 just needs a
+        // matured TWS track (radar mode is set up during INVESTIGATE).
+        const readyToEngage = weapon === 'VIM-220'
+            ? engagementTrack !== null
+                && engagementTrack.age >= INVESTIGATE_STT_MIN_AGE
+                && this.radar?.getMode() === 'tws'
+            : engagementTrack !== null;
+
+        if (readyToEngage) this.enter(AIState.ENGAGE);
+        else if (track) this.enter(AIState.INVESTIGATE);
+        else this.enter(AIState.PATROL);
+    }
+
+    // Transition with logging + entry side effects.
+    private enter(state: AIState): void {
+        if (this.state === state) return;
+        if (state === AIState.SKATE) {
+            this.skateUntil = this.scene.time.now + this.skateDurationMs();
+        }
+        if (state === AIState.EVADE) {
+            this.evadeSide = Phaser.Math.Between(0, 1) === 0 ? 1 : -1;
+        }
+        this.state = state;
+    }
+
+    private skateDurationMs(): number {
+        return this.personality === 'aggressive' ? SKATE_MS_AGGRESSIVE : SKATE_MS_DEFENSIVE;
+    }
+
+    private updateSttLockTracking(sttTargetId: number | null): void {
+        if (sttTargetId !== null) {
+            if (this.currentSttTargetId !== sttTargetId) {
+                this.sttLockAcquiredAt = this.scene.time.now;
+                this.currentSttTargetId = sttTargetId;
+            }
+        } else {
+            this.sttLockAcquiredAt = null;
+            this.currentSttTargetId = null;
+        }
+    }
+
+    // ── State behaviours ───────────────────────────────────────────────────
+
+    private executePatrol(): void {
+        if (this.radar?.getMode() !== 'rws') this.radar?.enterRws();
+
+        if (this.ship.shipType === 'cargo') {
+            this.followCargoRoute();
+            return;
+        }
+
+        // React to being painted (unlocked RWR contact) before we have a track:
+        // aggressive turns toward the emitter to acquire, defensive turns away.
+        const rwr = this.radar?.rwrReceiver.getPrimaryRwrContact();
+        if (rwr) {
+            const heading = this.personality === 'aggressive' ? rwr.bearingDeg : rwr.bearingDeg + 180;
+            this.turnTowardAngle(heading);
+            return;
+        }
+
+        this.followPatrolLadder();
+    }
+
+    private executeInvestigate(track: Track | undefined, weapon: 'VIM-220' | 'VIM-177'): void {
+        if (!track) return;
+        this.lastTargetPos = { x: track.pos.x, y: track.pos.y };
+        this.turnToward(track.pos);
+
+        // Wait until the track has matured (~2 scans), then set up the radar for
+        // the chosen weapon: TWS for the fire-and-forget 220 (no lock needed),
+        // STT lock for the SARH 177.
+        if (track.age >= INVESTIGATE_STT_MIN_AGE && this.radar) {
+            if (weapon === 'VIM-220') {
+                if (this.radar.getMode() !== 'tws') this.radar.enterTws();
+            } else if (this.radar.getMode() !== 'stt') {
+                this.radar.enterStt();
+            }
+        }
+    }
+
+    private executeEngage(weapon: 'VIM-220' | 'VIM-177', track: Track | null): void {
+        if (!track) return;
+        this.lastTargetPos = { x: track.pos.x, y: track.pos.y };
+        this.turnToward(track.pos);
+
+        if (this.personality === 'aggressive') this.radar?.activateJammer();
+
+        // The 177 shot is gated on holding the lock; the 220 track matured
+        // during INVESTIGATE and can be fired as soon as the launcher is ready.
+        const now = this.scene.time.now;
+        const lockHeld = this.sttLockAcquiredAt !== null ? now - this.sttLockAcquiredAt : 0;
+        const gateOpen = weapon === 'VIM-220' || lockHeld >= STT_LOCK_DELAY_MS;
+
+        if (gateOpen && now >= this.nextShotAt && this.tryShoot(weapon)) {
+            this.nextShotAt = now + FIRE_COOLDOWN_MS;
+            this.tryDeployDecoy();
+
+            // Enter the crank: pick the side that turns the nose toward open space
+            // (world centre), so we open range without cornering ourselves.
+            this.crankSide = this.sideTowardCenter(track.pos);
+            this.crankUntil = now + CRANK_DURATION_MS;
+            this.state = AIState.CRANK;
+        }
+    }
+
+    private executeCrank(weapon: 'VIM-220' | 'VIM-177', track: Track | null): void {
+        // Lost the engagement source (cone exit, chaff, …) → let updateState skate.
+        if (!track) return;
+        this.lastTargetPos = { x: track.pos.x, y: track.pos.y };
+
+        if (this.personality === 'aggressive') this.radar?.activateJammer();
+
+        // Keep the target near the cone edge: aim the offset off the target
+        // bearing so it stays illuminated while we build lateral separation.
+        // TWS cranks tighter than STT — its cone is 45° vs the 60° search cone.
+        const offset = this.radar?.getMode() === 'tws' ? CRANK_OFFSET_TWS_DEG : CRANK_OFFSET_DEG;
+        const bearing = this.bearingTo(track.pos);
+        this.turnTowardAngle(bearing + this.crankSide * offset);
+
+        // Follow-up shot while cranking — this is where the 220s get "spammed"
+        // (fireVim220 walks outward across un-engaged tracks by itself).
+        const now = this.scene.time.now;
+        if (now >= this.nextShotAt && this.tryShoot(weapon)) {
+            this.nextShotAt = now + FIRE_COOLDOWN_MS;
+            this.tryDeployDecoy();
+        }
+    }
+
+    // Select the weapon and pull the trigger. Returns true only if a missile
+    // actually left the rail (detected via the load count), since shoot() can
+    // silently refuse — e.g. all tracks already engaged, or wrong radar mode.
+    private tryShoot(weapon: 'VIM-220' | 'VIM-177'): boolean {
+        if (!this.radar) return false;
+        this.radar.selectWeapon(weapon);
+        const before = this.radar.getWeaponLoad(weapon);
+        if (before <= 0) return false;
+        this.radar.shoot(this.ship.getDirection());
+        return this.radar.getWeaponLoad(weapon) < before;
+    }
+
+    private executeSkate(): void {
+        // Break our own lock and go back to searching while we run.
+        if (this.radar?.getMode() === 'stt') this.radar.enterRws();
+        if (this.lastTargetPos) this.turnAwayFrom(this.lastTargetPos);
+    }
+
+    private executeEvade(): void {
+        // Chaff first — in this sim that is what actually defeats a track.
+        this.tryDeployDecoy();
+
+        // Break our own lock and search while defending.
+        if (this.radar?.getMode() === 'stt') this.radar.enterRws();
+
+        // Threat bearing from the RWR (points at the emitter). Defensive runs cold;
+        // aggressive beams (perpendicular) to keep the fight closer.
+        const rwr = this.radar?.rwrReceiver.getPrimaryRwrContact();
+        const threatBearing = rwr?.bearingDeg
+            ?? (this.lastTargetPos ? this.bearingTo(this.lastTargetPos) : this.ship.angle);
+        const heading = this.personality === 'defensive'
+            ? threatBearing + 180
+            : threatBearing + 90 * this.evadeSide;
+        this.turnTowardAngle(heading);
+    }
+
+    // ── Routes ─────────────────────────────────────────────────────────────
+
+    // Boustrophedon search ladder around the current position, clamped to world.
+    private generatePatrolRoute(): { x: number; y: number }[] {
+        const clampX = (x: number) => Phaser.Math.Clamp(x, PATROL_MARGIN_PX, world.WIDTH - PATROL_MARGIN_PX);
+        const clampY = (y: number) => Phaser.Math.Clamp(y, PATROL_MARGIN_PX, world.HEIGHT - PATROL_MARGIN_PX);
+
+        const points: { x: number; y: number }[] = [];
+        let x = this.ship.x;
+        let y = this.ship.y;
+        let dir = Phaser.Math.Between(0, 1) === 0 ? 1 : -1;
+        for (let rung = 0; rung < 4; rung++) {
+            x += dir * PATROL_LEG_PX;
+            points.push({ x: clampX(x), y: clampY(y) });
+            y += PATROL_STEP_PX;
+            points.push({ x: clampX(x), y: clampY(y) });
+            dir *= -1;
+        }
+        return points;
+    }
+
+    private followPatrolLadder(): void {
+        if (this.patrolRoute.length === 0) this.patrolRoute = this.generatePatrolRoute();
+        if (this.isNearPosition(this.patrolRoute[this.patrolIndex], 120)) {
+            this.patrolIndex++;
+            if (this.patrolIndex >= this.patrolRoute.length) {
+                this.patrolRoute = this.generatePatrolRoute();
+                this.patrolIndex = 0;
+            }
+        }
+        this.turnToward(this.patrolRoute[this.patrolIndex]);
+    }
+
+    private generateCargoRoute(): { x: number; y: number }[] {
+        const cx = this.ship.x;
+        const cy = this.ship.y;
+        const r = 800;
+        return [
+            { x: cx + r, y: cy },
+            { x: cx, y: cy + r },
+            { x: cx - r, y: cy },
+            { x: cx, y: cy - r },
+        ];
+    }
+
+    private followCargoRoute(): void {
+        if (this.cargoWaypoints.length === 0) return;
+        if (this.isNearPosition(this.cargoWaypoints[this.cargoWaypointIndex], 150)) {
+            this.cargoWaypointIndex = (this.cargoWaypointIndex + 1) % this.cargoWaypoints.length;
+        }
+        this.turnToward(this.cargoWaypoints[this.cargoWaypointIndex]);
+    }
+
+    // ── Steering / helpers ─────────────────────────────────────────────────
+
+    // If within BORDER_MARGIN of an edge and heading further toward it, steer back.
     private avoidBorder(): boolean {
         const margin = world.BORDER_MARGIN;
         const { x, y } = this.ship;
@@ -159,8 +430,6 @@ export class AiUnitController {
 
         if (steerX === 0 && steerY === 0) return false;
 
-        // Steer toward a point inward on the offending axis, keeping the current
-        // heading on the axis that is still safe.
         this.turnToward({
             x: x + (steerX !== 0 ? steerX : dirX) * 1000,
             y: y + (steerY !== 0 ? steerY : dirY) * 1000,
@@ -168,161 +437,38 @@ export class AiUnitController {
         return true;
     }
 
-    private updateSttLockTracking(sttTargetId: number | null): void {
-        if (sttTargetId !== null) {
-            // Lock is active
-            if (this.currentSttTargetId !== sttTargetId) {
-                // New lock acquired
-                this.sttLockAcquiredAt = this.scene.time.now;
-                this.currentSttTargetId = sttTargetId;
-                console.log(`AI ${this.id}: STT lock acquired on target ${sttTargetId}`);
-            }
-        } else {
-            // Lock lost
-            if (this.currentSttTargetId !== null) {
-                console.log(`AI ${this.id}: STT lock lost`);
-            }
-            this.sttLockAcquiredAt = null;
-            this.currentSttTargetId = null;
-        }
-    }
-
-    private updateState(preferredTrack: Track | undefined): void {
-        const isCargo = this.ship.shipType === 'cargo';
-        // Priority: Evade > Engage > Investigate > Patrol
-        if (this.sttTracked) {
-            // Enemy has STT lock on us!
-            if (this.state !== AIState.EVADE) {
-                console.log(`AI ${this.id}: EVADING! Enemy lock detected!`);
-                this.state = AIState.EVADE;
-            }
-        } else if (
-            !isCargo &&
-            preferredTrack &&
-            this.radar?.getMode() === 'stt' &&
-            this.currentSttTargetId !== null
-        ) {
-            // We have STT lock
-            if (this.state !== AIState.ENGAGE) {
-                console.log(`AI ${this.id}: ENGAGING target ${this.currentSttTargetId}!`);
-                this.state = AIState.ENGAGE;
-            }
-        } else if (!isCargo && preferredTrack) {
-            // We have radar contact but no lock
-            if (this.state !== AIState.INVESTIGATE) {
-                console.log(`AI ${this.id}: INVESTIGATING contact ${preferredTrack.id}`);
-                this.state = AIState.INVESTIGATE;
-            }
-        } else {
-            // No contacts (or cargo ship — always returns to route/patrol)
-            if (this.state !== AIState.PATROL) {
-                console.log(`AI ${this.id}: Returning to PATROL`);
-                this.state = AIState.PATROL;
-            }
-        }
-    }
-
-    private executePatrol(): void {
-        if (this.ship.shipType === 'cargo') {
-            this.executeCargoRoute();
-            return;
-        }
-        // Wander randomly
-        if (!this.patrolTarget || this.isNearPosition(this.patrolTarget, 100)) {
-            this.patrolTarget = {
-                x: Phaser.Math.Between(1500, 2500),
-                y: Phaser.Math.Between(1500, 2500)
-            };
-        }
-        this.turnToward(this.patrolTarget);
-        
-        // Keep radar in RWS mode when patrolling
-        if (this.radar?.getMode() !== 'rws') {
-            this.radar?.enterRws();
-        }
-    }
-
-    private generateCargoRoute(): { x: number; y: number }[] {
-        const cx = this.ship.x;
-        const cy = this.ship.y;
-        const r = 800;
-        return [
-            { x: cx + r, y: cy },
-            { x: cx, y: cy + r },
-            { x: cx - r, y: cy },
-            { x: cx, y: cy - r },
-        ];
-    }
-
-    private executeCargoRoute(): void {
-        if (this.cargoWaypoints.length === 0) return;
-        const waypoint = this.cargoWaypoints[this.cargoWaypointIndex];
-        if (this.isNearPosition(waypoint, 150)) {
-            this.cargoWaypointIndex = (this.cargoWaypointIndex + 1) % this.cargoWaypoints.length;
-        }
-        this.turnToward(this.cargoWaypoints[this.cargoWaypointIndex]);
-        if (this.radar?.getMode() !== 'rws') {
-            this.radar?.enterRws();
-        }
-    }
-
-    private executeInvestigate(track: Track | undefined): void {
-        if (!track) return;
-        
-        // Switch radar to STT to get a lock. enterStt locks the highest-
-        // confidence track, which is the one we picked as preferredTrack.
-        if (this.radar && this.radar.getMode() !== 'stt') {
-            this.radar.enterStt();
-        }
-
-        // Move toward contact
-        this.turnToward(track.pos);
-    }
-
-    private executeEngage(track: Track | undefined, sttTargetId: number | null): void {
-        if (!track) return;
-        
-        // Point at target
-        this.turnToward(track.pos);
-        
-        // Fire only after lock has been held for sttLockDelayMs
+    // Throttled chaff drop; no-op while cooling down or out of decoys.
+    private tryDeployDecoy(): void {
         const now = this.scene.time.now;
-        const lockHeldTime = this.sttLockAcquiredAt !== null ? now - this.sttLockAcquiredAt : 0;
-        
-        if (this.radar && sttTargetId !== null &&
-            lockHeldTime >= this.sttLockDelayMs &&
-            now >= this.nextShotAt) {
-            this.radar.shoot(this.ship.getDirection());
-            this.nextShotAt = now + this.fireCooldownMs;
-            console.log(`AI ${this.id}: FIRING! (lock held for ${lockHeldTime}ms)`);
-        }
+        if (now < this.nextDecoyAt || this.ship.getRemainingDecoys() <= 0) return;
+        this.ship.deployDecoy();
+        this.nextDecoyAt = now + DECOY_COOLDOWN_MS;
     }
 
-    private executeEvade(track: Track | undefined): void {
-        // Evasive maneuvers: turn perpendicular to threat + jink
-        if (track) {
-            const threatAngle = Phaser.Math.RadToDeg(
-                Math.atan2(track.pos.y - this.ship.y, track.pos.x - this.ship.x)
-            );
-            // Turn 90 degrees away + random jink
-            const evadeAngle = threatAngle + 90 + Phaser.Math.Between(-30, 30);
-            this.turnToward({ 
-                x: this.ship.x + Math.cos(Phaser.Math.DegToRad(evadeAngle)) * 1000,
-                y: this.ship.y + Math.sin(Phaser.Math.DegToRad(evadeAngle)) * 1000
-            });
-        }
-        
-        // Switch radar to RWS while evading (break our own lock)
-        if (this.radar?.getMode() === 'stt') {
-            this.radar.enterRws();
-        }
+    private bearingTo(pos: { x: number; y: number }): number {
+        return Phaser.Math.RadToDeg(Math.atan2(pos.y - this.ship.y, pos.x - this.ship.x));
+    }
+
+    // +1 or −1: which crank side turns the nose from the target bearing toward the
+    // world centre (keeps the ship from cranking itself into a wall).
+    private sideTowardCenter(targetPos: { x: number; y: number }): number {
+        const toCenter = Phaser.Math.RadToDeg(
+            Math.atan2(world.HEIGHT / 2 - this.ship.y, world.WIDTH / 2 - this.ship.x),
+        );
+        const delta = Phaser.Math.Angle.WrapDegrees(toCenter - this.bearingTo(targetPos));
+        return delta >= 0 ? 1 : -1;
     }
 
     private turnToward(position: { x: number; y: number }): void {
-        const desiredAngle = Phaser.Math.RadToDeg(
-            Math.atan2(position.y - this.ship.y, position.x - this.ship.x)
-        );
-        const angleDelta = Phaser.Math.Angle.WrapDegrees(desiredAngle - this.ship.angle);
+        this.turnTowardAngle(this.bearingTo(position));
+    }
+
+    private turnAwayFrom(position: { x: number; y: number }): void {
+        this.turnTowardAngle(this.bearingTo(position) + 180);
+    }
+
+    private turnTowardAngle(desiredAngleDeg: number): void {
+        const angleDelta = Phaser.Math.Angle.WrapDegrees(desiredAngleDeg - this.ship.angle);
         const turnStep = Phaser.Math.Clamp(angleDelta, -this.turnRate, this.turnRate);
         this.ship.setAngle(this.ship.angle + turnStep);
     }
@@ -331,13 +477,11 @@ export class AiUnitController {
         const angleRad = Phaser.Math.DegToRad(this.ship.angle);
         this.ship.setVelocity(
             Math.cos(angleRad) * this.ship.getSpeed(),
-            Math.sin(angleRad) * this.ship.getSpeed()
+            Math.sin(angleRad) * this.ship.getSpeed(),
         );
     }
 
     private isNearPosition(pos: { x: number; y: number }, threshold: number): boolean {
-        const dx = pos.x - this.ship.x;
-        const dy = pos.y - this.ship.y;
-        return Math.sqrt(dx * dx + dy * dy) < threshold;
+        return Phaser.Math.Distance.Between(pos.x, pos.y, this.ship.x, this.ship.y) < threshold;
     }
 }

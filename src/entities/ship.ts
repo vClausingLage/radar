@@ -104,27 +104,14 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
     getMissileNoCollideGroup(): number | undefined {
         return this.missileNoCollideGroup;
     }
-}
 
-export class PlayerShip extends Ship {
-    public controller?: PlayerController;
-
+    // ── Chaff / decoys ─────────────────────────────────────────────────────
+    // Available to every ship (player and AI). A deployed cloud lingers and its
+    // circle blocks radar/seeker rays passing through it (see Receiver/MissileRadar).
     private decoys: Decoy[] = [];
     private remainingDecoys = decoySettings.COUNT;
 
-    constructor(params: {
-        scene: Phaser.Scene;
-        x: number;
-        y: number;
-        direction: number;
-        speed: number;
-        radar: Radar;
-    }) {
-        super({ ...params, id: 0 });
-        this.setScale(.7);
-    }
-
-    // Deploy a chaff cloud at the ship's current position (slightly behind the ship).
+    // Deploy a chaff cloud slightly behind the ship. No-op once depleted.
     deployDecoy(): void {
         if (this.remainingDecoys <= 0) return;
         const spawnDistance = this.getCircle().radius;
@@ -152,6 +139,22 @@ export class PlayerShip extends Ship {
             return true;
         });
         return this.decoys;
+    }
+}
+
+export class PlayerShip extends Ship {
+    public controller?: PlayerController;
+
+    constructor(params: {
+        scene: Phaser.Scene;
+        x: number;
+        y: number;
+        direction: number;
+        speed: number;
+        radar: Radar;
+    }) {
+        super({ ...params, id: 0 });
+        this.setScale(.7);
     }
 }
 

@@ -51,11 +51,11 @@ export const radarDefaultSettings = {
 export const targetShipSettings = {
     LOADOUT: {
         'VIM-177': {
-            load: 2,
+            load: 4,
             active: true
         },
         'VIM-220': {
-            load: 0,
+            load: 2,
             active: false
         },
     },

@@ -6,6 +6,7 @@ import { Receiver } from "./modules/receiver";
 import { TrackingComputer } from "./modules/trackingComputer";
 import { RwrReceiver } from "./modules/rwr";
 import { Jammer, JammerError, JammerHudStatus } from "./modules/jammer";
+import { TerrainMapper } from "./modules/terrainMapper";
 
 import { FireControl } from "./fireControl";
 
@@ -14,6 +15,7 @@ import { Entity, Loadout, Mode } from "../data/types";
 
 import { InterfaceRenderer } from "../renderer/interfaceRenderer";
 import { RadarRenderer } from "../renderer/radarRenderer";
+import { TerrainRenderer } from "../renderer/terrainRenderer";
 
 import { Ray } from "../../physics/ray";
 import { RadarEventEmitter } from "./game/radarEventEmitter";
@@ -53,6 +55,10 @@ export class Radar {
     public rwrReceiver = new RwrReceiver();
     public jammer = new Jammer();
 
+    // Ground-mapping half of the radar: terrain returns bypass the tracking
+    // pipeline entirely and are painted like a mapping radar's display.
+    private terrainMapper = new TerrainMapper();
+
     // Error captured if an enemy jammer spoofed this radar during the current
     // RWS sweep; applied to the buffered hits at sweepComplete, then cleared.
     private sweepJammerError: JammerError | null = null;
@@ -76,6 +82,12 @@ export class Radar {
     setRadarRenderer(renderer: RadarRenderer): void {
         this.radarRenderer = renderer;
         this.fireControl.setRadarRenderer(renderer);
+    }
+
+    // Attach the terrain (ground-mapping) renderer. Player-only, like the
+    // radar renderer — AI radars discard terrain returns.
+    setTerrainRenderer(renderer: TerrainRenderer): void {
+        this.terrainMapper.setRenderer(renderer);
     }
 
     setInterfaceRenderer(renderer: InterfaceRenderer): void {
@@ -185,6 +197,14 @@ export class Radar {
         this.fireControl.setLoadout(loadout);
     }
 
+    selectWeapon(type: string): void {
+        this.fireControl.selectWeapon(type);
+    }
+
+    getWeaponLoad(type: string): number {
+        return this.fireControl.getWeaponLoad(type);
+    }
+
     // Place a VIM-220 mid-course waypoint (Shift+click). See FireControl.
     addVim220Waypoint(point: { x: number; y: number }): void {
         this.fireControl.addVim220Waypoint(point);
@@ -217,6 +237,7 @@ export class Radar {
         entities: Entity[],
         graphics: Phaser.GameObjects.Graphics,
         decoyCircles: Phaser.Geom.Circle[] = [],
+        terrain: Entity[] = [],
     ): void {
         if (!this.owner || !('getDirection' in this.owner)) return;
 
@@ -252,13 +273,17 @@ export class Radar {
             tracks: this.trackingComputer.getTracks(),
             targets: targetShips,
             decoyCircles,
+            now: this.scene.time.now,
         }, graphics);
 
         if (this.mode === 'stt') {
-            this.updateStt(ownerPos, shipDirection, entities, graphics, decoyCircles);
+            this.updateStt(ownerPos, shipDirection, entities, graphics, decoyCircles, terrain);
         } else {
-            this.updateRws(ownerPos, shipDirection, entities, graphics, decoyCircles);
+            this.updateRws(ownerPos, shipDirection, entities, graphics, decoyCircles, terrain);
         }
+
+        // Paint the ground-mapping picture (persisted, decaying terrain returns).
+        this.terrainMapper.render(graphics, ownerPos, this.range, this.scene.time.now);
     }
 
     // ── RWS sweep ─────────────────────────────────────────────────────────
@@ -269,6 +294,7 @@ export class Radar {
         entities: Entity[],
         graphics: Phaser.GameObjects.Graphics,
         decoyCircles: Phaser.Geom.Circle[],
+        terrain: Entity[],
     ): void {
         const scanWidth = this.antenna.getAzimuth(this.mode);
         const scanStartAngle = shipDirection - scanWidth / 2;
@@ -301,10 +327,20 @@ export class Radar {
         const jamError = this.detectJamming(targets, pulse.line, ownerPos);
         if (jamError) this.sweepJammerError = jamError;
 
-        const nearestPoint = this.nearestHit(pulse.line, ownerPos, targets);
-        // Chaff between the antenna and the target can swallow the return.
-        if (nearestPoint && !this.receiver.isBlockedByDecoy(ownerPos, nearestPoint, decoyCircles)) {
-            this.sweepBuffer.push({ point: nearestPoint });
+        // Ship and terrain returns compete for the beam — the nearer one wins.
+        // A terrain hit is painted on the ground map (and shadows any ship
+        // behind it); a nearer ship return masks the terrain behind it.
+        const shipHit = this.nearestHit(pulse.line, ownerPos, targets);
+        const terrainHit = this.nearestHit(pulse.line, ownerPos, terrain);
+        const terrainWins = terrainHit && (!shipHit ||
+            Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, terrainHit.x, terrainHit.y) <
+            Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, shipHit.x, shipHit.y));
+
+        if (terrainWins) {
+            this.terrainMapper.addSample(terrainHit, this.scene.time.now);
+        } else if (shipHit && !this.receiver.isBlockedByDecoy(ownerPos, shipHit, decoyCircles)) {
+            // Chaff between the antenna and the target can swallow the return.
+            this.sweepBuffer.push({ point: shipHit });
         }
 
         if (sweepComplete) {
@@ -333,6 +369,7 @@ export class Radar {
         entities: Entity[],
         graphics: Phaser.GameObjects.Graphics,
         decoyCircles: Phaser.Geom.Circle[],
+        terrain: Entity[],
     ): void {
         const rwsHalfAz = this.antenna.getAzimuth('rws') / 2;
         const currentSttTrack = this.getSttTrack();
@@ -394,7 +431,16 @@ export class Radar {
         // Single ray pointed at locked target; processed immediately (no buffer).
         // Chaff in the beam can swallow the return, starving the lock until it
         // breaks (the missed-frame counter below handles that).
-        const rawHit = this.nearestHit(pulse.line, ownerPos, targets);
+        let rawHit = this.nearestHit(pulse.line, ownerPos, targets);
+        // Terrain between us and the target blocks the beam: the return is the
+        // terrain (painted on the ground map), not the ship — the lock starves.
+        const terrainHit = this.nearestHit(pulse.line, ownerPos, terrain);
+        if (terrainHit && (!rawHit ||
+            Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, terrainHit.x, terrainHit.y) <
+            Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, rawHit.x, rawHit.y))) {
+            this.terrainMapper.addSample(terrainHit, this.scene.time.now);
+            rawHit = null;
+        }
         // STT energy overpowers the jammer, so the return is not spoofed — but a
         // jammed frame has a chance to swallow it, feeding the lock-break counter.
         const jammed = this.detectJamming(targets, pulse.line, ownerPos) !== null;

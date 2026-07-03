@@ -19,6 +19,8 @@ export type GuidanceContext = {
   tracks: Track[];
   targets: GuidanceTarget[];
   decoyCircles: Phaser.Geom.Circle[];
+  // Scene clock (scene.time.now) — timestamps the seeker's RWR illumination.
+  now: number;
 };
 
 // Missile guidance module — mirrors the real-world seeker/autopilot unit.
@@ -155,7 +157,7 @@ export class MissileGuidance {
     // 3. Seeker live: run its RWS→STT loop and home on the locked target.
     if (missile.missileRadar.isActive()) {
       const headingDeg = Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x));
-      const target = missile.missileRadar.update(from, headingDeg, ctx.targets, ctx.decoyCircles);
+      const target = missile.missileRadar.update(from, headingDeg, ctx.targets, ctx.decoyCircles, ctx.now);
       if (target) {
         return this.interceptVector(
           from,

@@ -190,7 +190,7 @@ class Game extends Phaser.Scene
       type: 'cruiser',
     });
     const target3 = this.add.target({
-      x: 1600,
+      x: 800,
       y: 2100,
       direction: 90,
       speed: .1,
@@ -242,13 +242,19 @@ class Game extends Phaser.Scene
     const playerSpeed = player.getCurrentSpeed?.() ?? playerShipSettings.SPEED;
     player.controller?.update(playerSpeed);
 
-    // Player chaff clouds (pruned/faded here); their circles block radar beams.
-    const decoyCircles = player.getActiveDecoys().map(d => d.getCircle());
+    // Chaff clouds from every ship (pruned/faded here); their circles block any
+    // radar beam or missile seeker passing through — so AI chaff defeats the
+    // player's radar just as the player's defeats the AI.
+    const decoyCircles = [player, ...this.targets]
+      .flatMap(ship => ship.getActiveDecoys())
+      .map(d => d.getCircle());
 
-    // Radar scan (pass all ships; radar excludes its owner internally)
+    // Radar scan (pass all ships; radar excludes its owner internally).
+    // Asteroids are NOT trackable entities: they go in as terrain — they block
+    // the beam and are painted by the ground-mapping display instead.
     const allShips = [player, ...this.targets];
     allShips.forEach(ship => {
-      ship.radar.update(delta, ship.getDirection(), [...allShips, ...this.asteroids], this.graphics!, decoyCircles);
+      ship.radar.update(delta, ship.getDirection(), allShips, this.graphics!, decoyCircles, this.asteroids);
     });
 
     // Update AI continuous (every frame)
@@ -327,4 +333,9 @@ const config = {
   },
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+
+// DEV-only: expose the game instance for debugging/automation from the console.
+if (import.meta.env.DEV) {
+  (window as unknown as { game?: Phaser.Game }).game = game;
+}

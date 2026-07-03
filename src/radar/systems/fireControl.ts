@@ -73,6 +73,15 @@ export class FireControl {
         this.loadoutManager.cycleActive();
     }
 
+    // Directly select a weapon type (used by AI fire-control logic).
+    selectWeapon(type: string): void {
+        this.loadoutManager.setActiveType(type);
+    }
+
+    getWeaponLoad(type: string): number {
+        return this.loadoutManager.getLoad(type);
+    }
+
     // ── VIM-220 mid-course waypoints ───────────────────────────────────────
 
     // Place a VIM-220 mid-course waypoint (Shift+click). The first click sets

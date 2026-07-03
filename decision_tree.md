@@ -6,6 +6,8 @@ DEF crank => After shooting a missile turn left or right to bring the target nex
 
 DEF skate => After the missile hit or missed skate away (turn away from target and fly away). 
 
+DEF banzai => go into close combat -> does not make much sense in this game -> skip?
+
 Patrol -> fly along patrol route
 
 Patrol -> radar set mode RWS
@@ -21,11 +23,21 @@ Patrol -> radar set mode RWS -> track ?
 						-> crank & deploy decoy
 							-> skate/banzai
 
+Patrol -> rwr warning ?
+	-> turn to rwr warning direction
+	-> Patrol
+		-> track ?
+			-> fly in direction of track
+			-> fly in direction of warning
+				-> track ?
+					-> lock and shoot (see above)
+					-> wait for track
 
-Patrol -> rwr warning ???
-
-Patrol -> rwr lock warning ???
-
+Patrol -> rwr lock warning ?
+	-> deploy decoy -> go in flanking direction (evade missile)
 
 
 Different personalities for enemies: aggressive/defensive
+
+Aggressive => attack enemy if tracked and try to shoot first, jamming
+Defensive => try to evade, fly away from rwr warning direction, deploy decoys

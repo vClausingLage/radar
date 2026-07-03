@@ -3,6 +3,7 @@ import { PlayerShip, Target } from './ship';
 import { Radar } from '../radar/systems/radar';
 import { InterfaceRenderer } from '../radar/renderer/interfaceRenderer';
 import { RadarRenderer } from '../radar/renderer/radarRenderer';
+import { TerrainRenderer } from '../radar/renderer/terrainRenderer';
 import { AiUnitController } from '../controller/aiUnitController';
 import { PlayerController } from '../controller/playerController';
 import { targetShipSettings } from '../settings';
@@ -43,6 +44,8 @@ export const createPlayerShipFactory = () => {
     const radarRenderer = new RadarRenderer();
     radarRenderer.setScene(this.scene);
     ship.radar.setRadarRenderer(radarRenderer);
+    // Ground-mapping display for terrain returns (player-only, like above).
+    ship.radar.setTerrainRenderer(new TerrainRenderer());
 
     const interfaceRenderer = new InterfaceRenderer(this.scene, ship);
     interfaceRenderer.createInterface(ship);
