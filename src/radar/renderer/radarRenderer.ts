@@ -6,6 +6,7 @@ import { Loadout } from "../data/types";
 import { Pulse } from "../systems/modules/emitter";
 import { Vector2 } from "../../types";
 import {
+  DATALINK_COLOR,
   JAMMER_CONE_DEG,
   MISSILE_RANGE_CAP_LENGTH_PX,
   RADAR_CONTACT_MARKER_SIZE_PX,
@@ -205,6 +206,49 @@ export class RadarRenderer {
     if (track.dir && track.speed > 0) {
       const rad = Phaser.Math.DegToRad(track.dir);
       graphics.lineStyle(2, 0x00ff00, 1);
+      graphics.lineBetween(x, y, x + Math.cos(rad) * RADAR_TRACK_VECTOR_LENGTH_PX, y + Math.sin(rad) * RADAR_TRACK_VECTOR_LENGTH_PX);
+    }
+  }
+
+  // ── Datalink (shared support-radar picture) ────────────────────────────
+  // A friendly surveillance radar shares its tracks with the player. They are
+  // painted in the datalink colour so they read as off-board contacts, distinct
+  // from the player's own green returns.
+
+  // Faint coverage ring marking the support radar's 360° reach.
+  renderDatalinkCoverage(graphics: Phaser.GameObjects.Graphics, center: Vector2, range: number): void {
+    graphics.lineStyle(1, DATALINK_COLOR, 0.12);
+    graphics.strokeCircle(center.x, center.y, range);
+  }
+
+  // The rotating beam, from the dish out to max range, so the sweep is visible.
+  renderDatalinkSweep(graphics: Phaser.GameObjects.Graphics, center: Vector2, bearingDeg: number, range: number): void {
+    const rad = Phaser.Math.DegToRad(bearingDeg);
+    graphics.lineStyle(1, DATALINK_COLOR, 0.25);
+    graphics.lineBetween(center.x, center.y, center.x + Math.cos(rad) * range, center.y + Math.sin(rad) * range);
+  }
+
+  // A single shared contact: a hollow datalink-coloured diamond with a velocity
+  // vector. Hollow (vs the player's filled boxes) keeps off-board tracks legible
+  // even when they overlap the player's own contacts on the same target.
+  renderDatalinkContact(graphics: Phaser.GameObjects.Graphics, track: Track): void {
+    const { x, y } = track.pos;
+    const r = RADAR_CONTACT_MARKER_SIZE_PX / 2;
+
+    this.renderTrackHistory(graphics, track, DATALINK_COLOR);
+
+    graphics.lineStyle(2, DATALINK_COLOR, 0.9);
+    graphics.beginPath();
+    graphics.moveTo(x, y - r);
+    graphics.lineTo(x + r, y);
+    graphics.lineTo(x, y + r);
+    graphics.lineTo(x - r, y);
+    graphics.closePath();
+    graphics.strokePath();
+
+    if (track.dir && track.speed > 0) {
+      const rad = Phaser.Math.DegToRad(track.dir);
+      graphics.lineStyle(2, DATALINK_COLOR, 0.9);
       graphics.lineBetween(x, y, x + Math.cos(rad) * RADAR_TRACK_VECTOR_LENGTH_PX, y + Math.sin(rad) * RADAR_TRACK_VECTOR_LENGTH_PX);
     }
   }

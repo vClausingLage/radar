@@ -63,6 +63,21 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
         super.destroy(fromScene);
     }
 
+    // ── Engines ────────────────────────────────────────────────────────────
+    // One engine per exhaust nozzle. Ships fly with all engines running; the
+    // campaign's cold start shuts them down and lights them again one by one.
+    getEngineCount(): number {
+        return this.exhaust.nozzleCount;
+    }
+
+    setEngineRunning(index: number, running: boolean): void {
+        this.exhaust.setNozzleRunning(index, running);
+    }
+
+    shutDownEngines(): void {
+        for (let i = 0; i < this.getEngineCount(); i++) this.setEngineRunning(i, false);
+    }
+
     getCircle(): Phaser.Geom.Circle {
         const radius = Math.max(this.width, this.height) / 2;
         return new Phaser.Geom.Circle(this.x, this.y, radius);

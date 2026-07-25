@@ -4,10 +4,19 @@ import { Vector2 } from '../types';
 
 /* eslint-disable @typescript-eslint/no-namespace */
 
+type AsteroidParams = {
+  position: Vector2;
+  direction: number;
+  speed: number;
+  texture?: string;
+  bodyRadius?: number;
+  spin?: boolean;
+};
+
 declare global {
   namespace Phaser.GameObjects {
     interface GameObjectFactory {
-      asteroid(params: { position: Vector2; direction: number; speed: number }): Asteroid;
+      asteroid(params: AsteroidParams): Asteroid;
     }
   }
 }
@@ -15,7 +24,7 @@ declare global {
 export const createAsteroidFactory = () => {
   Phaser.GameObjects.GameObjectFactory.register('asteroid', function(
     this: Phaser.GameObjects.GameObjectFactory,
-    params: { position: Vector2; direction: number; speed: number }
+    params: AsteroidParams
   ) {
     const asteroid = new Asteroid({ scene: this.scene, ...params });
     if (!asteroid.body) throw new Error('Asteroid body is undefined');

@@ -11,7 +11,7 @@ import { TerrainMapper } from "./modules/terrainMapper";
 import { FireControl } from "./fireControl";
 
 import { Track } from "../data/track";
-import { Entity, Loadout, Mode } from "../data/types";
+import { Entity, Loadout, Mode, RadarHost } from "../data/types";
 
 import { InterfaceRenderer } from "../renderer/interfaceRenderer";
 import { RadarRenderer } from "../renderer/radarRenderer";
@@ -29,13 +29,16 @@ import {
 } from "../data/radarGameSettings";
 
 export class Radar {
-    private owner: Entity | null = null;
+    private owner: RadarHost | null = null;
 
     private mode: Mode = 'rws';
-    private range: number = RADAR_DEFAULT_RANGE_PX;
+    private range: number;
     private antenna = new Antenna();
-    private emitter: Emitter = new Emitter(this.range);
+    private emitter: Emitter;
     private receiver: Receiver = new Receiver();
+    // Bearing (deg) of the most recent pulse, exposed so a mount can align to the
+    // beam (e.g. the dish sprite spins to the current dome bearing).
+    private lastBeamDirection = 0;
 
     private trackingComputer: TrackingComputer = new TrackingComputer();
     private sweepBuffer: { point: Phaser.Math.Vector2 }[] = [];
@@ -73,8 +76,10 @@ export class Radar {
 
     private scene: Phaser.Scene;
 
-    constructor(_params: { scene: Phaser.Scene }) {
-        this.scene = _params.scene;
+    constructor(params: { scene: Phaser.Scene; range?: number }) {
+        this.scene = params.scene;
+        this.range = params.range ?? RADAR_DEFAULT_RANGE_PX;
+        this.emitter = new Emitter(this.range);
         this.fireControl = new FireControl(this.scene);
     }
 
@@ -97,7 +102,7 @@ export class Radar {
         return this.interfaceRenderer;
     }
 
-    attachTo(owner: Entity): void {
+    attachTo(owner: RadarHost): void {
         this.owner = owner;
     }
 
@@ -106,6 +111,12 @@ export class Radar {
     }
     getMode(): Mode {
         return this.mode;
+    }
+
+    // Bearing (deg) of the last pulse — the live beam direction. Used by fixed
+    // mounts to spin their dish to the current dome bearing.
+    getBeamDirection(): number {
+        return this.lastBeamDirection;
     }
 
     // ── Mode switching ─────────────────────────────────────────────────────
@@ -214,6 +225,10 @@ export class Radar {
         this.fireControl.clearVim220Waypoints();
     }
 
+    hasFullVim220Route(): boolean {
+        return this.fireControl.hasFullVim220Route();
+    }
+
     // Fire the weapon matching the current mode (STT → VIM-177, TWS → VIM-220).
     // The radar supplies the track picture; FireControl owns the launch.
     shoot(_angle: number): void {
@@ -239,7 +254,7 @@ export class Radar {
         decoyCircles: Phaser.Geom.Circle[] = [],
         terrain: Entity[] = [],
     ): void {
-        if (!this.owner || !('getDirection' in this.owner)) return;
+        if (!this.owner) return;
 
         const ownerPos = this.owner.getPosition();
         const shipDirection = this.owner.getDirection();
@@ -301,6 +316,7 @@ export class Radar {
         const scanEndAngle = shipDirection + scanWidth / 2;
 
         const { direction: pulseDirection, sweepComplete } = this.antenna.update(this.mode, shipDirection);
+        this.lastBeamDirection = pulseDirection;
         const pulse = this.emitter.sendPulse(ownerPos, pulseDirection, scanWidth);
 
         this.radarRenderer?.update(
@@ -412,6 +428,7 @@ export class Radar {
             lockDir = shipDirection + offset;
         }
 
+        this.lastBeamDirection = lockDir;
         const pulse = this.emitter.sendPulse(ownerPos, lockDir, STT_BEAM_DEG);
 
         // Render full RWS cone with red beam fixed at lock direction.
@@ -555,9 +572,10 @@ export class Radar {
     start(): void {}
     stop(): void {}
 
+    // The owner as a firing ship, or null when the radar is mounted on something
+    // that has no weapons (the fixed dish station). Only ships fire.
     private ownerShip(): (PlayerShip | Target) | null {
-        if (!this.owner || !('getDirection' in this.owner)) return null;
-        return this.owner as PlayerShip | Target;
+        return (this.owner instanceof PlayerShip || this.owner instanceof Target) ? this.owner : null;
     }
 
     setTracks(tracks: Track[]): void {

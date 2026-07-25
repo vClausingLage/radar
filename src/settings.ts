@@ -18,8 +18,8 @@ export const playerShipSettings = {
     TURN_SPEED: .08,
     DIRECTION: 270,
     START_POSITION: { 
-        x: 1500, 
-        y: 2300
+        x: 1600, 
+        y: 2385
     },
     LOADOUT: {
         'VIM-177': {

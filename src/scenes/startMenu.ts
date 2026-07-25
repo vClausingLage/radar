@@ -56,6 +56,10 @@ export default class StartMenu extends Phaser.Scene {
             startButton.setStyle({ backgroundColor: '#000000', color: '#ffffff' });
         });
 
+        // Campaign entries — each its own scene, independent of the practice scenarios.
+        this.createCampaignButton(cx, 470, 'CAMPAIGN — LEVEL 1', 'Level1');
+        this.createCampaignButton(cx, 530, 'CAMPAIGN — LEVEL 2', 'Level2');
+
         // Scenario selector (under Start)
         this.add.text(cx, 250, 'SCENARIO', {
             fontSize: '18px',
@@ -93,6 +97,19 @@ export default class StartMenu extends Phaser.Scene {
             align: 'center',
             lineSpacing: 6,
         }).setOrigin(0.5);
+    }
+
+    private createCampaignButton(x: number, y: number, label: string, sceneKey: string): void {
+        const button = this.add.text(x, y, label, {
+            fontSize: '24px',
+            color: '#ffffff',
+            backgroundColor: '#000000',
+            padding: { x: 20, y: 10 },
+        }).setOrigin(0.5).setInteractive();
+
+        button.on('pointerdown', () => this.scene.start(sceneKey));
+        button.on('pointerover', () => button.setStyle({ backgroundColor: '#00ff00', color: '#000000' }));
+        button.on('pointerout', () => button.setStyle({ backgroundColor: '#000000', color: '#ffffff' }));
     }
 
     private refreshScenarioButtons(): void {

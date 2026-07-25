@@ -1,6 +1,7 @@
 import { Radar } from "../systems/radar";
 import { RwrContact } from "../systems/modules/rwr";
 import { Ship } from "../../entities/ship";
+import { StartupStepKey, STARTUP_STEPS } from "../../audio/startup";
 import {
     GO_STT_WARNING_OFFSET_Y_PX,
     LOCK_WARNING_OFFSET_Y_PX,
@@ -21,6 +22,11 @@ import {
     SPEED_BUTTON_OFFSET_X_PX,
 } from "../data/radarGameSettings";
 
+// Cold-start switch states: waiting to be thrown, running its sequence, done.
+const STARTUP_COLOR_PENDING = '#ffdb4d';
+const STARTUP_COLOR_BUSY = '#ed9209';
+const STARTUP_COLOR_DONE = '#00ff00';
+
 export class InterfaceRenderer {
     private sttBtn?: Phaser.GameObjects.Text;
     private rwsBtn?: Phaser.GameObjects.Text;
@@ -37,6 +43,9 @@ export class InterfaceRenderer {
     private missileTtaText?: Phaser.GameObjects.Text;
     private rwrImage?: Phaser.GameObjects.Image;
     private rwrDirectionGraphics?: Phaser.GameObjects.Graphics;
+    // Cold-start switches (campaign only). Present instead of the flight
+    // controls until the startup procedure completes.
+    private startupBtns = new Map<StartupStepKey, Phaser.GameObjects.Text>();
     private playerShip: Ship;
     private playerRadar: Radar;
 
@@ -238,7 +247,8 @@ export class InterfaceRenderer {
         if (this.sttBtn) this.sttBtn.setBackgroundColor(mode === 'stt' ? '#ff0000' : '#ffdb4d');
         if (this.rwsBtn) this.rwsBtn.setBackgroundColor(mode === 'rws' ? '#00ff00' : '#ffdb4d');
         if (this.twsBtn) this.twsBtn.setBackgroundColor(mode === 'tws' ? '#00ff00' : '#ffdb4d');
-        if (this.shootBtn) this.shootBtn.setBackgroundColor(mode === 'stt' || (isTWSActive && hasTracks) ? '#ed9209' : '#ffdb4d');
+        const canShootTws = isTWSActive && (hasTracks || this.playerRadar.hasFullVim220Route());
+        if (this.shootBtn) this.shootBtn.setBackgroundColor(mode === 'stt' || canShootTws ? '#ed9209' : '#ffdb4d');
 
         // Update speed button colors
         const fullSpeed = this.getFullSpeed(ship);
@@ -249,6 +259,67 @@ export class InterfaceRenderer {
         if (this.speedOneThirdBtn) this.speedOneThirdBtn.setBackgroundColor(Math.abs(currentShipSpeed - oneThirdSpeed) < 0.01 ? '#00ff00' : '#ffdb4d');
         if (this.speedTwoThirdBtn) this.speedTwoThirdBtn.setBackgroundColor(Math.abs(currentShipSpeed - twoThirdSpeed) < 0.01 ? '#00ff00' : '#ffdb4d');
         if (this.speedFullBtn) this.speedFullBtn.setBackgroundColor(Math.abs(currentShipSpeed - fullSpeed) < 0.01 ? '#00ff00' : '#ffdb4d');
+    }
+
+    // ── Cold-start switches ────────────────────────────────────────────────
+    // The campaign starts the ship powered down: the flight controls are hidden
+    // and replaced by the startup switches until the procedure is complete.
+    // Deliberately mouse-only — a cold start is a drill, not a reflex, so these
+    // get no keyboard shortcuts.
+
+    // Show or hide the normal ship/radar controls that sit around the hull.
+    // The zoom buttons are camera-fixed and stay put.
+    setFlightControlsVisible(visible: boolean): void {
+        [
+            this.sttBtn, this.rwsBtn, this.twsBtn, this.shootBtn,
+            this.speedOneThirdBtn, this.speedTwoThirdBtn, this.speedFullBtn,
+        ].forEach(btn => btn?.setVisible(visible));
+    }
+
+    createStartupPanel(onPress: (step: StartupStepKey) => void): void {
+        this.destroyStartupPanel();
+        STARTUP_STEPS.forEach(step => {
+            const button = this.scene.add.text(0, 0, step, {
+                font: '22px Courier',
+                color: '#000',
+                backgroundColor: STARTUP_COLOR_PENDING,
+                padding: { x: 10, y: 5 },
+            })
+            .setInteractive()
+            .setOrigin(0)
+            .on('pointerdown', () => onPress(step));
+            this.startupBtns.set(step, button);
+        });
+        this.updateLayout(this.playerShip);
+    }
+
+    setStartupStepState(step: StartupStepKey, state: 'pending' | 'busy' | 'done'): void {
+        const colors = {
+            pending: STARTUP_COLOR_PENDING,
+            busy: STARTUP_COLOR_BUSY,
+            done: STARTUP_COLOR_DONE,
+        };
+        this.startupBtns.get(step)?.setBackgroundColor(colors[state]);
+    }
+
+    destroyStartupPanel(): void {
+        this.startupBtns.forEach(btn => btn.destroy());
+        this.startupBtns.clear();
+    }
+
+    // Lay the switches out in one row centred under the hull, where the flight
+    // controls they stand in for would be.
+    private layoutStartupPanel(shipX: number, topY: number): void {
+        if (this.startupBtns.size === 0) return;
+        const buttons = [...this.startupBtns.values()];
+        const spacing = RADAR_BUTTON_SPACING_X_PX;
+        const rowWidth = buttons.reduce((sum, b) => sum + b.width, 0) + spacing * (buttons.length - 1);
+
+        let x = shipX - rowWidth / 2;
+        for (const button of buttons) {
+            button.setPosition(x, topY);
+            x += button.width + spacing;
+        }
     }
 
     updateLayout(ship: Ship): void {
@@ -290,6 +361,8 @@ export class InterfaceRenderer {
             : twsY + this.twsBtn!.height + spacingY;
         const shootX = shipX - (this.shootBtn.width / 2);
         this.shootBtn.setPosition(shootX, shootY);
+
+        this.layoutStartupPanel(shipX, topY);
 
         // Position speed buttons to the right, stacked vertically
         if (this.speedOneThirdBtn && this.speedTwoThirdBtn && this.speedFullBtn) {
@@ -485,6 +558,7 @@ export class InterfaceRenderer {
     }
 
     destroy(): void {
+        this.destroyStartupPanel();
         this.sttBtn?.destroy();
         this.rwsBtn?.destroy();
         this.twsBtn?.destroy();

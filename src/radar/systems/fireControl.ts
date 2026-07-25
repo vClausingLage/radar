@@ -104,6 +104,13 @@ export class FireControl {
         return this.vim220Waypoints;
     }
 
+    // A full two-point route lets a VIM-220 launch without a track: it flies
+    // the datalink to WP1 and goes active there. A fading route is already
+    // owned by a missile in flight and no longer counts.
+    hasFullVim220Route(): boolean {
+        return this.vim220Waypoints.length >= 2 && this.vim220WaypointsFadeStart === null;
+    }
+
     private cancelVim220WaypointFade(): void {
         this.vim220WaypointsFadeStart = null;
         this.vim220RouteMissile = null;
@@ -218,7 +225,9 @@ export class FireControl {
             .sort((a, b) =>
                 Phaser.Math.Distance.Between(ownerPos.x, ownerPos.y, a.pos.x, a.pos.y) -
                 Phaser.Math.Distance.Between(ownerPos.x, ownerPos.y, b.pos.x, b.pos.y))[0];
-        if (!target) return;
+        // No track needed with a full route — the missile goes active at WP1
+        // and searches along the WP1→WP2 direction (maddog on the datalink).
+        if (!target && !this.hasFullVim220Route()) return;
 
         const rad = Phaser.Math.DegToRad(ship.getDirection());
 
@@ -230,7 +239,7 @@ export class FireControl {
             dirX: Math.cos(rad),
             dirY: Math.sin(rad),
         });
-        missile.targetId = target.id;
+        if (target) missile.targetId = target.id;
         missile.waypointRoute = this.buildVim220Route();
         this.armMissile(missile, ship);
 

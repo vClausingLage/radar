@@ -7,6 +7,19 @@ export class Antenna {
     private sweepDirection: 1 | -1 = 1;
 
     update(mode: Mode, shipDirection: number): { direction: number; sweepComplete: boolean } {
+        // Dome: a fixed dish spinning continuously through a full circle, rather
+        // than a cone wiping back and forth. The beam advances one step and wraps
+        // at 360°, completing a sweep once per revolution.
+        if (mode === 'dome') {
+            this.angleOffset += this.step;
+            let sweepComplete = false;
+            if (this.angleOffset >= 360) {
+                this.angleOffset -= 360;
+                sweepComplete = true;
+            }
+            return { direction: shipDirection + this.angleOffset, sweepComplete };
+        }
+
         let sweepComplete = false;
         const halfAzimuth = this.getAzimuth(mode) / 2;
 

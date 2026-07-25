@@ -69,6 +69,9 @@ function ensureExhaustTexture(scene: Phaser.Scene): void {
 
 export class Exhaust {
   private readonly emitters: Phaser.GameObjects.Particles.ParticleEmitter[];
+  // Per-nozzle running state. Ships start with every engine lit; the campaign's
+  // cold start shuts them down and brings them back one at a time.
+  private readonly running: boolean[];
 
   constructor(
     scene: Phaser.Scene,
@@ -77,6 +80,7 @@ export class Exhaust {
     style: ExhaustStyle,
   ) {
     ensureExhaustTexture(scene);
+    this.running = nozzles.map(() => true);
     const { spreadDeg, speed } = style;
     this.emitters = nozzles.map(() =>
       scene.add.particles(host.x, host.y, EXHAUST_TEXTURE_KEY, {
@@ -96,12 +100,23 @@ export class Exhaust {
     );
   }
 
+  // Number of independently controllable nozzles (one per engine).
+  get nozzleCount(): number {
+    return this.emitters.length;
+  }
+
+  // Light or shut down a single nozzle's plume. Out-of-range indices are ignored.
+  setNozzleRunning(index: number, running: boolean): void {
+    if (index < 0 || index >= this.running.length) return;
+    this.running[index] = running;
+  }
+
   // Reposition each emitter onto its nozzle. Called from the host's preUpdate so
   // it tracks the moving sprite (emission aim is handled per particle, above).
   // Exhaust only runs while the host is visible — invisible target ships stay
-  // dark on the radar.
+  // dark on the radar — and while that nozzle's engine is running.
   update(): void {
-    const live = this.host.active && this.host.visible;
+    const hostLive = this.host.active && this.host.visible;
     const rad = Phaser.Math.DegToRad(this.host.angle);
     const cos = Math.cos(rad);
     const sin = Math.sin(rad);
@@ -116,6 +131,7 @@ export class Exhaust {
         this.host.x + lx * cos - ly * sin,
         this.host.y + lx * sin + ly * cos,
       );
+      const live = hostLive && this.running[i];
       emitter.emitting = live;
       emitter.setVisible(live);
     }

@@ -4,6 +4,7 @@ VIM 220 waypoints with Shift LClick and clear with Shift RClick
 
 - ASTEROID RADAR -> no track but shape
 - STT remove hack -> real implementation
+- ADD Clutter -> https://de.wikipedia.org/wiki/Clutter_%28Radar%29
 
 # To Dos
 

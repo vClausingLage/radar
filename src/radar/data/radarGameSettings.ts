@@ -48,6 +48,8 @@ export const ANTENNA_AZIMUTH_DEG_BY_MODE = {
   rws: 60,
   tws: 45,
   stt: 60,
+  // Full-circle search for the fixed early-warning dish (systems/radar.ts 'dome').
+  dome: 360,
 } as const;
 
 // ── Tracking computer (systems/modules/trackingComputer.ts) ────────────────
@@ -192,6 +194,18 @@ export const TERRAIN_BLOB_RADIUS_PX = 7;
 // Radar shadow cast behind each return: stroke width and peak opacity.
 export const TERRAIN_SHADOW_WIDTH_PX = 10;
 export const TERRAIN_SHADOW_ALPHA = 0.30;
+
+// ── Support dish radar (entities/dishRadarStation.ts) ──────────────────────
+// A stationary early-warning dish on an asteroid: it drives the standard Radar
+// in 'dome' mode (full 360° cover) at long range, and datalinks its tracks to
+// the player (contacts drawn cyan, bearing available on request over comms).
+
+// Detection range (px) of the support dish radar.
+export const SURVEILLANCE_RANGE_PX = 2000;
+
+// Colour of the shared datalink picture (contacts + coverage ring + sweep line),
+// distinct from the player radar's own green returns.
+export const DATALINK_COLOR = 0x00aeef;
 
 // ── Decoys ───────────────────────────────────────────────────────────────────
 export const decoySettings = {
