@@ -18,8 +18,11 @@ export interface RadarHost {
 }
 
 // Radar scan patterns. rws/tws/stt are the fighter's cone modes; dome is a full
-// 360° search used by fixed early-warning radars (the dish station).
-export type Mode = 'rws' | 'tws' | 'stt' | 'dome';
+// 360° search used by fixed early-warning radars (the dish station); emcon
+// (Emission Control) shuts the transmitter down entirely — no pulses, no
+// outbound illumination, no active radio — while still passively receiving
+// RWR warnings and incoming radio traffic.
+export type Mode = 'rws' | 'tws' | 'stt' | 'dome' | 'emcon';
 
 export type Loadout = {
     [key in string]: { load: number, active: boolean }

@@ -1,3 +1,4 @@
+import Phaser from "phaser";
 import { PlayerShip, Target } from "../../entities/ship";
 
 import { Antenna } from "./modules/antenna";
@@ -149,6 +150,20 @@ export class Radar {
         this.sttTargetEntity = null;
     }
 
+    // Emission Control: shut the transmitter down. No pulse goes out, so no
+    // other ship's RWR sees us and no returns come back — the tactical picture
+    // we built while emitting is no longer being refreshed, so it goes dark
+    // too, same as leaving STT. RWR reception and datalink traffic are
+    // untouched, since both are driven by other emitters, not our own mode.
+    enterEmcon(): void {
+        if (this.mode === 'stt') {
+            this.clearSttState();
+        }
+        this.mode = 'emcon';
+        this.trackingComputer.setTracks([]);
+        this.sweepBuffer = [];
+    }
+
     // ── STT lock management ────────────────────────────────────────────────
 
     // Lock the highest-confidence RWS track and enter STT.
@@ -188,13 +203,20 @@ export class Radar {
 
     // ── Jammer ─────────────────────────────────────────────────────────────
 
-    // Trigger a jamming burst (player input). No-op while active or cooling down.
+    // Trigger a jamming burst (player input). No-op while active, cooling down,
+    // or with the transmitter shut down (EMCON) — jamming is itself an emission.
     activateJammer(): void {
+        if (this.mode === 'emcon') return;
         this.jammer.activate(this.scene.time.now);
     }
 
     // Cone-readout status for the jammer (active/cooldown/ready countdown).
+    // EMCON overrides the readout to standby regardless of the underlying
+    // timer, since the transmitter is off and the jammer cannot be triggered.
     getJammerHudStatus(): JammerHudStatus {
+        if (this.mode === 'emcon') {
+            return { label: 'JAMMER STDBY', color: '#ffff00' };
+        }
         return this.jammer.getHudStatus(this.scene.time.now);
     }
 
@@ -230,13 +252,19 @@ export class Radar {
     }
 
     // Fire the weapon matching the current mode (STT → VIM-177, TWS → VIM-220).
-    // The radar supplies the track picture; FireControl owns the launch.
+    // The radar supplies the track picture; FireControl owns the launch. A
+    // confirmed launch fires a 'missile-fired' event on this radar's own
+    // emitter — only the player's radar has a listener (see Game.create()),
+    // so AI ships firing the same weapons stay silent.
     shoot(_angle: number): void {
-        this.fireControl.shoot(this.mode, {
+        const fired = this.fireControl.shoot(this.mode, {
             ship: this.ownerShip(),
             sttTrack: this.getSttTrack(),
             tracks: this.trackingComputer.getTracks(),
         });
+        if (fired) {
+            this.eventEmitter.emitMissileFired(fired);
+        }
     }
 
     // Max range (px) of the currently selected weapon, for the range indicator.
@@ -293,6 +321,8 @@ export class Radar {
 
         if (this.mode === 'stt') {
             this.updateStt(ownerPos, shipDirection, entities, graphics, decoyCircles, terrain);
+        } else if (this.mode === 'emcon') {
+            this.updateEmcon(ownerPos, shipDirection, graphics);
         } else {
             this.updateRws(ownerPos, shipDirection, entities, graphics, decoyCircles, terrain);
         }
@@ -491,6 +521,36 @@ export class Radar {
         const stt = this.getSttTrack();
         if (stt) {
             this.radarRenderer?.renderStt(stt, graphics);
+        }
+    }
+
+    // ── EMCON standby ─────────────────────────────────────────────────────
+
+    // Transmitter off: no sweep, no pulse, no illumination. Still draws the
+    // static cone frame (heading reference) so the HUD isn't blank, with the
+    // range and jammer readouts swapped for standby indicators.
+    private updateEmcon(
+        ownerPos: { x: number; y: number },
+        shipDirection: number,
+        graphics: Phaser.GameObjects.Graphics,
+    ): void {
+        const scanWidth = this.antenna.getAzimuth('rws');
+        const scanStartAngle = shipDirection - scanWidth / 2;
+        const scanEndAngle = shipDirection + scanWidth / 2;
+
+        this.radarRenderer?.update(
+            graphics, ownerPos, this.range,
+            scanStartAngle, scanEndAngle,
+            [], this.fireControl.getLoadout(), this.fireControl.getWaypoints(), undefined, false,
+            this.fireControl.getLastVim220TimeToActive(), this.fireControl.getActiveMissileRange(),
+            this.getJammerHudStatus(), this.fireControl.getWaypointAlpha(),
+            true,
+        );
+
+        // A jamming burst triggered just before EMCON was engaged still runs
+        // its course — keep showing its cone rather than hide it silently.
+        if (this.jammer.isActive()) {
+            this.radarRenderer?.renderJammerCone(graphics, ownerPos, shipDirection, this.range);
         }
     }
 

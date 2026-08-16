@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import { AudioPlayer } from './audioPlayer';
 
 // The ship's cold-start procedure: the player throws four switches in order and

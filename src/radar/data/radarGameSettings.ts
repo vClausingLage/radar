@@ -50,6 +50,8 @@ export const ANTENNA_AZIMUTH_DEG_BY_MODE = {
   stt: 60,
   // Full-circle search for the fixed early-warning dish (systems/radar.ts 'dome').
   dome: 360,
+  // Transmitter off — the antenna never sweeps, so this value is never read.
+  emcon: 0,
 } as const;
 
 // ── Tracking computer (systems/modules/trackingComputer.ts) ────────────────

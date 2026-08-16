@@ -3,6 +3,8 @@
 // is in flight — and a global cooldown throttles messages so callouts never
 // spam. Built generic so future audio (warnings, lock tones, …) can share the
 // same lock and cooldown.
+import Phaser from 'phaser';
+
 export class AudioPlayer {
   private playing = false;
   private lastMessageAt = -Infinity;

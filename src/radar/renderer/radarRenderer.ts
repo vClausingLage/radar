@@ -1,3 +1,4 @@
+import Phaser from "phaser";
 import { Track } from "../../radar/data/track";
 import { Asteroid } from "../../entities/asteroid";
 import { Missile } from "../../entities/missiles";
@@ -34,15 +35,27 @@ export class RadarRenderer {
     graphics.strokeLineShape(pulse.line);
   }
 
-  renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, activeMissiles: Missile[], loadout: Loadout, vim220Waypoints: Vector2[] = [], vim220TimeToActive: number | null = null, jammerStatus: JammerHudStatus | null = null, vim220WaypointAlpha = 1): void {
+  renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, activeMissiles: Missile[], loadout: Loadout, vim220Waypoints: Vector2[] = [], vim220TimeToActive: number | null = null, jammerStatus: JammerHudStatus | null = null, vim220WaypointAlpha = 1, emconStandby = false): void {
     const endX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(endAngle));
     const endY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(endAngle));
-    
+
     if (!this.activeLoadout && this.scene) {
         this.activeLoadout = this.scene.add.text(endX, endY, "\n\n\n No Active Missile", { color: '#00ff00' }).setRotation(Phaser.Math.DegToRad(endAngle + 90));
     }
     if (!this.rangeText && this.scene) {
-        this.rangeText = this.scene.add.text(endX, endY, `\n ${radarRange}\n ${activeMissiles?.length && activeMissiles[0].missileAge > 0 ? activeMissiles[0].missileAge : ''}`, { color: '#00ff00' }).setRotation(Phaser.Math.DegToRad(endAngle + 90));
+        this.rangeText = this.scene.add.text(endX, endY, '', { color: '#00ff00' }).setRotation(Phaser.Math.DegToRad(endAngle + 90));
+    }
+    if (this.rangeText) {
+        // Transmitter off: the range readout doesn't mean anything, so it's
+        // replaced by a standby indicator rather than a stale/zero range.
+        if (emconStandby) {
+            this.rangeText.setText('\n RDR STDBY');
+            this.rangeText.setColor('#ffff00');
+        } else {
+            const missileAge = activeMissiles?.length && activeMissiles[0].missileAge > 0 ? activeMissiles[0].missileAge : '';
+            this.rangeText.setText(`\n ${radarRange}\n ${missileAge}`);
+            this.rangeText.setColor('#00ff00');
+        }
     }
 
     graphics.lineStyle(1, 0x00ff00, 0.5);
@@ -127,10 +140,10 @@ export class RadarRenderer {
 
   // Draw a small filled pentagon centred on (cx, cy), pointing up.
   private fillPentagon(graphics: Phaser.GameObjects.Graphics, cx: number, cy: number, radius: number): void {
-    const points: Phaser.Types.Math.Vector2Like[] = [];
+    const points: Phaser.Math.Vector2[] = [];
     for (let i = 0; i < VIM220_WAYPOINT_MARKER_SIDES; i++) {
       const angle = -Math.PI / 2 + (i * 2 * Math.PI) / VIM220_WAYPOINT_MARKER_SIDES;
-      points.push({ x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius });
+      points.push(new Phaser.Math.Vector2(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius));
     }
     graphics.fillPoints(points, true);
   }
@@ -308,6 +321,7 @@ export class RadarRenderer {
     missileRange: number | null = null,
     jammerStatus: JammerHudStatus | null = null,
     vim220WaypointAlpha = 1,
+    emconStandby = false,
   ): void {
     if (pulse) {
       this.renderPulse(graphics, pulse, sttMode);
@@ -331,6 +345,7 @@ export class RadarRenderer {
       vim220TimeToActive,
       jammerStatus,
       vim220WaypointAlpha,
+      emconStandby,
     );
   }
 

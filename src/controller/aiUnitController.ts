@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import { Radar } from '../radar/systems/radar';
 import { Target } from '../entities/ship';
 import { Track } from '../radar/data/track';

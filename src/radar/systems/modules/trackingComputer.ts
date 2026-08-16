@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import { RadarReturn } from '../../data/radarReturn';
 import { Track } from '../../data/track';
 import { Vector2 } from '../../../types';

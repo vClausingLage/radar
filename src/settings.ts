@@ -47,6 +47,17 @@ export const radarDefaultSettings = {
     scanSpeed: radarModule.SCAN_SPEED,
 }
 
+// VISUAL RANGE — limited eyesight: objects beyond this fade out of sight
+// rather than popping. Distinct from (and usually shorter than) radar
+// detection range — you can be tracked on radar long before you can be seen.
+// Measured to the nearest edge of each object's bounds, not its centre, so
+// large scenery doesn't fade out while the player is still over part of it.
+export const VISIBILITY_RANGE_PX = 300;
+// Width of the fade transition, measured inward from VISIBILITY_RANGE_PX: an
+// object is fully transparent at the range and fully opaque once this much
+// closer than that.
+export const VISIBILITY_FADE_BAND_PX = 100;
+
 // TARGETS
 export const targetShipSettings = {
     LOADOUT: {

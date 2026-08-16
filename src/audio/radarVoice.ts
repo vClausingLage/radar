@@ -1,6 +1,8 @@
+import Phaser from 'phaser';
 import { PlayerShip } from '../entities/ship';
 import { Track } from '../radar/data/track';
 import { AudioPlayer } from './audioPlayer';
+import { GameMath } from '../math';
 
 // Clip keys for the spoken digits 0–9 (files zero.mp3 … nine.mp3).
 const DIGIT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
@@ -10,11 +12,6 @@ const DIGIT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seve
 const RANGE_STEP_PX = 100;
 const RANGE_MIN_PX = 100;
 const RANGE_MAX_PX = 1000;
-
-// Aspect thresholds (deg) between the target's flight heading and its line of
-// sight to the player: nose-on → hot, tail-on → cold, otherwise beam → flanking.
-const ASPECT_HOT_MAX_DEG = 45;
-const ASPECT_COLD_MIN_DEG = 135;
 
 // Only announce once a track has matured past this many scans, so it has gained
 // confidence (and a stable velocity for the aspect call) before being read out.
@@ -75,19 +72,8 @@ export class RadarVoice {
       ...this.spokenDigits(bearing, 3),
       'for',
       String(rangeBucket),
-      this.aspect(player, track),
+      GameMath.getAspect(track.dir, track.pos, pos),
     ];
-  }
-
-  // Target aspect relative to the player: the angle between the target's flight
-  // heading and the direction from the target toward the player.
-  private aspect(player: PlayerShip, track: Track): string {
-    const pos = player.getPosition();
-    const losToPlayer = Phaser.Math.RadToDeg(Math.atan2(pos.y - track.pos.y, pos.x - track.pos.x));
-    const off = Math.abs(Phaser.Math.Angle.WrapDegrees(track.dir - losToPlayer));
-    if (off <= ASPECT_HOT_MAX_DEG) return 'hot';
-    if (off >= ASPECT_COLD_MIN_DEG) return 'cold';
-    return 'flanking';
   }
 
   // Split a non-negative integer into spoken-digit clip keys, optionally

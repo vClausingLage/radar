@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import {
   JAMMER_DURATION_MS,
   JAMMER_COOLDOWN_MS,

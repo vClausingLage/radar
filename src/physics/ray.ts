@@ -1,3 +1,4 @@
+import Phaser from "phaser";
 import { Asteroid } from "../entities/asteroid";
 import { Ship, PlayerShip } from "../entities/ship";
 
@@ -5,7 +6,7 @@ type Entity = Ship | PlayerShip | Asteroid;
 
 type RayHit = {
   entity: Entity;
-  point: Phaser.Geom.Point;
+  point: Phaser.Math.Vector2;
   distanceSq: number;
 };
 
@@ -36,7 +37,7 @@ export class Ray {
 
       const d2 = Phaser.Math.Distance.Squared(origin.x, origin.y, hit.x, hit.y);
       if (!nearest || d2 < nearest.distanceSq) {
-        nearest = { entity, point: new Phaser.Geom.Point(hit.x, hit.y), distanceSq: d2 };
+        nearest = { entity, point: new Phaser.Math.Vector2(hit.x, hit.y), distanceSq: d2 };
       }
     }
 

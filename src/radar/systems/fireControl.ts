@@ -1,3 +1,4 @@
+import Phaser from "phaser";
 import { PlayerShip, Target } from "../../entities/ship";
 
 import { LoadoutManager } from "./modules/loadoutManager";
@@ -161,25 +162,31 @@ export class FireControl {
 
     // ── Firing ────────────────────────────────────────────────────────────
 
-    shoot(mode: Mode, ctx: ShootContext): void {
+    // Fire the weapon matching the current mode. Returns the weapon type that
+    // actually left the rail ('VIM-177'/'VIM-220'), or null if the shot was
+    // rejected (no lock, no ammo, wrong weapon selected, ...) — the radar uses
+    // this to decide whether to key the player's Fox call over the radio.
+    shoot(mode: Mode, ctx: ShootContext): string | null {
         if (mode === 'stt') {
-            this.fireVim177(ctx);
+            return this.fireVim177(ctx) ? 'VIM-177' : null;
         } else if (mode === 'tws') {
-            this.fireVim220(ctx);
+            return this.fireVim220(ctx) ? 'VIM-220' : null;
         }
+        return null;
     }
 
     // VIM-177 (SARH): requires an STT lock; rides the ship's illumination.
-    private fireVim177(ctx: ShootContext): void {
+    // Returns whether the missile actually left the rail.
+    private fireVim177(ctx: ShootContext): boolean {
         const ship = ctx.ship;
-        if (!ship) return;
+        if (!ship) return false;
 
         const sttTrack = ctx.sttTrack;
-        if (!sttTrack) return;
+        if (!sttTrack) return false;
 
-        if (this.loadoutManager.getActiveType() !== 'VIM-177') return;
+        if (this.loadoutManager.getActiveType() !== 'VIM-177') return false;
         const loadout = this.loadoutManager.getLoadout();
-        if (!loadout['VIM-177'] || loadout['VIM-177'].load <= 0) return;
+        if (!loadout['VIM-177'] || loadout['VIM-177'].load <= 0) return false;
 
         // Launch along the ship's heading — the missile flies straight off the
         // rail during its boost phase (age < 2) before the seeker steers it
@@ -199,17 +206,19 @@ export class FireControl {
 
         this.activeMissiles.push(missile);
         this.loadoutManager.decrementLoad('VIM-177');
+        return true;
     }
 
     // VIM-220 (ARH): TWS fire — assigns the missile to the next un-engaged
     // track. Ship guides it mid-course; its own radar takes over at terminal.
-    private fireVim220(ctx: ShootContext): void {
+    // Returns whether the missile actually left the rail.
+    private fireVim220(ctx: ShootContext): boolean {
         const ship = ctx.ship;
-        if (!ship) return;
+        if (!ship) return false;
 
-        if (this.loadoutManager.getActiveType() !== 'VIM-220') return;
+        if (this.loadoutManager.getActiveType() !== 'VIM-220') return false;
         const loadout = this.loadoutManager.getLoadout();
-        if (!loadout['VIM-220'] || loadout['VIM-220'].load <= 0) return;
+        if (!loadout['VIM-220'] || loadout['VIM-220'].load <= 0) return false;
 
         const ownerPos = ship.getPosition();
 
@@ -227,7 +236,7 @@ export class FireControl {
                 Phaser.Math.Distance.Between(ownerPos.x, ownerPos.y, b.pos.x, b.pos.y))[0];
         // No track needed with a full route — the missile goes active at WP1
         // and searches along the WP1→WP2 direction (maddog on the datalink).
-        if (!target && !this.hasFullVim220Route()) return;
+        if (!target && !this.hasFullVim220Route()) return false;
 
         const rad = Phaser.Math.DegToRad(ship.getDirection());
 
@@ -252,6 +261,7 @@ export class FireControl {
             this.vim220WaypointsFadeStart = null;
         }
         this.loadoutManager.decrementLoad('VIM-220');
+        return true;
     }
 
     // Tag a freshly-spawned missile with its owner and the owner's no-collide

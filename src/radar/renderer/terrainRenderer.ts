@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import { TerrainSample } from '../systems/modules/terrainMapper';
 import {
   TERRAIN_BLOB_RADIUS_PX,

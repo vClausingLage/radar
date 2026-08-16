@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import { TerrainRenderer } from '../../renderer/terrainRenderer';
 import { TERRAIN_MAX_SAMPLES, TERRAIN_SAMPLE_TTL_MS } from '../../data/radarGameSettings';
 

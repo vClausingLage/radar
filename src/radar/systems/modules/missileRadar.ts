@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import type { Vector2 } from '../../../types';
 import { decoySettings } from '../../data/radarGameSettings';
 import { MISSILE_RADAR_MAX_MISSED_LOCK_FRAMES } from '../../data/radarGameSettings';

@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import { RADAR_DEFAULT_SWEEP_WIDTH_DEG } from '../../data/radarGameSettings';
 
 export type Pulse = {

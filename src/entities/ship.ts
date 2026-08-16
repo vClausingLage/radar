@@ -1,3 +1,4 @@
+import Phaser from "phaser";
 import { Radar } from "../radar/systems/radar";
 import { AiUnitController } from "../controller/aiUnitController";
 import { Vector2 } from "../types";
@@ -192,8 +193,7 @@ export class Target extends Ship {
             texture: params.shipType === 'cargo' ? 'cargo' : 'ship'
         });
         this.shipType = params.shipType;
-        
-        this.setVisible(import.meta.env.DEV);
+
         this.setScale(.4);
     }
 

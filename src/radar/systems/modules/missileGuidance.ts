@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import { Missile, SARHMissile, ActiveRadarMissile } from '../../../entities/missiles';
 import { Track } from '../../data/track';
 import type { GuidanceTarget } from './missileRadar';

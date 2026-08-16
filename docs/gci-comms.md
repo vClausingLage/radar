@@ -141,33 +141,61 @@ as *Sentinel* (placeholder).
 
 ## 4. Implementation notes (fits the current pipeline)
 
-**Clips already recorded:** digits `zero`–`nine`, `100`–`1000`, `bra`, `for`,
-`hot`, `cold`, `flanking`, `new-radar-contact`.
+**Callsigns — decided and live:** the station is **Disco**; the player is
+**Flatspin 1-1**.
 
-**Clip inventory to record next:**
+**Two voices, two engines** (`tools/generateClips.js`, run with
+`node tools/generateClips.js`; existing files are left alone, `--force`
+regenerates): the GCI voice is ElevenLabs (voice ID in the script); the
+player's ship — both `RadarVoice`'s own-radar callouts and the new player
+radio calls — is OpenAI TTS (`gpt-4o-mini-tts`, voice `ash`). Because they're
+two distinct recordings, shared vocabulary (digits, `bra`, `for`, aspect
+words, callsigns) needs a clip per speaker — hence the `gci-`/`plr-` key
+prefixes below. The player-side clips reuse `RadarVoice`'s unprefixed digit
+clips directly (same voice/settings) rather than re-recording them.
 
-- *Identity:* `bogey`, `bandit`, `hostile`, `friendly`, `clean`, `contact`, `faded`, `group`
-- *Geometry:* `bullseye`, `beaming`, `drag`, `angels`
-- *Routing:* `commit`, `vector`, `come-left`, `come-right`, `buster`, `gate`, `saunter`
+**Clips recorded:**
+- Unprefixed (player/ship voice, `RadarVoice`): digits `zero`–`nine`,
+  `100`–`1000`, `bra`, `for`, `hot`, `cold`, `flanking`, `beaming`,
+  `new-radar-contact`.
+- `gci-*` (Disco, ElevenLabs): digits `gci-zero`–`gci-nine`, `gci-100`–
+  `gci-1000`, `gci-bra`, `gci-for`, `gci-hot`, `gci-cold`, `gci-flanking`,
+  `gci-beaming`, `gci-clean`, `gci-hostile`, `gci-buster`, `gci-gate`,
+  `gci-saunter`, `gci-disco`, `gci-flatspin`.
+- `plr-*` (player radio voice, OpenAI): `plr-disco`, `plr-flatspin`,
+  `plr-bogey-dope`, `plr-fox`.
+
+**Live interaction** (`SupportRadarComms.requestBogeyDope`, Level 1 only, key
+`C`): player transmits "Disco, Flatspin 1-1, bogey dope"; Disco replies with
+the nearest datalink contact's BRA + range + aspect + `hostile` (the game has
+no friendly/neutral contacts yet, so identity is always declared hostile) plus
+a speed order — `gate`/`buster`/`saunter` picked from range-to-contact — or
+"clean" if the picture is empty. Aspect classification (`hot`/`flanking`/
+`beaming`/`cold`) is shared with `RadarVoice` via `GameMath.getAspect`.
+
+**Missile-launch call** (`MissileCallout.announceFired`, every scene): a
+confirmed missile launch (not just a trigger pull — no lock/ammo/wrong-weapon
+shots stay silent) fires a `'missile-fired'` event on `Radar.eventEmitter`;
+only the player's own radar has a listener (wired in `Game.create()`), so AI
+ships firing the same weapons never key the radio. The player transmits
+"Flatspin 1-1, fox one" for VIM-177 (SARH) or "Flatspin 1-1, fox three" for
+VIM-220 (ARH) — brevity code for the guidance kind, matching real Fox 1/3
+usage. No cooldown (`AudioPlayer` built with `cooldownMs: 0`), since it's a
+deliberate one-off event rather than ambient chatter to throttle.
+
+**Clip inventory not yet recorded** (future work — vocabulary defined above,
+not wired to any game event yet):
+
+- *Identity:* `bogey`, `bandit`, `friendly`, `contact`, `faded`, `group`
+- *Geometry:* `bullseye`, `drag`, `angels`
+- *Routing:* `commit`, `vector`, `come-left`, `come-right`
 - *Threat:* `threat`, `defend`, `spike`, `nails`, `singer`, `heads-up`
 - *Engage/recover:* `target`, `splash`, `abort`, `judy`, `rtb`, `pigeons`, `bingo`, `state`
-- *Admin:* `<station-callsign>`, `lima-charlie`, `say-again`, `wilco`, `how-copy`
+- *Admin:* `lima-charlie`, `say-again`, `wilco`, `how-copy`
 
-**Callsign for the dish station** — GCI callsigns are single evocative words
-(real: *Magic, Overlord, Darkstar, Wizard, Sentry, Bandsaw, Disco*). For this
-setting: **Sentinel, Watchtower, Overwatch, Warden, Beacon, Anvil**.
-
-**Architecture** — a natural extension of what exists:
-
-- `SupportRadarComms` already builds a BRAA call. Extend it with a **bullseye**
-  picture call (station position = bullseye, so bearing/range are trivial) and an
-  **aspect + declaration** suffix (`hot`/`cold`/`flanking`/`beaming` +
-  `bogey`/`bandit`/`hostile`).
-- It slots into the existing `AudioPlayer` clip-stitching. The "GCI voice"
-  belongs to the station subsystem, distinct from the player's own `RadarVoice`
-  (which announces the player's *own* radar contacts).
-- Add a 4th aspect (`beaming`) plus the `bullseye`/`angels` vocabulary and a
-  dozen new clips cover ~80% of the atmosphere.
+Bullseye is the next biggest atmosphere win per §1 — the station's own
+position is the fixed reference, so the bearing/range math is the same as the
+existing BRA call, just anchored on the station instead of the player.
 
 ---
 

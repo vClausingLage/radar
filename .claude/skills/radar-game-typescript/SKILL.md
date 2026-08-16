@@ -29,10 +29,11 @@ collision/detection shape next to it.
 ```
 src/main.ts              Phaser config, scene list, matter debug, DEV window.game hook
 src/scenes/game.ts       Base scene: world, factories, player, camera, colliders,
-                         per-frame radar update loop. Levels SUBCLASS it and
-                         override buildTerrain() / buildScenario() / briefingMessage()
-src/scenes/level1.ts     Campaign levels (cold start, surface, launchpad)
-src/scenes/level2.ts     Campaign: friendly dish radar + datalink, C = bearing call
+                         per-frame radar update loop, cold-start procedure. Levels
+                         SUBCLASS it and override buildTerrain() / buildScenario() /
+                         briefingMessage() / requiresColdStart()
+src/scenes/level1.ts     Campaign Level 1: cold start (surface/launchpad) then
+                         friendly dish radar + datalink, C = bearing call
 src/scenes/startMenu.ts  Menu, ScenarioKey ('duel' | 'occluded' | 'skirmish')
 src/controller/          playerController.ts (key bindings), aiUnitController.ts (intent)
 src/entities/            Ship/PlayerShip/Target, missiles, asteroid, decoy, exhaust,

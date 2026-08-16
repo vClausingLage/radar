@@ -113,10 +113,12 @@ export class Exhaust {
 
   // Reposition each emitter onto its nozzle. Called from the host's preUpdate so
   // it tracks the moving sprite (emission aim is handled per particle, above).
-  // Exhaust only runs while the host is visible — invisible target ships stay
-  // dark on the radar — and while that nozzle's engine is running.
+  // Exhaust only runs while the host is visible and while that nozzle's engine
+  // is running; its alpha tracks the host's so a ship fading out at the edge
+  // of visual range doesn't leave a fully bright plume behind to give it away.
   update(): void {
-    const hostLive = this.host.active && this.host.visible;
+    const hostAlpha = this.host.alpha;
+    const hostLive = this.host.active && this.host.visible && hostAlpha > 0;
     const rad = Phaser.Math.DegToRad(this.host.angle);
     const cos = Math.cos(rad);
     const sin = Math.sin(rad);
@@ -134,6 +136,7 @@ export class Exhaust {
       const live = hostLive && this.running[i];
       emitter.emitting = live;
       emitter.setVisible(live);
+      emitter.setAlpha(hostAlpha);
     }
   }
 

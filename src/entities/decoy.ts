@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import { decoySettings } from '../radar/data/radarGameSettings';
 
 // A deployed chaff cloud. Represented visually as a sprite and geometrically as

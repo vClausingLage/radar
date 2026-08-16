@@ -1,3 +1,4 @@
+import Phaser from "phaser";
 import { Vector2 } from "../types"
 import { createEntityId } from './entityId';
 

@@ -1,3 +1,4 @@
+import Phaser from "phaser";
 import { PlayerShip } from "../entities/ship";
 import { playerShipSettings } from "../settings";
 
@@ -50,11 +51,16 @@ export class PlayerController {
   };
 
   // ── VIM-220 waypoint ──────────────────────────────────────────────────
-  // Shift+click places a mid-course waypoint (only while VIM-220 is selected).
+  // Shift+left-click places a mid-course waypoint (only while VIM-220 is
+  // selected); Shift+right-click clears the whole route.
   private onPointerDown = (pointer: Phaser.Input.Pointer) => {
     if (!this.ship.active || !this.ship.scene) return;
     const shiftHeld = (pointer.event as MouseEvent | undefined)?.shiftKey;
     if (!shiftHeld) return;
+    if (pointer.rightButtonDown()) {
+      this.ship.radar.clearVim220Waypoints();
+      return;
+    }
     this.ship.radar.addVim220Waypoint({ x: pointer.worldX, y: pointer.worldY });
   };
 
@@ -79,6 +85,9 @@ export class PlayerController {
     kb?.on('keydown-J', this.onKeyDownJ);
     kb?.on('keydown-SPACE', this.onKeyDownSpace);
     this.scene.input.on('pointerdown', this.onPointerDown);
+    // Right-click clears the VIM-220 route (see onPointerDown) — don't let the
+    // browser's context menu swallow it first.
+    this.scene.input.mouse?.disableContextMenu();
   }
 
   destroy(): void {

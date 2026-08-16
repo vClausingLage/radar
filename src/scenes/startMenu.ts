@@ -18,7 +18,8 @@ const CONTROLS = [
     'Q  cycle missiles      SPACE  fire',
     'R  RWS search   E  STT lock   ESC  exit STT',
     'T  deploy chaff      J  jammer',
-    'SHIFT + click  set VIM-220 waypoint',
+    'SHIFT + left click  set VIM-220 waypoint',
+    'SHIFT + right click  clear VIM-220 waypoints',
 ];
 
 export default class StartMenu extends Phaser.Scene {
@@ -56,9 +57,8 @@ export default class StartMenu extends Phaser.Scene {
             startButton.setStyle({ backgroundColor: '#000000', color: '#ffffff' });
         });
 
-        // Campaign entries — each its own scene, independent of the practice scenarios.
+        // Campaign entry — its own scene, independent of the practice scenarios.
         this.createCampaignButton(cx, 470, 'CAMPAIGN — LEVEL 1', 'Level1');
-        this.createCampaignButton(cx, 530, 'CAMPAIGN — LEVEL 2', 'Level2');
 
         // Scenario selector (under Start)
         this.add.text(cx, 250, 'SCENARIO', {

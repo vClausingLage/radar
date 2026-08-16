@@ -1,3 +1,7 @@
+import { Vector2 } from "../types";
+
+export type Aspect = 'hot' | 'flanking' | 'beaming' | 'cold';
+
 export class GameMath {
     static normalizeAngle(angle: number): number {
         while (angle > 180) angle -= 360;
@@ -5,23 +9,18 @@ export class GameMath {
         return angle;
     }
 
-    static getAspect(sourceAngle: number, targetAngle: number): {
-        aspect: 'hot' | 'cold' | 'flanking_left' | 'flanking_right',
-        angle: number
-     } {
-        let relativeAngle = targetAngle - sourceAngle;
-        relativeAngle = this.normalizeAngle(relativeAngle);
-        
-        // Determine aspect based on 90-degree quarters
-        if (relativeAngle >= -45 && relativeAngle <= 45) {
-            return { aspect: 'hot', angle: relativeAngle };
-        } else if (relativeAngle > 45 && relativeAngle <= 135) {
-            return { aspect: 'flanking_right', angle: relativeAngle };
-        } else if (relativeAngle > 135 || relativeAngle < -135) {
-            return { aspect: 'cold', angle: relativeAngle };
-        } else {
-            return { aspect: 'flanking_left', angle: relativeAngle };
-        }
+    // A target's aspect relative to an observer: the angle between the target's
+    // own heading and the line of sight from the target back to the observer.
+    // Nose-on → hot, diagonal → flanking, perpendicular (~90°) → beaming,
+    // tail-on → cold. Bin widths follow docs/gci-comms.md. Shared by RadarVoice
+    // (player's own radar callouts) and SupportRadarComms (GCI bogey dope calls).
+    static getAspect(targetHeadingDeg: number, targetPos: Vector2, observerPos: Vector2): Aspect {
+        const losToObserverDeg = Math.atan2(observerPos.y - targetPos.y, observerPos.x - targetPos.x) * 180 / Math.PI;
+        const off = Math.abs(this.normalizeAngle(targetHeadingDeg - losToObserverDeg));
+        if (off <= 30) return 'hot';
+        if (off < 70) return 'flanking';
+        if (off <= 110) return 'beaming';
+        return 'cold';
     }
 
     static getDistance(x1: number, y1: number, x2: number, y2: number): number {

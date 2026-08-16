@@ -2,7 +2,6 @@ import Phaser from "phaser";
 import StartMenu from "./scenes/startMenu";
 import Game from "./scenes/game";
 import Level1 from "./scenes/level1";
-import Level2 from "./scenes/level2";
 
 const debugConfig = import.meta.env.DEV ? {
   showBody: true,
@@ -20,7 +19,7 @@ const debugConfig = import.meta.env.DEV ? {
 
 const config = {
   type: Phaser.AUTO,
-  scene: [StartMenu, Game, Level1, Level2],
+  scene: [StartMenu, Game, Level1],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,

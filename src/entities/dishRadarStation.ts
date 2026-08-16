@@ -1,3 +1,4 @@
+import Phaser from "phaser";
 import { Asteroid } from "./asteroid";
 import { createEntityId } from "./entityId";
 import { Radar } from "../radar/systems/radar";
@@ -64,6 +65,12 @@ export class DishRadarStation implements RadarHost {
 
     getRange(): number {
         return this.range;
+    }
+
+    // The rotating overlay sprite — exposed so the scene can opt it into the
+    // same distance-based visual fade as the rock it's mounted on.
+    getDishSprite(): Phaser.GameObjects.Image {
+        return this.dish;
     }
 
     getTracks(): Track[] {

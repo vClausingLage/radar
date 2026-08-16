@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import type { Ship } from './ship';
 import { missileSettings } from './entitySettings';
 import type { Vector2 } from '../types';

@@ -1,3 +1,4 @@
+import Phaser from "phaser";
 import { Radar } from "../systems/radar";
 import { RwrContact } from "../systems/modules/rwr";
 import { Ship } from "../../entities/ship";
@@ -31,6 +32,7 @@ export class InterfaceRenderer {
     private sttBtn?: Phaser.GameObjects.Text;
     private rwsBtn?: Phaser.GameObjects.Text;
     private twsBtn?: Phaser.GameObjects.Text;
+    private emconBtn?: Phaser.GameObjects.Text;
     private shootBtn?: Phaser.GameObjects.Text;
     private speedOneThirdBtn?: Phaser.GameObjects.Text;
     private speedTwoThirdBtn?: Phaser.GameObjects.Text;
@@ -91,6 +93,18 @@ export class InterfaceRenderer {
         .setOrigin(0)
         .on('pointerdown', () => {
             this.playerRadar.enterRws();
+        });
+        // EMCON BTN — silence the transmitter; RWR/comms reception keep working.
+        this.emconBtn = this.scene.add.text(0, 0, 'EMCON', {
+            font: '22px Courier',
+            color: '#000',
+            backgroundColor: '#ffdb4d',
+            padding: { x: 10, y: 5 }
+        })
+        .setInteractive()
+        .setOrigin(0)
+        .on('pointerdown', () => {
+            this.playerRadar.enterEmcon();
         });
         // SHOOT BTN
         this.shootBtn = this.scene.add.text(0, 0, 'SHOOT', {
@@ -247,6 +261,7 @@ export class InterfaceRenderer {
         if (this.sttBtn) this.sttBtn.setBackgroundColor(mode === 'stt' ? '#ff0000' : '#ffdb4d');
         if (this.rwsBtn) this.rwsBtn.setBackgroundColor(mode === 'rws' ? '#00ff00' : '#ffdb4d');
         if (this.twsBtn) this.twsBtn.setBackgroundColor(mode === 'tws' ? '#00ff00' : '#ffdb4d');
+        if (this.emconBtn) this.emconBtn.setBackgroundColor(mode === 'emcon' ? '#888888' : '#ffdb4d');
         const canShootTws = isTWSActive && (hasTracks || this.playerRadar.hasFullVim220Route());
         if (this.shootBtn) this.shootBtn.setBackgroundColor(mode === 'stt' || canShootTws ? '#ed9209' : '#ffdb4d');
 
@@ -271,7 +286,7 @@ export class InterfaceRenderer {
     // The zoom buttons are camera-fixed and stay put.
     setFlightControlsVisible(visible: boolean): void {
         [
-            this.sttBtn, this.rwsBtn, this.twsBtn, this.shootBtn,
+            this.sttBtn, this.rwsBtn, this.twsBtn, this.emconBtn, this.shootBtn,
             this.speedOneThirdBtn, this.speedTwoThirdBtn, this.speedFullBtn,
         ].forEach(btn => btn?.setVisible(visible));
     }
@@ -341,24 +356,32 @@ export class InterfaceRenderer {
         const spacingX = RADAR_BUTTON_SPACING_X_PX;
         const spacingY = RADAR_BUTTON_SPACING_Y_PX;
 
-        const sttW = this.sttBtn.width;
+        // Row 1: RWS — STT side by side. Rows below, one button each: TWS,
+        // EMCON, SHOOT, stacking outward from the ship.
         const rwsW = this.rwsBtn.width;
-        const rowWidth = sttW + spacingX + rwsW;
+        const sttW = this.sttBtn.width;
+        const rowWidth = rwsW + spacingX + sttW;
 
         const rowLeft = shipX - rowWidth / 2;
 
-        this.sttBtn.setPosition(rowLeft, topY);
-        this.rwsBtn.setPosition(rowLeft + sttW + spacingX, topY);
+        this.rwsBtn.setPosition(rowLeft, topY);
+        this.sttBtn.setPosition(rowLeft + rwsW + spacingX, topY);
 
-        const twsY = isPointingDown 
-            ? topY - this.sttBtn.height - spacingY 
-            : topY + this.sttBtn.height + spacingY;
+        const twsY = isPointingDown
+            ? topY - this.rwsBtn.height - spacingY
+            : topY + this.rwsBtn.height + spacingY;
         const twsX = shipX - (this.twsBtn!.width / 2);
         this.twsBtn!.setPosition(twsX, twsY);
 
-        const shootY = isPointingDown
+        const emconY = isPointingDown
             ? twsY - this.twsBtn!.height - spacingY
             : twsY + this.twsBtn!.height + spacingY;
+        const emconX = shipX - (this.emconBtn!.width / 2);
+        this.emconBtn!.setPosition(emconX, emconY);
+
+        const shootY = isPointingDown
+            ? emconY - this.emconBtn!.height - spacingY
+            : emconY + this.emconBtn!.height + spacingY;
         const shootX = shipX - (this.shootBtn.width / 2);
         this.shootBtn.setPosition(shootX, shootY);
 
@@ -562,6 +585,7 @@ export class InterfaceRenderer {
         this.sttBtn?.destroy();
         this.rwsBtn?.destroy();
         this.twsBtn?.destroy();
+        this.emconBtn?.destroy();
         this.shootBtn?.destroy();
         this.speedOneThirdBtn?.destroy();
         this.speedTwoThirdBtn?.destroy();
@@ -577,6 +601,7 @@ export class InterfaceRenderer {
         this.sttBtn = undefined;
         this.rwsBtn = undefined;
         this.twsBtn = undefined;
+        this.emconBtn = undefined;
         this.shootBtn = undefined;
         this.speedOneThirdBtn = undefined;
         this.speedTwoThirdBtn = undefined;

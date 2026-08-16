@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import { RadarReturn } from '../../data/radarReturn';
 import { Vector2 } from '../../../types';
 import { decoySettings } from '../../data/radarGameSettings';
