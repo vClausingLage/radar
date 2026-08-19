@@ -25,7 +25,10 @@ import {
     JAMMER_STT_DEGRADE_PROB,
     MAX_TWS_TRACKS,
     RADAR_DEFAULT_RANGE_PX,
+    STT_ACQUISITION_BEAM_DEG,
+    STT_ACQUISITION_FRAMES,
     STT_BEAM_DEG,
+    STT_BEAM_RAY_SPACING_DEG,
     STT_LOCK_BREAK_FRAMES,
 } from "../data/radarGameSettings";
 
@@ -44,12 +47,12 @@ export class Radar {
     private trackingComputer: TrackingComputer = new TrackingComputer();
     private sweepBuffer: { point: Phaser.Math.Vector2 }[] = [];
 
-    // STT state
+    // STT state. The lock is held on a track id only: everything the radar
+    // knows about the target while locked comes back through the beam.
     private sttTrackId: number | null = null;
     private sttMissedFrames: number = 0;
-    // HACK: direct entity reference so the beam follows the target position exactly.
-    // TODO: replace with proper angle-tracking loop once chicken-and-egg is resolved.
-    private sttTargetEntity: Entity | null = null;
+    // Frames left of the wide acquisition dwell that opens every lock.
+    private sttAcquireFrames: number = 0;
 
     // Weapons system. The radar (sensor) produces tracks; FireControl consumes
     // them to launch and guide missiles. Constructed in the constructor (needs
@@ -147,7 +150,8 @@ export class Radar {
     private clearSttState(): void {
         this.sttTrackId = null;
         this.sttMissedFrames = 0;
-        this.sttTargetEntity = null;
+        this.sttAcquireFrames = 0;
+        this.antenna.resetTracking();
     }
 
     // Emission Control: shut the transmitter down. No pulse goes out, so no
@@ -177,7 +181,12 @@ export class Radar {
 
         this.sttTrackId = best.id;
         this.sttMissedFrames = 0;
-        this.sttTargetEntity = null; // resolved in updateStt on the first frame
+        // Designate the dish onto the track: it snaps to the track's bearing on
+        // the first STT frame, then has to keep up on its own from there. The
+        // designation is only as good as the last sweep, so the beam stays wide
+        // for the acquisition dwell while the track is re-measured properly.
+        this.sttAcquireFrames = STT_ACQUISITION_FRAMES;
+        this.antenna.resetTracking();
 
         this.mode = 'stt';
 
@@ -292,18 +301,9 @@ export class Radar {
         // Advance jammer active/cooldown state before any isActive() check.
         this.jammer.tick(this.scene.time.now);
 
-        // If the locked STT target was destroyed, drop the dangling reference
-        // before anything reads its (now-undefined) body position.
-        if (this.sttTargetEntity && (!this.sttTargetEntity.active || !this.sttTargetEntity.body)) {
-            this.sttTargetEntity = null;
-        }
-
         // Update the weapons system every frame regardless of radar mode. The
         // radar supplies the track picture and live entities; FireControl runs
         // missile guidance, the waypoint fade and the seeker-cone rendering.
-        const sttEntity = this.sttTargetEntity && 'getPosition' in this.sttTargetEntity
-            ? this.sttTargetEntity as PlayerShip | Target
-            : null;
         // Live ship entities (excluding owner) for VIM-220 active-radar homing.
         // Exclude destroyed ships (body becomes undefined when removed).
         const targetShips = entities.filter(
@@ -312,7 +312,6 @@ export class Radar {
         );
         this.fireControl.update(delta, {
             sttTrack: this.getSttTrack(),
-            sttTargetEntity: sttEntity,
             tracks: this.trackingComputer.getTracks(),
             targets: targetShips,
             decoyCircles,
@@ -320,7 +319,7 @@ export class Radar {
         }, graphics);
 
         if (this.mode === 'stt') {
-            this.updateStt(ownerPos, shipDirection, entities, graphics, decoyCircles, terrain);
+            this.updateStt(delta, ownerPos, shipDirection, entities, graphics, decoyCircles, terrain);
         } else if (this.mode === 'emcon') {
             this.updateEmcon(ownerPos, shipDirection, graphics);
         } else {
@@ -366,11 +365,11 @@ export class Radar {
 
         // Search illumination: any ship the beam touches detects the emission as
         // a (non-locked) RWR contact — shown as a green diamond on its RWR.
-        this.illuminateRwr(targets, pulse.line, ownerPos, false);
+        this.illuminateRwr(targets, [pulse.line], ownerPos, false);
 
         // If an enemy jammer paints us this frame, remember its spoof error for
         // the rest of the sweep — the buffered hits are rewritten at sweepComplete.
-        const jamError = this.detectJamming(targets, pulse.line, ownerPos);
+        const jamError = this.detectJamming(targets, [pulse.line], ownerPos);
         if (jamError) this.sweepJammerError = jamError;
 
         // Ship and terrain returns compete for the beam — the nearer one wins.
@@ -409,7 +408,19 @@ export class Radar {
 
     // ── STT concentrated illumination ─────────────────────────────────────
 
+    // Single-target track. The distinction from RWS is not that the radar knows
+    // where the target is — it is that the antenna stops sweeping and stares at
+    // one contact, so that contact is measured every frame instead of once per
+    // sweep.
+    //
+    // The loop is closed entirely through the beam: the tracking computer's
+    // predicted position commands the antenna, the antenna slews toward that
+    // command at a finite rate, the beam illuminates whatever is actually inside
+    // it, and those returns correct the prediction. Nothing here reads a
+    // target's true position, so the lock can be defeated by out-turning the
+    // antenna as well as by terrain, chaff or jamming.
     private updateStt(
+        delta: number,
         ownerPos: { x: number; y: number },
         shipDirection: number,
         entities: Entity[],
@@ -418,50 +429,45 @@ export class Radar {
         terrain: Entity[],
     ): void {
         const rwsHalfAz = this.antenna.getAzimuth('rws') / 2;
-        const currentSttTrack = this.getSttTrack();
         const targets = entities.filter(e => e.id !== this.owner?.id);
 
-        // HACK: resolve entity reference on first STT frame.
-        if (!this.sttTargetEntity && currentSttTrack) {
-            let nearest: Entity | null = null;
-            let nearestDist = Infinity;
-            for (const e of targets) {
-                if (!('getPosition' in e)) continue;
-                const pos = (e as PlayerShip | Target).getPosition();
-                const d = Phaser.Math.Distance.Between(pos.x, pos.y, currentSttTrack.pos.x, currentSttTrack.pos.y);
-                if (d < nearestDist) { nearestDist = d; nearest = e; }
-            }
-            this.sttTargetEntity = nearest;
-        }
-
-        // Drive beam directly from entity position so tracking is never frozen.
-        // Guard against destroyed entities (body becomes undefined when removed from scene).
-        const targetEntity = this.sttTargetEntity as PlayerShip | Target | null;
-        if (targetEntity && (!targetEntity.active || !targetEntity.body)) {
+        // Aim point: where the filter expects the target to be next frame. If
+        // the track is gone entirely there is nothing left to point at.
+        const aimPoint = this.sttTrackId !== null
+            ? this.trackingComputer.getPredictedPos(this.sttTrackId)
+            : null;
+        if (!aimPoint) {
             this.exitStt();
             return;
         }
-        const targetPos = targetEntity && 'getPosition' in targetEntity
-            ? targetEntity.getPosition()
-            : currentSttTrack?.pos;
 
-        let lockDir = shipDirection;
-        if (targetPos) {
-            const bearing = Phaser.Math.RadToDeg(
-                Math.atan2(targetPos.y - ownerPos.y, targetPos.x - ownerPos.x)
-            );
-            const offset = Phaser.Math.Angle.WrapDegrees(bearing - shipDirection);
-            if (Math.abs(offset) > rwsHalfAz) {
-                this.exitStt();
-                return;
-            }
-            lockDir = shipDirection + offset;
+        // Commanded bearing, and the antenna's gimbal limit. A target that
+        // drives the command past the edge of the cone cannot be followed — the
+        // dish runs into its stop and the lock is lost.
+        const commanded = Phaser.Math.RadToDeg(
+            Math.atan2(aimPoint.y - ownerPos.y, aimPoint.x - ownerPos.x)
+        );
+        if (Math.abs(Phaser.Math.Angle.WrapDegrees(commanded - shipDirection)) > rwsHalfAz) {
+            this.exitStt();
+            return;
         }
 
+        // Where the dish actually ends up, which lags the command whenever the
+        // target's bearing rate beats the servo.
+        const lockDir = this.antenna.trackTo(commanded, delta);
         this.lastBeamDirection = lockDir;
-        const pulse = this.emitter.sendPulse(ownerPos, lockDir, STT_BEAM_DEG);
 
-        // Render full RWS cone with red beam fixed at lock direction.
+        // Wide while acquiring, narrow once the track is its own.
+        const beamWidth = this.sttAcquireFrames > 0 ? STT_ACQUISITION_BEAM_DEG : STT_BEAM_DEG;
+        if (this.sttAcquireFrames > 0) this.sttAcquireFrames--;
+
+        const pulse = this.emitter.sendPulse(ownerPos, lockDir, beamWidth);
+        // The beam has width: sample it with a fan of rays spanning that width
+        // rather than a single pencil ray down boresight. A target off the beam
+        // centre still returns energy — until it falls outside the beam.
+        const beamLines = this.beamRays(ownerPos, lockDir, beamWidth);
+
+        // Render full RWS cone with the narrow tracking beam inside it.
         this.radarRenderer?.update(
             graphics, ownerPos, this.range,
             shipDirection - rwsHalfAz, shipDirection + rwsHalfAz,
@@ -475,34 +481,36 @@ export class Radar {
             this.radarRenderer?.renderJammerCone(graphics, ownerPos, shipDirection, this.range);
         }
 
-        // Single ray pointed at locked target; processed immediately (no buffer).
-        // Chaff in the beam can swallow the return, starving the lock until it
-        // breaks (the missed-frame counter below handles that).
-        let rawHit = this.nearestHit(pulse.line, ownerPos, targets);
-        // Terrain between us and the target blocks the beam: the return is the
-        // terrain (painted on the ground map), not the ship — the lock starves.
-        const terrainHit = this.nearestHit(pulse.line, ownerPos, terrain);
-        if (terrainHit && (!rawHit ||
-            Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, terrainHit.x, terrainHit.y) <
-            Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, rawHit.x, rawHit.y))) {
-            this.terrainMapper.addSample(terrainHit, this.scene.time.now);
-            rawHit = null;
+        // Collect every ship return in the beam. Terrain competes ray by ray:
+        // where terrain is nearer it paints the ground map and shadows whatever
+        // is behind it, so a target sliding behind a rock starves the lock.
+        const rawHits: { point: Phaser.Math.Vector2 }[] = [];
+        for (const line of beamLines) {
+            const shipHit = this.nearestHit(line, ownerPos, targets);
+            const terrainHit = this.nearestHit(line, ownerPos, terrain);
+            const terrainWins = terrainHit && (!shipHit ||
+                Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, terrainHit.x, terrainHit.y) <
+                Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, shipHit.x, shipHit.y));
+
+            if (terrainWins) {
+                this.terrainMapper.addSample(terrainHit, this.scene.time.now);
+            } else if (shipHit && !this.receiver.isBlockedByDecoy(ownerPos, shipHit, decoyCircles)) {
+                // Chaff between the antenna and the target can swallow the return.
+                rawHits.push({ point: shipHit });
+            }
         }
-        // STT energy overpowers the jammer, so the return is not spoofed — but a
-        // jammed frame has a chance to swallow it, feeding the lock-break counter.
-        const jammed = this.detectJamming(targets, pulse.line, ownerPos) !== null;
-        const hit = rawHit
-            && !this.receiver.isBlockedByDecoy(ownerPos, rawHit, decoyCircles)
-            && !(jammed && Math.random() < JAMMER_STT_DEGRADE_PROB)
-            ? rawHit
-            : null;
-        const rawHits = hit ? [{ point: hit }] : [];
+
+        // STT energy overpowers the jammer, so returns are not spoofed — but a
+        // jammed frame has a chance to swallow them, feeding the lock-break
+        // counter below.
+        const jammed = this.detectJamming(targets, beamLines, ownerPos) !== null;
+        const hits = jammed && Math.random() < JAMMER_STT_DEGRADE_PROB ? [] : rawHits;
 
         // Lock illumination: any ship in the beam detects a locked (red) RWR
         // contact and fires its lock-warning event.
-        this.illuminateRwr(targets, pulse.line, ownerPos, true);
+        this.illuminateRwr(targets, beamLines, ownerPos, true);
 
-        const returns = this.receiver.processHits(rawHits, ownerPos, this.range);
+        const returns = this.receiver.processHits(hits, ownerPos, this.range);
         // STT updates every frame; high maxMissedScans keeps the lock alive during
         // brief signal dropouts without conflicting with the RWS sweep timescale.
         this.trackingComputer.update(returns, ownerPos, 90);
@@ -522,6 +530,31 @@ export class Radar {
         if (stt) {
             this.radarRenderer?.renderStt(stt, graphics);
         }
+    }
+
+    // Rays sampling a beam of `widthDeg` centred on `direction`, at fixed
+    // angular spacing from one edge to the other, so a wide acquisition beam is
+    // sampled as finely as a narrow tracking one.
+    private beamRays(
+        origin: { x: number; y: number },
+        direction: number,
+        widthDeg: number,
+    ): Phaser.Geom.Line[] {
+        const lines: Phaser.Geom.Line[] = [];
+        const count = Math.max(2, Math.round(widthDeg / STT_BEAM_RAY_SPACING_DEG) + 1);
+        const spacing = widthDeg / (count - 1);
+
+        for (let i = 0; i < count; i++) {
+            const rad = Phaser.Math.DegToRad(direction - widthDeg / 2 + spacing * i);
+            lines.push(new Phaser.Geom.Line(
+                origin.x,
+                origin.y,
+                origin.x + Math.cos(rad) * this.range,
+                origin.y + Math.sin(rad) * this.range,
+            ));
+        }
+
+        return lines;
     }
 
     // ── EMCON standby ─────────────────────────────────────────────────────
@@ -558,9 +591,10 @@ export class Radar {
 
     // Notify every ship the beam touches that it is being illuminated, so its
     // RWR registers a contact: unlocked (green, search) or locked (red, STT).
+    // A beam sampled by several rays still illuminates each ship once.
     private illuminateRwr(
         targets: Entity[],
-        line: Phaser.Geom.Line,
+        lines: Phaser.Geom.Line[],
         ownerPos: { x: number; y: number },
         isLocked: boolean,
     ): void {
@@ -568,8 +602,7 @@ export class Radar {
         for (const entity of targets) {
             if (!('radar' in entity)) continue;
             const polygon = this.raycaster.getBodyPolygons(entity);
-            const hit = Phaser.Geom.Intersects.GetLineToPolygon(line, polygon);
-            if (!hit) continue;
+            if (!lines.some(line => Phaser.Geom.Intersects.GetLineToPolygon(line, polygon))) continue;
 
             const tgt = entity as PlayerShip | Target;
             const epos = tgt.getPosition();
@@ -586,7 +619,7 @@ export class Radar {
     // jamming ship *and* we (the emitter) sit inside its jamming cone.
     private detectJamming(
         targets: Entity[],
-        line: Phaser.Geom.Line,
+        lines: Phaser.Geom.Line[],
         ownerPos: { x: number; y: number },
     ): JammerError | null {
         for (const entity of targets) {
@@ -595,7 +628,7 @@ export class Radar {
             if (!tgt.radar.jammer.isActive()) continue;
 
             const polygon = this.raycaster.getBodyPolygons(entity);
-            if (!Phaser.Geom.Intersects.GetLineToPolygon(line, polygon)) continue;
+            if (!lines.some(line => Phaser.Geom.Intersects.GetLineToPolygon(line, polygon))) continue;
 
             if (tgt.radar.jammer.covers(tgt.getPosition(), tgt.getDirection(), ownerPos, this.range)) {
                 return tgt.radar.jammer.getError();

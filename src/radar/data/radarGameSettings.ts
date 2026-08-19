@@ -22,9 +22,26 @@ export const PHYSICS_FPS = 60;
 // TWS tracks at most this many targets simultaneously.
 export const MAX_TWS_TRACKS = 3;
 
-// Narrow STT tracking cone width (deg): wide enough to tolerate inter-frame
-// target movement, narrow enough to concentrate illumination energy.
-export const STT_BEAM_DEG = 25;
+// Narrow STT tracking beam width (deg). This is a real angular gate, not a
+// display value: only reflectors inside the beam return energy, so a target
+// the antenna fails to keep centred simply stops being seen.
+export const STT_BEAM_DEG = 6;
+
+// Angular spacing (deg) of the rays that sample a tracking beam. One ray would
+// be a pencil of zero width; a fan at fixed spacing gives the beam its actual
+// angular extent at whatever width it is currently using, and the several
+// returns off a target's hull feed the tracking computer's clustering the same
+// way a sweep's worth of RWS hits does. Finer than a ship's angular size at
+// max range, so nothing slips between rays.
+export const STT_BEAM_RAY_SPACING_DEG = 1.5;
+
+// A lock is designated off an RWS track, whose position can be a whole sweep
+// old — far more bearing error than the track beam is wide. So the beam opens
+// up for a short acquisition dwell, finds the target for real, and only then
+// collapses to STT_BEAM_DEG. Same reason a real set has an acquisition beam
+// distinct from its tracking beam.
+export const STT_ACQUISITION_BEAM_DEG = 20;
+export const STT_ACQUISITION_FRAMES = 30;
 
 // Frames without a return before STT lock breaks (~0.75 s at 60 fps).
 export const STT_LOCK_BREAK_FRAMES = 45;
@@ -42,8 +59,17 @@ export const RADAR_DETECTION_RANGE_POWER = 4;
 // Degrees the antenna sweep moves per update frame.
 export const ANTENNA_SWEEP_STEP_DEG = 1;
 
-// Search-cone width per radar mode. STT uses the RWS cone for display and
-// allowed lock offset; the actual STT beam width is STT_BEAM_DEG.
+// Maximum rate (deg/s) the antenna servo can slew the beam while tracking in
+// STT. A target whose bearing rate exceeds this out-turns the antenna: the
+// beam falls behind, the returns stop, and the lock starves.
+// Tuned to this world's kinematics: ships make ~0.5 px/step, so a target
+// crossing at a few hundred pixels' range turns through roughly 5-15 deg/s of
+// bearing. Above this the beam cannot keep station on it.
+export const ANTENNA_SLEW_RATE_DEG_PER_SEC = 20;
+
+// Search-cone width per radar mode. For STT this is the antenna's gimbal
+// limit — the beam cannot be pointed outside it — and the cone still drawn on
+// the HUD; the illuminating beam itself is STT_BEAM_DEG wide.
 export const ANTENNA_AZIMUTH_DEG_BY_MODE = {
   rws: 60,
   tws: 45,
@@ -76,9 +102,20 @@ export const TRACK_FILTER_BETA = 0.08;
 
 // ── Missile radar / guidance (systems/modules/*missile*.ts) ────────────────
 
-// How many consecutive decoy-occluded frames an STT missile lock survives
-// before it breaks (~0.5 s at 60 fps).
+// How many consecutive frames an STT missile lock survives with no return
+// (chaff-masked, or the target out-turning the seeker) before it breaks
+// (~0.5 s at 60 fps).
 export const MISSILE_RADAR_MAX_MISSED_LOCK_FRAMES = 30;
+
+// Seeker beam width (deg) once the missile radar is tracking. Wider than the
+// ship's STT beam — a small dish on a missile cannot focus as tightly — but
+// still a real gate the target can fall out of.
+export const MISSILE_SEEKER_BEAM_DEG = 10;
+
+// Maximum rate (deg/s) the seeker gimbal can slew while tracking. Much faster
+// than the ship antenna, but finite: a hard cross-turn at short range can
+// still drive the target off the seeker's beam.
+export const MISSILE_SEEKER_SLEW_RATE_DEG_PER_SEC = 240;
 
 // Age missiles once per real second regardless of frame rate.
 export const MISSILE_AGE_TICK_MS = 1000;

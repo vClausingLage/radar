@@ -50,14 +50,21 @@ Models the mechanically/electronically scanned beam. Each frame it advances the
 beam one step across the azimuth and reports `{ direction, sweepComplete }`.
 `sweepComplete` flips true at each edge of the sweep — that is the cue to hand
 the accumulated returns to the tracking computer. Azimuths: **RWS 60°**,
-**TWS 45°**, **STT 60° cone** (but the beam is *locked* on the target, not
-sweeping).
+**TWS 45°**, **STT 60° cone** (the gimbal limit; the beam stares rather than
+sweeps).
+
+While tracking, `trackTo(commanded, delta)` drives the dish toward a commanded
+bearing at `ANTENNA_SLEW_RATE_DEG_PER_SEC` and returns where it *actually*
+ended up. The two diverge whenever the target's bearing rate beats the servo —
+that lag is what lets a target out-turn a lock.
 
 ### `modules/emitter.ts` — `Emitter`
 Turns a beam direction into a `Pulse` (a ray, `Phaser.Geom.Line`, plus energy
-and angle metadata). One ray is cast per frame — there is no fan of rays; the
-target's extent is reconstructed later from many single-ray hits accumulated
-across the sweep. The emission is also what *other* ships' RWR can detect.
+and angle metadata). Searching casts one ray per frame — the target's extent is
+reconstructed later from many single-ray hits accumulated across the sweep.
+A staring STT beam has no sweep to accumulate over, so it is sampled by a fan of
+rays at `STT_BEAM_RAY_SPACING_DEG` spanning the beam width instead. The emission
+is also what *other* ships' RWR can detect.
 
 ### `modules/receiver.ts` — `Receiver`
 Converts raw ray hit-points into `RadarReturn`s (point, range, angle) and
@@ -149,16 +156,23 @@ The seeker/autopilot for missiles in flight. Ages missiles once per second and
 steers each one per its type. Guidance phases:
 
 - **Boost (age < 2):** hold the launch heading (flies straight off the rail).
-- **VIM-177 (SARH):** rides the ship's STT illumination — lead-intercept toward
-  the locked entity (real entity speed → valid lead), pursuit fallback.
+- **VIM-177 (SARH):** rides the ship's STT illumination, and has no other
+  guidance source — it is steered from the STT *track*, never from the target
+  entity. An STT track is refreshed every frame, so its smoothed velocity is in
+  the same per-frame units as the missile's speed and the intercept can be led;
+  pursuit is the fallback. Lose the lock and the missile flies ballistic.
 - **VIM-220 (ARH):**
   1. **Waypoint route** (if the player set one) — fly to WP1, then steer along
      the WP1→WP2 leg.
   2. **Mid-course** — pure pursuit toward its assigned TWS track position
      (pursuit, not lead, because track speed is in scan units).
   3. **Terminal** — once `missileAge ≥ ACTIVE_RADAR_ACTIVATION_TIME` the onboard
-     seeker activates and homes on any entity inside its radar *basket*
-     (range + forward azimuth), preferring the originally-assigned target.
+     seeker activates, searches its forward cone (range + azimuth basket) and
+     locks the nearest unmasked contact it finds. From then on it holds track by
+     *geometry*, not identity: it points its gimbal where it estimates the
+     target to be and re-detects whatever is inside `MISSILE_SEEKER_BEAM_DEG`
+     that frame — so a target that out-turns the gimbal falls out of the beam,
+     and another ship that wanders into it gets locked instead.
 
 `interceptVector()` solves the quadratic time-of-flight; `pursue()` is the
 fallback that simply points at the target's current position.
@@ -182,13 +196,22 @@ buttons, zoom, radar-warning text, and the RWR threat diamonds.
 |------|---------|--------|----------------|--------|
 | **RWS** (Range While Search) | 60° | unlimited | sweeps | — |
 | **TWS** (Track While Scan) | 45° | up to 3 | sweeps | VIM-220 |
-| **STT** (Single Target Track) | 60° cone | 1 (locked) | locked on target | VIM-177 |
+| **STT** (Single Target Track) | 60° gimbal limit | 1 (locked) | stares at the track | VIM-177 |
 
 - **RWS ↔ TWS** switch freely and keep their tracks.
 - **STT** can be entered from RWS or TWS; it locks the highest-confidence
   track and concentrates the beam on it. Leaving STT re-acquires from scratch.
-- The STT lock breaks if the target leaves the ±30° (RWS half-azimuth) cone, or
-  after a sustained loss of return.
+- STT is a closed loop, and nothing in it reads a target's true position: the
+  tracking computer's predicted position commands the antenna, the antenna slews
+  toward that command at a finite rate, the beam illuminates whatever is really
+  inside it, and those returns correct the prediction.
+- A lock is designated off an RWS track that may be a whole sweep old, so the
+  beam opens to `STT_ACQUISITION_BEAM_DEG` for a short dwell before collapsing
+  to the `STT_BEAM_DEG` tracking beam.
+- The lock breaks if the commanded bearing leaves the ±30° gimbal limit, or
+  after a sustained loss of return — which a target can cause by masking behind
+  terrain, chaff or jamming, *or* by driving its bearing rate past what the
+  antenna servo can follow.
 
 ---
 

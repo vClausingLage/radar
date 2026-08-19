@@ -12,11 +12,13 @@ import {
 export type { GuidanceTarget };
 
 // Context supplied each frame so the guidance can resolve every missile's
-// current source of truth: the STT lock (SARH), the maintained tracks (VIM-220
-// mid-course), and the live entities (VIM-220 terminal active-radar homing).
+// current guidance source: the STT lock (SARH), the maintained tracks (VIM-220
+// mid-course), and the live entities the VIM-220's own seeker can illuminate at
+// terminal. No missile is handed a target's true state — a SARH missile sees
+// only what the illuminating radar measures, and an ARH missile only what its
+// own seeker finds in its beam.
 export type GuidanceContext = {
   sttTrack: Track | null;
-  sttTargetEntity?: GuidanceTarget | null;
   tracks: Track[];
   targets: GuidanceTarget[];
   decoyCircles: Phaser.Geom.Circle[];
@@ -70,7 +72,7 @@ export class MissileGuidance {
 
       // Phase 2 — steer toward intercept.
       const dir = missile instanceof ActiveRadarMissile
-        ? this.guideActiveRadar(missile, ctx)
+        ? this.guideActiveRadar(missile, delta, ctx)
         : this.guideSarh(missile as SARHMissile, ctx);
 
       // No guidance source → missile flies ballistic (holds last heading).
@@ -103,25 +105,27 @@ export class MissileGuidance {
     return live;
   }
 
-  // SARH (VIM-177): homes on the ship's STT illumination. Prefers the direct
-  // entity position (no tracking lag) and falls back to the STT track.
+  // SARH (VIM-177): homes on energy the launching ship reflects off the target,
+  // so its only guidance source is that ship's STT track — the filtered
+  // estimate, lag and all. Break the lock and the missile goes ballistic.
+  //
+  // An STT track is refreshed every frame, so its smoothed velocity is already
+  // in per-frame pixels — the same units as the missile's speed — and the
+  // intercept can be led rather than chased. The lead is only as good as the
+  // track: while the estimate is coasting through a dropout, the missile flies
+  // the coast.
   private guideSarh(missile: SARHMissile, ctx: GuidanceContext): { x: number; y: number } | null {
+    const track = ctx.sttTrack;
+    if (!track) return null;
+
     const from = { x: missile.x, y: missile.y };
-    if (ctx.sttTargetEntity) {
-      const e = ctx.sttTargetEntity;
-      return this.interceptVector(
-        from,
-        { x: e.x, y: e.y },
-        e.getDirection(),
-        e.getSpeed(),
-        missile.missileSpeed,
-      ) ?? this.pursue(from, e);
-    }
-    if (ctx.sttTrack) {
-      // Track velocity is px-per-scan (not physics units) → pursue, don't lead.
-      return this.pursue(from, ctx.sttTrack.pos);
-    }
-    return null;
+    return this.interceptVector(
+      from,
+      track.pos,
+      track.dir,
+      track.speed,
+      missile.missileSpeed,
+    ) ?? this.pursue(from, track.pos);
   }
 
   // ARH (VIM-220) guidance, in priority order:
@@ -133,7 +137,7 @@ export class MissileGuidance {
   //      (STT); home on whatever it locks. If it is active but searching, keep
   //      flying the commanded heading (WP2 leg, else the assigned track).
   //   4. Otherwise fly the assigned TWS track (mid-course) by pure pursuit.
-  private guideActiveRadar(missile: ActiveRadarMissile, ctx: GuidanceContext): { x: number; y: number } | null {
+  private guideActiveRadar(missile: ActiveRadarMissile, delta: number, ctx: GuidanceContext): { x: number; y: number } | null {
     const from = { x: missile.x, y: missile.y };
 
     // 1. Fly to the first waypoint (seeker stays off until it is reached).
@@ -158,7 +162,7 @@ export class MissileGuidance {
     // 3. Seeker live: run its RWS→STT loop and home on the locked target.
     if (missile.missileRadar.isActive()) {
       const headingDeg = Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x));
-      const target = missile.missileRadar.update(from, headingDeg, ctx.targets, ctx.decoyCircles, ctx.now);
+      const target = missile.missileRadar.update(from, headingDeg, delta, ctx.targets, ctx.decoyCircles, ctx.now);
       if (target) {
         return this.interceptVector(
           from,

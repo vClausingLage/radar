@@ -61,11 +61,7 @@ export class TrackingComputer {
 
     for (let i = 0; i < this.states.length; i++) {
       if (!matched.has(i)) {
-        this.states[i].missedScans++;
-        this.states[i].track.confidence = Math.max(
-          this.states[i].track.confidence - 0.1,
-          0,
-        );
+        this.coast(this.states[i]);
       }
     }
     this.states = this.states.filter(s => s.missedScans < maxMissedScans);
@@ -128,6 +124,27 @@ export class TrackingComputer {
     const ca = core.reduce((s, r) => s + r.angle, 0) / core.length;
 
     return { point: new Phaser.Math.Vector2(cx, cy), range: cr, angle: ca };
+  }
+
+  // No return this scan: the track coasts on its last smoothed velocity rather
+  // than freezing in place, and its confidence decays. Without this a single
+  // dropped scan would strand the estimate behind a moving target, and in STT
+  // the antenna — which is driven from this estimate — could never catch back
+  // up once it lost a frame.
+  private coast(state: TrackState): void {
+    state.missedScans++;
+    state.track.confidence = Math.max(state.track.confidence - 0.1, 0);
+
+    if (state.track.age <= 1) return;
+
+    state.track.history.push(state.track.pos);
+    if (state.track.history.length > RADAR_TRACK_HISTORY_LENGTH) {
+      state.track.history.shift();
+    }
+    state.track.pos = {
+      x: state.track.pos.x + state.velX,
+      y: state.track.pos.y + state.velY,
+    };
   }
 
   // Predict position one scan ahead from the current smoothed velocity.
@@ -193,6 +210,14 @@ export class TrackingComputer {
 
   getTracks(): Track[] {
     return this.states.map(s => s.track);
+  }
+
+  // Where the filter expects the target to be on the next update. This is the
+  // aim point an STT antenna is driven to: an estimate built from measurements,
+  // carrying the filter's lag, not the target's true position.
+  getPredictedPos(trackId: number): Vector2 | null {
+    const state = this.states.find(s => s.track.id === trackId);
+    return state ? this.predictedPos(state) : null;
   }
 
   setTracks(tracks: Track[]): void {
