@@ -2,6 +2,7 @@
  * Exports shared Phaser game-logic types that are not directly related to the radar system.
  */
 
+import Phaser from "phaser";
 import { Asteroid } from "../../entities/asteroid";
 import { PlayerShip, Target } from "../../entities/ship";
 import { Vector2 } from "../../types";
@@ -23,6 +24,17 @@ export interface RadarHost {
 // outbound illumination, no active radio — while still passively receiving
 // RWR warnings and incoming radio traffic.
 export type Mode = 'rws' | 'tws' | 'stt' | 'dome' | 'emcon';
+
+// A volume of radar-absorbing medium (a gas cloud) as the signal path sees it:
+// a capsule of `radius` px around the spine `line`, whose `density` (0..1) sets
+// how much energy each pixel of path through it absorbs. The radar never sees
+// the GasCloud entity itself — only this, the way it only sees decoys as
+// circles.
+export type GasVolume = {
+    line: Phaser.Geom.Line;
+    radius: number;
+    density: number;
+}
 
 export type Loadout = {
     [key in string]: { load: number, active: boolean }

@@ -253,3 +253,47 @@ export const decoySettings = {
     LIFETIME_MS: 8000,        // how long a cloud lingers before dissipating
     BLOCK_PROBABILITY: 0.7,   // chance a beam passing through is blocked
 }
+
+// ── Gas clouds (entities/gasCloud.ts, systems/modules/receiver.ts) ────────────
+// A gas cloud is an absorbing medium, not an obstacle: it has no collision body
+// and never blocks a beam outright. Energy crossing it is lost exponentially
+// with the distance travelled inside it (Beer-Lambert), and the loss counts
+// twice because the pulse has to come back out again. That is why a contact
+// behind a cloud flickers in and out instead of disappearing cleanly the way a
+// terrain-shadowed one does — the same behaviour real weather radar returns
+// show through heavy rain.
+//
+// Geometrically a cloud is a capsule: everything within RADIUS px of the spine
+// running from its start point to its end point. That capsule is the single
+// source of truth — the visual puffs are laid out along it, and the receiver
+// measures path length against it.
+export const gasCloudSettings = {
+    RADIUS: 140,                // px — half-width of the capsule around the spine
+    DENSITY: 0.8,               // 0..1 — how absorbing the medium is
+    SPREAD_MS: 20000,           // time for the cloud to grow from its start point to its end point (0 = fully formed at spawn)
+    // One-way optical depth added per px of path through density 1.0. Tuned so
+    // the gas is close to opaque rather than merely annoying: a beam crossing a
+    // default cloud through its middle (280 px at density 0.8) keeps
+    // exp(-2 x 280 x 0.8 x 0.008) ≈ 3 % of its returns — a contact behind the
+    // core is effectively lost, an STT lock dragged through it breaks. Clipping
+    // the edge is survivable (~40 % of returns through 80 px), and looking down
+    // the length of a long band is hopeless, which is the whole point: the
+    // penalty is geometric, so the counter is to change the geometry.
+    ATTENUATION_PER_PX: 0.008,
+    PATH_SAMPLE_PX: 8,          // step at which the receiver samples a beam to measure the path inside a cloud
+
+    // ── Appearance ──
+    DEPTH: 5,                   // drawn over ships and radar marks (which sit at depth 0)
+    COLOR: 0x6fe3b0,            // tint of every puff
+    PUFF_TEXTURE_PX: 128,       // size of the generated soft radial-falloff sprite
+    PUFF_SLICE_FACTOR: 0.45,    // spacing of puff slices along the spine, as a fraction of RADIUS
+    PUFFS_PER_SLICE: 4,         // overlapping puffs per slice — the overlap is what reads as volume
+    MIN_SLICES: 5,              // floor, so a short cloud is still a cloud and not four blobs
+    MAX_PUFFS: 240,             // draw-call ceiling for a very long cloud
+    PUFF_ALPHA: { min: 0.10, max: 0.26 },  // per-puff opacity; they stack into the dense core
+    PUFF_SIZE_FACTOR: { min: 0.9, max: 1.5 },  // puff diameter as a fraction of RADIUS
+    PUFF_LATERAL_SPREAD: 0.6,   // how far off the spine a puff may sit, as a fraction of RADIUS
+    SWIRL_PX: 14,               // amplitude of the slow per-puff drift
+    SWIRL_SPEED: { min: 0.00006, max: 0.00022 },  // rad/ms — desynchronised so the gas churns
+    EDGE_FADE: 0.12,            // fraction of the spread over which a newly reached puff fades in
+};

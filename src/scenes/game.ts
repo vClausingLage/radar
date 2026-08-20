@@ -2,7 +2,9 @@ import Phaser from "phaser";
 import { ScenarioKey } from "./startMenu";
 import { createPlayerShipFactory } from "../entities/shipFactory";
 import { createAsteroidFactory } from "../entities/asteroidFactory";
+import { createGasCloudFactory } from "../entities/gasCloudFactory";
 import { Asteroid } from "../entities/asteroid";
+import { GasCloud } from "../entities/gasCloud";
 import { PlayerShip, Target } from "../entities/ship";
 import { CAMERA_ZOOM, playerShipSettings, VISIBILITY_FADE_BAND_PX, VISIBILITY_RANGE_PX, world } from "../settings";
 import { createMissileFactory } from "../entities/missileFactory";
@@ -34,6 +36,9 @@ export default class Game extends Phaser.Scene
   protected player?: PlayerShip;
   protected targets: Target[] = [];
   protected asteroids: Asteroid[] = [];
+  // Absorbing gas volumes. Not obstacles and not trackable entities: they never
+  // block a beam, they eat the energy crossing them (see Receiver.isAbsorbedByGas).
+  protected gasClouds: GasCloud[] = [];
   // Matter physics uses collision categories instead of groups
   protected physicsRenderer!: PhysicsRenderer;
   protected scenario: ScenarioKey = 'skirmish';
@@ -114,6 +119,7 @@ export default class Game extends Phaser.Scene
     // Register factories
     createPlayerShipFactory();
     createAsteroidFactory();
+    createGasCloudFactory();
     createMissileFactory();
 
     // WORLD
@@ -263,6 +269,7 @@ export default class Game extends Phaser.Scene
       direction: 270,
       speed: 0,
       type: 'cruiser',
+      activity: 'inactive',
     }));
   }
 
@@ -274,6 +281,7 @@ export default class Game extends Phaser.Scene
       direction: 270,
       speed: 0,
       type: 'cruiser',
+      activity: 'inactive',
     }));
     // Asteroid sits between the player's start and the target, blocking line of sight.
     this.asteroids.push(this.add.asteroid({
@@ -363,12 +371,20 @@ export default class Game extends Phaser.Scene
       .flatMap(ship => ship.getActiveDecoys())
       .map(d => d.getCircle());
 
+    // Gas clouds: spread a little further, churn their puffs, and hand the
+    // radar the capsule each one currently occupies. Every radar in the world
+    // gets the same list — gas is a property of the medium, not of a side.
+    const gasVolumes = this.gasClouds.map(cloud => {
+      cloud.update(this.time.now);
+      return cloud.getVolume();
+    });
+
     // Radar scan (pass all ships; radar excludes its owner internally).
     // Asteroids are NOT trackable entities: they go in as terrain — they block
     // the beam and are painted by the ground-mapping display instead.
     const allShips = [player, ...this.targets];
     allShips.forEach(ship => {
-      ship.radar.update(delta, ship.getDirection(), allShips, this.graphics!, decoyCircles, this.asteroids);
+      ship.radar.update(delta, ship.getDirection(), allShips, this.graphics!, decoyCircles, this.asteroids, gasVolumes);
     });
 
     // Update AI continuous (every frame)
@@ -393,7 +409,7 @@ export default class Game extends Phaser.Scene
   // while the player is still over part of it, and a big asteroid's edge
   // would stay hidden well past where it's actually close enough to see.
   private updateVisibilityFade(player: PlayerShip): void {
-    const assets: FadeableAsset[] = [...this.targets, ...this.asteroids, ...this.extraFadeAssets];
+    const assets: FadeableAsset[] = [...this.targets, ...this.asteroids, ...this.gasClouds, ...this.extraFadeAssets];
     for (const asset of assets) {
       const bounds = asset.getBounds();
       const dx = Math.max(bounds.left - player.x, 0, player.x - bounds.right);
@@ -424,6 +440,8 @@ export default class Game extends Phaser.Scene
     // Destroy targets and asteroids
     this.targets.forEach(target => target.destroy());
     this.asteroids.forEach(asteroid => asteroid.destroy());
+    this.gasClouds.forEach(cloud => cloud.destroy());
+    this.gasClouds = [];
 
     // Show game over message
     const cam = this.cameras.main;

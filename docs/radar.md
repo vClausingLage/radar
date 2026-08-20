@@ -77,6 +77,20 @@ P_detect = 1 − (range / maxRange)^4
 Distant returns are dropped probabilistically, so contacts flicker more at the
 edge of range — as real returns do.
 
+It also owns the two ways a return can be lost on the path rather than at the
+target:
+
+- `isBlockedByDecoy()` — a chaff cloud between antenna and target swallows the
+  return with a fixed per-cloud probability.
+- `isAbsorbedByGas()` — a gas cloud (`entities/gasCloud.ts`) absorbs energy
+  along the path instead of blocking it. Beer-Lambert: the surviving fraction
+  is `exp(−2 · Σ pathLengthInside · density · ATTENUATION_PER_PX)`, doubled
+  because the echo travels back out the same way. Because the penalty scales
+  with how much gas is actually crossed, clipping a cloud's edge is cheap and
+  looking down the length of a band is hopeless — the counter is to change the
+  geometry, not to out-power it. Applied to ship *and* terrain returns, so the
+  ground map thins out over gas too.
+
 ### `modules/trackingComputer.ts` — `TrackingComputer`
 The heart of the simulation. It builds **tracks purely from geometry** — there
 are no entity IDs in the return data. Per call (one RWS sweep, or every STT

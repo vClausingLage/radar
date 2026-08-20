@@ -69,6 +69,17 @@ export default class Level1 extends Game {
 
         this.targets.push(this.add.target({ x: 1600, y: 600, direction: 90, speed: 0, type: 'cruiser' }));
         this.targets.push(this.add.target({ x: 750, y: 1050, direction: 0, speed: 0, type: 'cargo' }));
+
+        // A band of absorbing gas venting across the climb-out, spreading west
+        // to east while the crew runs the startup. It sits between the pad and
+        // the northern cruiser, so the straight-line run at that contact is also
+        // the longest possible path through the gas: the track thins out and
+        // drops, and an STT lock held through it can break. Going around the
+        // eastern end costs time but keeps the picture.
+        this.gasClouds.push(this.add.gasCloud({
+            from: { x: 1000, y: 1320 },
+            to: { x: 2150, y: 1120 },
+        }));
     }
 
     create() {
@@ -91,7 +102,7 @@ export default class Level1 extends Game {
     }
 
     protected briefingMessage(): string {
-        return 'LEVEL 1 — Your ship is powered down on the pad. Run the startup: BAT, then ENG1, ENG2, and SYS. Once airborne: a friendly GCI station, "Disco" (cyan on the datalink), shares its 360° picture with you. Press C to call "bogey dope" — Disco answers with the nearest contact\'s bearing, range, aspect and a speed order.';
+        return 'LEVEL 1 — Your ship is powered down on the pad. Run the startup: BAT, then ENG1, ENG2, and SYS. Once airborne: a friendly GCI station, "Disco" (cyan on the datalink), shares its 360° picture with you. Press C to call "bogey dope" — Disco answers with the nearest contact\'s bearing, range, aspect and a speed order. Mind the gas band spreading across your climb-out: it absorbs radar energy, so anything you look at through it fades in and out.';
     }
 
     // Key a "bogey dope" call: the player transmits the request (GPT voice) and
@@ -133,7 +144,11 @@ export default class Level1 extends Game {
 
         // Sweep the dish and paint the shared picture. It detects the targets
         // (not the friendly player) and is occluded by the same terrain list.
-        this.station?.update(delta, this.targets, this.asteroids, this.graphics);
+        // The dish shoots through the same gas the player does.
+        this.station?.update(
+            delta, this.targets, this.asteroids, this.graphics,
+            this.gasClouds.map(cloud => cloud.getVolume()),
+        );
     }
 
     protected destroyPlayer(): void {

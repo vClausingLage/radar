@@ -1,23 +1,18 @@
 ## PHASER JS RADAR
 
-
-- [x] STT remove hack -> real implementation (closed-loop angle tracking: antenna slews to the tracking computer's estimate at a finite rate; the beam, not a truth lookup, decides what is seen — ship STT and both missile seekers)
 - ADD Clutter -> https://de.wikipedia.org/wiki/Clutter_%28Radar%29
 
 # To Dos
 
-For this radar simulation game it is important that radar is simulated in a very realistic way. I want to confirm the following: Travelling radar waves loose energy squared per distance (^4 considering round trip of reflected signal back to source). So range is physically tied to energy. The 'range' of a radar is based on convention/setting of the radar: Per signal only returns are processed that are inside a defined time interval to prevent return signal from previous waves to be treated as tracks.  
-
-
 - move visibility material etc and other atributes to group instead of the objects themselves
-- gas clouds that reduce radar effectiveness
+- gas clouds that reduce radar effectiveness   (done: `entities/gasCloud.ts`,
+  absorbed via `Receiver.isAbsorbedByGas`. Still open: gas is invisible to the
+  seeker head — `MissileRadar` and the RWR ignore it — and the cloud returns no
+  volume clutter of its own, so it never paints on the scope)
 - IRST -> exhaust detection -> IR missiles
-- drone behaviour (no shooting but jamming)
-- add jammer usage to ai behaviour
 
 # RADAR
 
-- MAKE SHURE that radar has no range but only energy
 - noise
 - distance -> exponential falloff
 - target size
@@ -25,10 +20,23 @@ For this radar simulation game it is important that radar is simulated in a very
 
 # Testing
 
-## manual
+Tests live in `src/tests/` and run inside the real game (see `src/tests/radarTests.ts`).
+A test restarts `TestScene` (an empty `Game`), places drones by bearing/range from
+the player, lets the actual loop run for a number of frames, and asserts on what
+the radar systems ended up believing. Run them from the start menu's RUN RADAR
+TESTS button (DEV only), from `window.runRadarTests()`, or by loading `?tests`.
 
-- missilies dont die if owner dies
-
-## auto
-
-WHERE TO ADD TESTS?
+- radar effectiveness tests
+  - target size
+  - cross section
+  - target distance
+  - jamming            (done: jamming ship shows as a displaced false track)
+  - countermeasures
+- RWR
+  - warned outside the emitting radar's own range   FAILING: illumination stops
+    at the radar's range, so an RWR only ever hears a radar that can already see
+    it. One-way reception should reach further — `RWR_RANGE_MULTIPLICATOR` in
+    settings.ts (1.7, currently unused) looks like the intended factor.
+  - silent far outside the sweep                    (done)
+  - missile seeker warning                          (done)
+- 

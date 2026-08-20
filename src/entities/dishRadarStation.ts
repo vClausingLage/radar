@@ -4,7 +4,7 @@ import { createEntityId } from "./entityId";
 import { Radar } from "../radar/systems/radar";
 import { RadarRenderer } from "../radar/renderer/radarRenderer";
 import { Track } from "../radar/data/track";
-import { Entity, RadarHost } from "../radar/data/types";
+import { Entity, GasVolume, RadarHost } from "../radar/data/types";
 import { Vector2 } from "../types";
 import { SURVEILLANCE_RANGE_PX } from "../radar/data/radarGameSettings";
 
@@ -81,9 +81,18 @@ export class DishRadarStation implements RadarHost {
     // detect; `terrain` are occluders — the station's own rock is filtered out
     // so the dish (mounted on top) never shadows itself. `graphics` carries only
     // the datalink overlay; the dome radar draws nothing on its own.
-    update(delta: number, ships: Entity[], terrain: Entity[], graphics: Phaser.GameObjects.Graphics): void {
+    update(
+        delta: number,
+        ships: Entity[],
+        terrain: Entity[],
+        graphics: Phaser.GameObjects.Graphics,
+        gasVolumes: GasVolume[] = [],
+    ): void {
         const occluders = terrain.filter(t => t !== this.rock);
-        this.radar.update(delta, this.getDirection(), ships, graphics, [], occluders);
+        // Gas absorbs the dish's energy like anyone else's, so the shared
+        // picture thins out over a cloud too — the datalink is a better sensor
+        // than the player's, not an omniscient one.
+        this.radar.update(delta, this.getDirection(), ships, graphics, [], occluders, gasVolumes);
 
         const origin = this.getPosition();
         const bearing = this.radar.getBeamDirection();

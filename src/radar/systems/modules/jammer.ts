@@ -53,6 +53,12 @@ export class Jammer {
     return this.active;
   }
 
+  // True when a fresh burst would actually start — neither transmitting nor
+  // sitting on cooldown. `now` is scene.time.now.
+  isReady(now: number): boolean {
+    return this.activatedAt === null || now - this.activatedAt >= JAMMER_COOLDOWN_MS;
+  }
+
   getError(): JammerError {
     return this.error;
   }

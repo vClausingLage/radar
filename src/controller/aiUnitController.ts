@@ -18,6 +18,10 @@ enum AIState {
 
 type Personality = 'aggressive' | 'defensive';
 
+// Whether the unit is under way. An 'inactive' unit is a stationary emplacement:
+// it holds position and heading, but its radar, jammer and weapons work normally.
+export type UnitActivity = 'active' | 'inactive';
+
 // ── Tunables ───────────────────────────────────────────────────────────────
 const FIRE_COOLDOWN_MS = 2500;
 const STT_LOCK_DELAY_MS = 2500;       // lock must be held this long before firing
@@ -65,6 +69,7 @@ export class AiUnitController {
         private sttTracked = false,
         private readonly radar: Radar | null = null,
         private readonly id: number | null = null,
+        private readonly activity: UnitActivity = 'active',
     ) {
         // Cargo is always defensive; cruisers get a coin-flip personality so both
         // aggressive and defensive behaviours show up in a scene.
@@ -73,11 +78,22 @@ export class AiUnitController {
             : (Phaser.Math.Between(0, 1) === 0 ? 'aggressive' : 'defensive');
 
         this.createDebugText();
-        if (ship.shipType === 'cargo') {
-            this.cargoWaypoints = this.generateCargoRoute();
-        } else {
-            this.patrolRoute = this.generatePatrolRoute();
+        // A stationary unit has no route to fly.
+        if (this.activity === 'active') {
+            if (ship.shipType === 'cargo') {
+                this.cargoWaypoints = this.generateCargoRoute();
+            } else {
+                this.patrolRoute = this.generatePatrolRoute();
+            }
         }
+    }
+
+    // Release what the controller owns in the scene (the DEV state label). The
+    // ship itself belongs to the scene, so it is left alone — this only detaches
+    // the brain, e.g. when a scenario wants an inert prop instead of an opponent.
+    destroy(): void {
+        this.debugText?.destroy();
+        this.debugText = undefined;
     }
 
     public getTurnRate(): number {
@@ -104,8 +120,9 @@ export class AiUnitController {
             : 'L:--';
         const w220 = this.radar?.getWeaponLoad('VIM-220') ?? 0;
         const w177 = this.radar?.getWeaponLoad('VIM-177') ?? 0;
+        const activity = this.activity === 'inactive' ? ' STATIC' : '';
         this.debugText.setText(
-            `AI ${this.id} ${this.personality[0].toUpperCase()} [${stateNames[this.state]}] ${lock} D:${this.ship.getRemainingDecoys()} M:${w220}/${w177}`,
+            `AI ${this.id} ${this.personality[0].toUpperCase()}${activity} [${stateNames[this.state]}] ${lock} D:${this.ship.getRemainingDecoys()} M:${w220}/${w177}`,
         );
         this.debugText.setPosition(this.ship.x, this.ship.y - 24);
     }
@@ -149,9 +166,14 @@ export class AiUnitController {
             case AIState.PATROL: this.executePatrol(); break;
         }
 
-        // Border avoidance overrides state steering at the world edge.
-        this.avoidBorder();
-        this.applyMovement();
+        // Border avoidance overrides state steering at the world edge. A
+        // stationary unit can never reach an edge, so it skips both.
+        if (this.activity === 'active') {
+            this.avoidBorder();
+            this.applyMovement();
+        } else {
+            this.ship.setVelocity(0, 0);
+        }
         this.updateDebugText();
     }
 
@@ -261,6 +283,7 @@ export class AiUnitController {
         if (!track) return;
         this.lastTargetPos = { x: track.pos.x, y: track.pos.y };
         this.turnToward(track.pos);
+        this.tryJam(track.pos);
 
         // Wait until the track has matured (~2 scans), then set up the radar for
         // the chosen weapon: TWS for the fire-and-forget 220 (no lock needed),
@@ -279,7 +302,7 @@ export class AiUnitController {
         this.lastTargetPos = { x: track.pos.x, y: track.pos.y };
         this.turnToward(track.pos);
 
-        if (this.personality === 'aggressive') this.radar?.activateJammer();
+        this.tryJam(track.pos);
 
         // The 177 shot is gated on holding the lock; the 220 track matured
         // during INVESTIGATE and can be fired as soon as the launcher is ready.
@@ -304,7 +327,7 @@ export class AiUnitController {
         if (!track) return;
         this.lastTargetPos = { x: track.pos.x, y: track.pos.y };
 
-        if (this.personality === 'aggressive') this.radar?.activateJammer();
+        this.tryJam(track.pos);
 
         // Keep the target near the cone edge: aim the offset off the target
         // bearing so it stays illuminated while we build lateral separation.
@@ -446,6 +469,15 @@ export class AiUnitController {
         this.nextDecoyAt = now + DECOY_COOLDOWN_MS;
     }
 
+    // Burst the jammer when the target sits inside the cone the nose projects
+    // and the transmitter is off cooldown. Jamming only spoofs radars inside
+    // that cone, so a burst fired off-boresight would be wasted.
+    private tryJam(pos: { x: number; y: number }): void {
+        const radar = this.radar;
+        if (!radar || !radar.isJammerReady() || !radar.isJammerAimedAt(pos)) return;
+        radar.activateJammer();
+    }
+
     private bearingTo(pos: { x: number; y: number }): number {
         return Phaser.Math.RadToDeg(Math.atan2(pos.y - this.ship.y, pos.x - this.ship.x));
     }
@@ -469,6 +501,9 @@ export class AiUnitController {
     }
 
     private turnTowardAngle(desiredAngleDeg: number): void {
+        // A stationary unit holds its heading — every state still computes its
+        // desired bearing, it just cannot act on it.
+        if (this.activity === 'inactive') return;
         const angleDelta = Phaser.Math.Angle.WrapDegrees(desiredAngleDeg - this.ship.angle);
         const turnStep = Phaser.Math.Clamp(angleDelta, -this.turnRate, this.turnRate);
         this.ship.setAngle(this.ship.angle + turnStep);

@@ -37,7 +37,10 @@ const config = {
 
 const game = new Phaser.Game(config);
 
-// DEV-only: expose the game instance for debugging/automation from the console.
+// DEV-only: expose the game instance for debugging/automation from the console,
+// and install the in-game test runner (window.runRadarTests(), ?tests). Imported
+// lazily so the tests and their scene stay out of a production build.
 if (import.meta.env.DEV) {
   (window as unknown as { game?: Phaser.Game }).game = game;
+  import('./tests/bootstrap').then(({ installTestHooks }) => installTestHooks(game));
 }

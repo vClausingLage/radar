@@ -4,17 +4,29 @@ import { Radar } from '../radar/systems/radar';
 import { InterfaceRenderer } from '../radar/renderer/interfaceRenderer';
 import { RadarRenderer } from '../radar/renderer/radarRenderer';
 import { TerrainRenderer } from '../radar/renderer/terrainRenderer';
-import { AiUnitController } from '../controller/aiUnitController';
+import { AiUnitController, UnitActivity } from '../controller/aiUnitController';
 import { PlayerController } from '../controller/playerController';
 import { targetShipSettings } from '../settings';
 
 /* eslint-disable @typescript-eslint/no-namespace */
 
+// `activity` tags whether the unit is under way ('active', the default) or a
+// stationary emplacement ('inactive') that holds position and heading while its
+// radar, jammer and weapons keep working.
+export type TargetParams = {
+  x: number;
+  y: number;
+  direction: number;
+  speed: number;
+  type: 'cruiser' | 'cargo';
+  activity?: UnitActivity;
+};
+
 declare global {
   namespace Phaser.GameObjects {
     interface GameObjectFactory {
       playerShip(params: { x: number; y: number; direction: number; speed: number }): PlayerShip;
-      target(params: { x: number; y: number; direction: number; speed: number; type: 'cruiser' | 'cargo' }): Target;
+      target(params: TargetParams): Target;
     }
   }
 }
@@ -59,7 +71,7 @@ export const createPlayerShipFactory = () => {
 
   Phaser.GameObjects.GameObjectFactory.register('target', function(
     this: Phaser.GameObjects.GameObjectFactory,
-    params: { x: number; y: number; direction: number; speed: number; type: 'cruiser' | 'cargo' }
+    params: TargetParams
   ) {
     const target = new Target({
       scene: this.scene,
@@ -74,7 +86,9 @@ export const createPlayerShipFactory = () => {
     target.setMissileNoCollideGroup(targetMissileNoCollideGroup);
     target.addToDisplayList();
     target.addToUpdateList();
-    const controller = new AiUnitController(this.scene, target, 0, false, target.radar, target.id);
+    const controller = new AiUnitController(
+      this.scene, target, 0, false, target.radar, target.id, params.activity ?? 'active',
+    );
     if (params.type === 'cargo') {
       controller.setTurnRate(targetShipSettings.TURN_RATE_CARGO);
     }

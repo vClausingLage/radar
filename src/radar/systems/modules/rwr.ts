@@ -40,6 +40,13 @@ export class RwrReceiver {
     return Array.from(this.contacts.values());
   }
 
+  // The emitter key behind every live contact. Ship radars key on the emitting
+  // ship's entity id, missile seekers on their own 'missile-N' key, so this is
+  // what tells a search radar apart from an inbound seeker.
+  getRwrSources(): string[] {
+    return Array.from(this.contacts.keys());
+  }
+
   getPrimaryRwrContact(): RwrContact | null {
     const all = this.getRwrSignals();
     if (all.length === 0) return null;

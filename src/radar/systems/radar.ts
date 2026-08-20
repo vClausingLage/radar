@@ -12,7 +12,7 @@ import { TerrainMapper } from "./modules/terrainMapper";
 import { FireControl } from "./fireControl";
 
 import { Track } from "../data/track";
-import { Entity, Loadout, Mode, RadarHost } from "../data/types";
+import { Entity, GasVolume, Loadout, Mode, RadarHost } from "../data/types";
 
 import { InterfaceRenderer } from "../renderer/interfaceRenderer";
 import { RadarRenderer } from "../renderer/radarRenderer";
@@ -219,6 +219,22 @@ export class Radar {
         this.jammer.activate(this.scene.time.now);
     }
 
+    // True when a jamming burst could be started right now: off cooldown and
+    // not blocked by EMCON. Lets an AI check before committing to the burst.
+    isJammerReady(): boolean {
+        if (this.mode === 'emcon') return false;
+        return this.jammer.isReady(this.scene.time.now);
+    }
+
+    // True when `point` lies inside the cone our jammer would project — i.e.
+    // the nose is pointed close enough at it for a burst to spoof its radar.
+    isJammerAimedAt(point: { x: number; y: number }): boolean {
+        if (!this.owner) return false;
+        return this.jammer.covers(
+            this.owner.getPosition(), this.owner.getDirection(), point, this.range,
+        );
+    }
+
     // Cone-readout status for the jammer (active/cooldown/ready countdown).
     // EMCON overrides the readout to standby regardless of the underlying
     // timer, since the transmitter is off and the jammer cannot be triggered.
@@ -290,6 +306,7 @@ export class Radar {
         graphics: Phaser.GameObjects.Graphics,
         decoyCircles: Phaser.Geom.Circle[] = [],
         terrain: Entity[] = [],
+        gasVolumes: GasVolume[] = [],
     ): void {
         if (!this.owner) return;
 
@@ -319,11 +336,11 @@ export class Radar {
         }, graphics);
 
         if (this.mode === 'stt') {
-            this.updateStt(delta, ownerPos, shipDirection, entities, graphics, decoyCircles, terrain);
+            this.updateStt(delta, ownerPos, shipDirection, entities, graphics, decoyCircles, terrain, gasVolumes);
         } else if (this.mode === 'emcon') {
             this.updateEmcon(ownerPos, shipDirection, graphics);
         } else {
-            this.updateRws(ownerPos, shipDirection, entities, graphics, decoyCircles, terrain);
+            this.updateRws(ownerPos, shipDirection, entities, graphics, decoyCircles, terrain, gasVolumes);
         }
 
         // Paint the ground-mapping picture (persisted, decaying terrain returns).
@@ -339,6 +356,7 @@ export class Radar {
         graphics: Phaser.GameObjects.Graphics,
         decoyCircles: Phaser.Geom.Circle[],
         terrain: Entity[],
+        gasVolumes: GasVolume[],
     ): void {
         const scanWidth = this.antenna.getAzimuth(this.mode);
         const scanStartAngle = shipDirection - scanWidth / 2;
@@ -382,9 +400,16 @@ export class Radar {
             Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, shipHit.x, shipHit.y));
 
         if (terrainWins) {
-            this.terrainMapper.addSample(terrainHit, this.scene.time.now);
-        } else if (shipHit && !this.receiver.isBlockedByDecoy(ownerPos, shipHit, decoyCircles)) {
-            // Chaff between the antenna and the target can swallow the return.
+            // Gas dims the ground map exactly as it dims a contact — the mapper
+            // simply never gets a sample the receiver did not recover.
+            if (!this.receiver.isAbsorbedByGas(ownerPos, terrainHit, gasVolumes)) {
+                this.terrainMapper.addSample(terrainHit, this.scene.time.now);
+            }
+        } else if (shipHit
+            && !this.receiver.isBlockedByDecoy(ownerPos, shipHit, decoyCircles)
+            && !this.receiver.isAbsorbedByGas(ownerPos, shipHit, gasVolumes)) {
+            // Chaff between the antenna and the target can swallow the return,
+            // and gas on the path can absorb it.
             this.sweepBuffer.push({ point: shipHit });
         }
 
@@ -427,6 +452,7 @@ export class Radar {
         graphics: Phaser.GameObjects.Graphics,
         decoyCircles: Phaser.Geom.Circle[],
         terrain: Entity[],
+        gasVolumes: GasVolume[],
     ): void {
         const rwsHalfAz = this.antenna.getAzimuth('rws') / 2;
         const targets = entities.filter(e => e.id !== this.owner?.id);
@@ -493,9 +519,16 @@ export class Radar {
                 Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, shipHit.x, shipHit.y));
 
             if (terrainWins) {
-                this.terrainMapper.addSample(terrainHit, this.scene.time.now);
-            } else if (shipHit && !this.receiver.isBlockedByDecoy(ownerPos, shipHit, decoyCircles)) {
-                // Chaff between the antenna and the target can swallow the return.
+                if (!this.receiver.isAbsorbedByGas(ownerPos, terrainHit, gasVolumes)) {
+                    this.terrainMapper.addSample(terrainHit, this.scene.time.now);
+                }
+            } else if (shipHit
+                && !this.receiver.isBlockedByDecoy(ownerPos, shipHit, decoyCircles)
+                && !this.receiver.isAbsorbedByGas(ownerPos, shipHit, gasVolumes)) {
+                // Chaff between the antenna and the target can swallow the return,
+                // and gas on the path can absorb it. Starved frames feed the
+                // lock-break counter below, so a target that drags the lock
+                // through a cloud can shake it.
                 rawHits.push({ point: shipHit });
             }
         }
