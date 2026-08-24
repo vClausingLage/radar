@@ -123,8 +123,8 @@ Only the player's radar gets renderers; AI and dome radars track silently.
 
 ## Verification
 
-No test suite exists. Package manager is **pnpm**; the deploy workflow builds
-on push to `main`, so a broken build ships.
+Package manager is **pnpm**; the deploy workflow builds
+on push to `main`, so a broken build ships. A test scene is in `src/scenes/testScene.ts` and a test suite in `src/tests/radarTests.ts`.
 
 ```bash
 npx tsc --noEmit

@@ -30,6 +30,8 @@ import {
     STT_BEAM_DEG,
     STT_BEAM_RAY_SPACING_DEG,
     STT_LOCK_BREAK_FRAMES,
+    TRACK_STT_COURSE_WINDOW_FRAMES,
+    TRACK_STT_MIN_COURSE_SPEED_PX,
 } from "../data/radarGameSettings";
 
 export class Radar {
@@ -421,7 +423,7 @@ export class Radar {
                 : this.receiver.processHits(this.sweepBuffer, ownerPos, this.range);
             // TWS caps simultaneous tracks; RWS searches without a cap.
             const maxTracks = this.mode === 'tws' ? MAX_TWS_TRACKS : Infinity;
-            this.trackingComputer.update(returns, ownerPos, undefined, maxTracks);
+            this.trackingComputer.update(returns, ownerPos, { maxTracks });
             this.sweepBuffer = [];
             this.sweepJammerError = null;
         }
@@ -544,9 +546,18 @@ export class Radar {
         this.illuminateRwr(targets, beamLines, ownerPos, true);
 
         const returns = this.receiver.processHits(hits, ownerPos, this.range);
-        // STT updates every frame; high maxMissedScans keeps the lock alive during
-        // brief signal dropouts without conflicting with the RWS sweep timescale.
-        this.trackingComputer.update(returns, ownerPos, 90);
+        // STT updates every frame, so every timescale differs from search. A high
+        // maxMissedScans keeps the lock alive through brief dropouts without
+        // conflicting with the sweep timescale, and the course is fitted over
+        // dozens of frames rather than four sweeps: at 0.1 px of target motion
+        // per frame there is nothing to read in a shorter baseline, and this
+        // estimate is what a SARH seeker leads on.
+        this.trackingComputer.update(returns, ownerPos, {
+            maxMissedScans: 90,
+            minCourseSpeed: TRACK_STT_MIN_COURSE_SPEED_PX,
+            courseWindow: TRACK_STT_COURSE_WINDOW_FRAMES,
+            courseFromMeasurements: true,
+        });
 
         // Track missed-frame counter for lock-break logic.
         if (returns.length > 0) {

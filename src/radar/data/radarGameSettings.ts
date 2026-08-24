@@ -100,6 +100,54 @@ export const TRACK_TRIM_FRACTION = 0.15;
 export const TRACK_FILTER_ALPHA = 0.35;
 export const TRACK_FILTER_BETA = 0.08;
 
+// Course and speed reported on a track are fitted across a window of past track
+// positions instead of being read straight off the alpha-beta velocity. A
+// single update's velocity carries that update's full centroid wander; a slope
+// across the window averages it out. Longer is steadier but slower to show a
+// turn.
+//
+// The window is sized in updates, so each mode needs its own. A search sweep
+// advances a cruising contact ~6 px, far above the ~1 px of wander between
+// sweeps, and four of them suffice — and four is as many as it can afford,
+// since four sweeps is already three and a half seconds of lag behind a turn.
+// A single STT frame advances the same contact only 0.1 px against 1-2 px of
+// per-frame wander — twenty times more noise than signal — so STT has to
+// integrate across a couple of seconds of frames before the motion emerges.
+// It can afford to: those two seconds cost the reported course its currency,
+// but the alpha-beta filter driving the antenna and the gate is untouched, so
+// the lock itself stays as quick as ever.
+export const TRACK_COURSE_WINDOW_SCANS = 4;
+export const TRACK_STT_COURSE_WINDOW_FRAMES = 120; // shorter: more 'liveliness' on the direction, longer: more stability on the direction update
+
+// Minimum detectable velocity for the search picture, in px per sweep, quoted
+// at the reference range below. Between sweeps the centroid of a motionless
+// contact still wanders as the beam paints a different part of its hull, while
+// a contact at cruise moves ~6 px; anything fitted below this threshold is that
+// wander, not motion, so the track reports zero speed and holds its last
+// heading instead of swinging one through every point of the compass.
+export const TRACK_MIN_COURSE_SPEED_PX = 1.2;
+
+// The same threshold for STT, in px per frame at the reference range. Across the
+// 120-frame baseline the fitted slope of a motionless contact stays around
+// 0.014 px/frame there, while a ship at cruise makes 0.1, so this sits between
+// the two: a locked contact genuinely under way keeps its course, one sitting
+// still reports none, and the SARH seeker is never handed wander as a lead
+// angle. The cost is the blind zone any real set has — a contact crawling at a
+// fifth of cruise is not resolved as moving, and the missile pursues it instead
+// of leading it.
+export const TRACK_STT_MIN_COURSE_SPEED_PX = 0.02;
+
+// Range the two thresholds above are quoted at, and the exponent the threshold
+// grows by with the contact's range. Centroid wander is not a fixed number of
+// pixels: the beam's angular width spreads into a wider cross-range cell the
+// further out the contact is, and the range-power falloff leaves fewer returns
+// per sweep to average, so the wander grows faster than the range does. Both
+// modes measure roughly 4x the wander at 573 px that they do at 300 px — close
+// to the square of the range ratio — and a threshold that did not grow with it
+// would put a moving vector on every distant contact.
+export const TRACK_COURSE_RANGE_REF_PX = 300;
+export const TRACK_COURSE_RANGE_EXPONENT = 2;
+
 // ── Missile radar / guidance (systems/modules/*missile*.ts) ────────────────
 
 // How many consecutive frames an STT missile lock survives with no return
@@ -283,16 +331,30 @@ export const gasCloudSettings = {
     PATH_SAMPLE_PX: 8,          // step at which the receiver samples a beam to measure the path inside a cloud
 
     // ── Appearance ──
+    //
+    // Two layers, because "thick" and "glowing" are different jobs and one
+    // blend mode cannot do both. The BODY layer is NORMAL-blended and actually
+    // occludes the starfield and the ships behind it, which is what makes the
+    // cloud read as matter rather than as a light effect. The GLOW layer is a
+    // sparser SCREEN pass laid on top for the luminous nebula edge — kept thin
+    // on purpose, since SCREEN drives every channel towards white and too much
+    // of it bleaches the core instead of colouring it.
     DEPTH: 5,                   // drawn over ships and radar marks (which sit at depth 0)
     COLOR: 0x6fe3b0,            // tint of every puff
     PUFF_TEXTURE_PX: 128,       // size of the generated soft radial-falloff sprite
-    PUFF_SLICE_FACTOR: 0.45,    // spacing of puff slices along the spine, as a fraction of RADIUS
-    PUFFS_PER_SLICE: 4,         // overlapping puffs per slice — the overlap is what reads as volume
-    MIN_SLICES: 5,              // floor, so a short cloud is still a cloud and not four blobs
-    MAX_PUFFS: 240,             // draw-call ceiling for a very long cloud
-    PUFF_ALPHA: { min: 0.10, max: 0.26 },  // per-puff opacity; they stack into the dense core
-    PUFF_SIZE_FACTOR: { min: 0.9, max: 1.5 },  // puff diameter as a fraction of RADIUS
-    PUFF_LATERAL_SPREAD: 0.6,   // how far off the spine a puff may sit, as a fraction of RADIUS
+    PUFF_SLICE_FACTOR: 0.30,    // spacing of puff slices along the spine, as a fraction of RADIUS
+    MIN_SLICES: 6,              // floor, so a short cloud is still a cloud and not a few blobs
+    MAX_PUFFS: 700,             // draw-call ceiling for a very long cloud (one texture, so they batch)
+
+    BODY_PUFFS_PER_SLICE: 6,    // the mass; overlap is what reads as volume
+    BODY_ALPHA: { min: 0.16, max: 0.34 },
+    BODY_SIZE_FACTOR: { min: 0.8, max: 1.35 },  // puff diameter as a fraction of RADIUS
+
+    GLOW_PUFFS_PER_SLICE: 2,    // the sheen on top of the mass
+    GLOW_ALPHA: { min: 0.07, max: 0.16 },
+    GLOW_SIZE_FACTOR: { min: 1.2, max: 1.9 },   // wider than the body, so it haloes the edge
+
+    PUFF_LATERAL_SPREAD: 0.75,  // how far off the spine a puff may sit, as a fraction of RADIUS
     SWIRL_PX: 14,               // amplitude of the slow per-puff drift
     SWIRL_SPEED: { min: 0.00006, max: 0.00022 },  // rad/ms — desynchronised so the gas churns
     EDGE_FADE: 0.12,            // fraction of the spread over which a newly reached puff fades in

@@ -1,9 +1,13 @@
 ## PHASER JS RADAR
 
-- ADD Clutter -> https://de.wikipedia.org/wiki/Clutter_%28Radar%29
+# To Fix
+
+flanking beaming etc RIGHT? -> test!
+
 
 # To Dos
 
+- ADD Clutter -> https://de.wikipedia.org/wiki/Clutter_%28Radar%29
 - move visibility material etc and other atributes to group instead of the objects themselves
 - gas clouds that reduce radar effectiveness   (done: `entities/gasCloud.ts`,
   absorbed via `Receiver.isAbsorbedByGas`. Still open: gas is invisible to the
@@ -36,7 +40,7 @@ TESTS button (DEV only), from `window.runRadarTests()`, or by loading `?tests`.
   - warned outside the emitting radar's own range   FAILING: illumination stops
     at the radar's range, so an RWR only ever hears a radar that can already see
     it. One-way reception should reach further — `RWR_RANGE_MULTIPLICATOR` in
-    settings.ts (1.7, currently unused) looks like the intended factor.
+    settings.ts (1.7, currently unused) looks like the intended factor. --> NO USE RADAR ENERGY!!
   - silent far outside the sweep                    (done)
   - missile seeker warning                          (done)
 - 

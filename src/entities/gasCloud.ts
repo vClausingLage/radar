@@ -109,8 +109,12 @@ export class GasCloud extends Phaser.GameObjects.Container {
 
         const ctx = texture.getContext();
         const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-        gradient.addColorStop(0, 'rgba(255,255,255,0.85)');
-        gradient.addColorStop(0.45, 'rgba(255,255,255,0.32)');
+        // A broad opaque core with the falloff pushed out to the rim: most of
+        // each puff is solid, so overlapping them builds mass instead of just
+        // building haze.
+        gradient.addColorStop(0, 'rgba(255,255,255,1)');
+        gradient.addColorStop(0.35, 'rgba(255,255,255,0.78)');
+        gradient.addColorStop(0.65, 'rgba(255,255,255,0.30)');
         gradient.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, size, size);
@@ -120,37 +124,50 @@ export class GasCloud extends Phaser.GameObjects.Container {
     // Lay puffs out in slices along the spine, several to a slice so they
     // overlap. Slice spacing scales with the radius, so a wide cloud is not
     // sampled more finely than it needs and a long one still comes out unbroken.
+    //
+    // The whole body layer is built before the whole glow layer, so the sheen
+    // sits on top of the mass everywhere along the cloud rather than only where
+    // the two happen to interleave.
     private buildPuffs(color: number): void {
         const spacing = this.radius * gasCloudSettings.PUFF_SLICE_FACTOR;
+        const perSlice = gasCloudSettings.BODY_PUFFS_PER_SLICE + gasCloudSettings.GLOW_PUFFS_PER_SLICE;
         const slices = Math.min(
             Math.max(gasCloudSettings.MIN_SLICES, Math.ceil(this.spineLength / spacing) + 1),
-            Math.floor(gasCloudSettings.MAX_PUFFS / gasCloudSettings.PUFFS_PER_SLICE),
+            Math.floor(gasCloudSettings.MAX_PUFFS / perSlice),
         );
+
+        this.addLayer(slices, spacing, color, 'body');
+        this.addLayer(slices, spacing, color, 'glow');
+    }
+
+    private addLayer(slices: number, spacing: number, color: number, layer: 'body' | 'glow'): void {
+        const isBody = layer === 'body';
+        const count = isBody ? gasCloudSettings.BODY_PUFFS_PER_SLICE : gasCloudSettings.GLOW_PUFFS_PER_SLICE;
+        const alpha = isBody ? gasCloudSettings.BODY_ALPHA : gasCloudSettings.GLOW_ALPHA;
+        const sizeFactor = isBody ? gasCloudSettings.BODY_SIZE_FACTOR : gasCloudSettings.GLOW_SIZE_FACTOR;
 
         for (let slice = 0; slice < slices; slice++) {
             const t = slices > 1 ? slice / (slices - 1) : 0;
-            for (let i = 0; i < gasCloudSettings.PUFFS_PER_SLICE; i++) {
+            for (let i = 0; i < count; i++) {
                 const image = new Phaser.GameObjects.Image(this.scene, 0, 0, PUFF_TEXTURE);
-                const size = this.radius * Phaser.Math.FloatBetween(
-                    gasCloudSettings.PUFF_SIZE_FACTOR.min,
-                    gasCloudSettings.PUFF_SIZE_FACTOR.max,
-                );
+                const size = this.radius * Phaser.Math.FloatBetween(sizeFactor.min, sizeFactor.max);
                 image.setDisplaySize(size, size);
                 image.setTint(color);
-                // SCREEN, so overlapping puffs brighten towards the gas colour
-                // instead of piling up into an opaque white blob.
-                image.setBlendMode(Phaser.BlendModes.SCREEN);
+                // NORMAL for the body: layers build real opacity, so the cloud
+                // hides what is behind it. SCREEN only for the thin glow pass.
+                image.setBlendMode(isBody ? Phaser.BlendModes.NORMAL : Phaser.BlendModes.SCREEN);
                 this.add(image);
 
                 this.puffs.push({
                     image,
                     t,
                     along: Phaser.Math.FloatBetween(-spacing, spacing) / 2,
-                    lateral: Phaser.Math.FloatBetween(-1, 1) * this.radius * gasCloudSettings.PUFF_LATERAL_SPREAD,
-                    baseAlpha: Phaser.Math.FloatBetween(
-                        gasCloudSettings.PUFF_ALPHA.min,
-                        gasCloudSettings.PUFF_ALPHA.max,
-                    ),
+                    // Two rolls averaged: a triangular spread instead of a flat
+                    // one, so puffs pile up along the spine and thin out towards
+                    // the edge — a cloud is densest through its middle.
+                    lateral: (Phaser.Math.FloatBetween(-1, 1) + Phaser.Math.FloatBetween(-1, 1)) / 2
+                        * this.radius * gasCloudSettings.PUFF_LATERAL_SPREAD,
+                    baseAlpha: Phaser.Math.FloatBetween(alpha.min, alpha.max),
                     swirlSpeed: Phaser.Math.FloatBetween(
                         gasCloudSettings.SWIRL_SPEED.min,
                         gasCloudSettings.SWIRL_SPEED.max,
