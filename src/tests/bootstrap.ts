@@ -14,6 +14,19 @@ import { radarTests } from './radarTests';
 // loads and other event-driven work can complete mid-run.
 const MANUAL_STEP_TASK_YIELD_FRAMES = 20;
 
+// A real task turn that background throttling cannot touch. setTimeout(0) is
+// the obvious way to get one, but a backgrounded tab clamps it to about a
+// second — and a backgrounded tab is exactly the case the manual stepper
+// exists for, so a run that yielded through it would crawl and leave the tests
+// starved of the frames they asked for. A MessagePort message is not clamped.
+function taskTurn(): Promise<void> {
+    return new Promise<void>(resolve => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => resolve();
+        channel.port2.postMessage(0);
+    });
+}
+
 // Tucked into the top-right corner, clear of the menu's own layout at any
 // window size.
 const START_MENU_BUTTON_MARGIN_PX = 16;
@@ -48,9 +61,7 @@ export function installTestHooks(game: Phaser.Game): void {
         for (let i = 0; i < frames; i++) {
             manualTime += deltaMs;
             game.step(manualTime, deltaMs);
-            await (i % MANUAL_STEP_TASK_YIELD_FRAMES === 0
-                ? new Promise<void>(resolve => setTimeout(resolve, 0))
-                : Promise.resolve());
+            await (i % MANUAL_STEP_TASK_YIELD_FRAMES === 0 ? taskTurn() : Promise.resolve());
         }
     };
 

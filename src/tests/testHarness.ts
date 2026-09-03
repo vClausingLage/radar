@@ -232,7 +232,19 @@ function reportToConsole(report: TestReport): void {
     }
 }
 
+// Best-effort: the results overlay is a convenience, and drawing it needs a
+// live canvas the run itself does not. A headless or backgrounded renderer can
+// refuse to build the text, and losing the whole report to that would be a poor
+// trade — the console copy and the returned object are the results that matter.
 function reportToScreen(game: Phaser.Game, report: TestReport): void {
+    try {
+        renderResultsOverlay(game, report);
+    } catch (e) {
+        console.warn('RADAR TESTS - could not draw the on-screen results', e);
+    }
+}
+
+function renderResultsOverlay(game: Phaser.Game, report: TestReport): void {
     const scene = game.scene.getScene('Tests') as TestScene | null;
     if (!scene || !game.scene.isActive('Tests')) return;
 

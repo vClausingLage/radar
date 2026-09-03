@@ -11,6 +11,8 @@ import { TerrainMapper } from "./modules/terrainMapper";
 
 import { FireControl } from "./fireControl";
 
+import { BeamHit } from "../data/radarReturn";
+import { crossSection, emissionSignal, gasTransmission, isDetected } from "../data/signalPath";
 import { Track } from "../data/track";
 import { Entity, GasVolume, Loadout, Mode, RadarHost } from "../data/types";
 
@@ -38,6 +40,9 @@ export class Radar {
     private owner: RadarHost | null = null;
 
     private mode: Mode = 'rws';
+    // Rated range: what the interface draws, and the range this radar's energy
+    // budget is quoted at. The pulse itself goes further (see Emitter and
+    // data/signalPath.ts) - this is not a wall.
     private range: number;
     private antenna = new Antenna();
     private emitter: Emitter;
@@ -47,7 +52,7 @@ export class Radar {
     private lastBeamDirection = 0;
 
     private trackingComputer: TrackingComputer = new TrackingComputer();
-    private sweepBuffer: { point: Phaser.Math.Vector2 }[] = [];
+    private sweepBuffer: BeamHit[] = [];
 
     // STT state. The lock is held on a track id only: everything the radar
     // knows about the target while locked comes back through the beam.
@@ -174,7 +179,7 @@ export class Radar {
 
     // Lock the highest-confidence RWS track and enter STT.
     enterStt(): void {
-        const tracks = this.trackingComputer.getTracks();
+        const tracks = this.displayedTracks();
         if (tracks.length === 0) return;
 
         const best = tracks.reduce((a, b) =>
@@ -210,6 +215,29 @@ export class Radar {
     getSttTrack(): Track | null {
         if (this.sttTrackId === null) return null;
         return this.trackingComputer.getTracks().find(t => t.id === this.sttTrackId) ?? null;
+    }
+
+    // The locked track as fire control is allowed to see it. A lock that has
+    // drifted outside the rated range keeps its beam — the antenna is still
+    // staring at it, and it comes back the moment the range does — but it
+    // stops being a firing solution, the same as any other contact the scope
+    // is not drawing.
+    private displayedSttTrack(): Track | null {
+        const track = this.getSttTrack();
+        if (!track || !this.owner) return null;
+        return this.withinDisplayRange(this.owner.getPosition(), track.pos) ? track : null;
+    }
+
+    // The track picture as the interface draws it, and so as fire control is
+    // allowed to use it. The radar's own picture (getTracks) runs further —
+    // the energy budget, not the range ring, decides what it can hold — but a
+    // contact the player cannot see is not one they get to shoot at, and the
+    // same rule binds the AI, which drives the identical radar.
+    private displayedTracks(): Track[] {
+        if (!this.owner) return [];
+        const ownerPos = this.owner.getPosition();
+        return this.trackingComputer.getTracks()
+            .filter(track => this.withinDisplayRange(ownerPos, track.pos));
     }
 
     // ── Jammer ─────────────────────────────────────────────────────────────
@@ -286,8 +314,8 @@ export class Radar {
     shoot(_angle: number): void {
         const fired = this.fireControl.shoot(this.mode, {
             ship: this.ownerShip(),
-            sttTrack: this.getSttTrack(),
-            tracks: this.trackingComputer.getTracks(),
+            sttTrack: this.displayedSttTrack(),
+            tracks: this.displayedTracks(),
         });
         if (fired) {
             this.eventEmitter.emitMissileFired(fired);
@@ -329,11 +357,16 @@ export class Radar {
             (e): e is PlayerShip | Target =>
                 e.id !== this.owner?.id && 'getDirection' in e && e.active && Boolean(e.body),
         );
+        // Guidance is fed the same gated picture as the trigger: a missile in
+        // flight rides the track the scope is showing, so a contact that runs
+        // out past the ring takes its mid-course updates (and a SARH missile's
+        // illumination) with it until it is back inside.
         this.fireControl.update(delta, {
-            sttTrack: this.getSttTrack(),
-            tracks: this.trackingComputer.getTracks(),
+            sttTrack: this.displayedSttTrack(),
+            tracks: this.displayedTracks(),
             targets: targetShips,
             decoyCircles,
+            gasVolumes,
             now: this.scene.time.now,
         }, graphics);
 
@@ -385,7 +418,7 @@ export class Radar {
 
         // Search illumination: any ship the beam touches detects the emission as
         // a (non-locked) RWR contact — shown as a green diamond on its RWR.
-        this.illuminateRwr(targets, [pulse.line], ownerPos, false);
+        this.illuminateRwr(targets, [pulse.line], ownerPos, false, gasVolumes);
 
         // If an enemy jammer paints us this frame, remember its spoof error for
         // the rest of the sweep — the buffered hits are rewritten at sweepComplete.
@@ -398,21 +431,28 @@ export class Radar {
         const shipHit = this.nearestHit(pulse.line, ownerPos, targets);
         const terrainHit = this.nearestHit(pulse.line, ownerPos, terrain);
         const terrainWins = terrainHit && (!shipHit ||
-            Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, terrainHit.x, terrainHit.y) <
-            Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, shipHit.x, shipHit.y));
+            Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, terrainHit.point.x, terrainHit.point.y) <
+            Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, shipHit.point.x, shipHit.point.y));
 
         if (terrainWins) {
-            // Gas dims the ground map exactly as it dims a contact — the mapper
-            // simply never gets a sample the receiver did not recover.
-            if (!this.receiver.isAbsorbedByGas(ownerPos, terrainHit, gasVolumes)) {
-                this.terrainMapper.addSample(terrainHit, this.scene.time.now);
+            // Ground mapping is a picture, not a track, and the picture stops at
+            // the rated range - the beam reaching past it paints nothing. Gas
+            // dims what is inside exactly as it dims a contact.
+            if (this.withinDisplayRange(ownerPos, terrainHit.point)
+                && !this.receiver.isAbsorbedByGas(ownerPos, terrainHit.point, gasVolumes)) {
+                this.terrainMapper.addSample(terrainHit.point, this.scene.time.now);
             }
         } else if (shipHit
-            && !this.receiver.isBlockedByDecoy(ownerPos, shipHit, decoyCircles)
-            && !this.receiver.isAbsorbedByGas(ownerPos, shipHit, gasVolumes)) {
-            // Chaff between the antenna and the target can swallow the return,
-            // and gas on the path can absorb it.
-            this.sweepBuffer.push({ point: shipHit });
+            && !this.receiver.isBlockedByDecoy(ownerPos, shipHit.point, decoyCircles)) {
+            // Chaff between the antenna and the target swallows the return
+            // outright. Gas only weakens it, so it goes into the hit's signal
+            // budget instead, to be weighed against range and hull size when the
+            // sweep is processed.
+            this.sweepBuffer.push({
+                point: shipHit.point,
+                crossSection: shipHit.crossSection,
+                transmission: this.receiver.gasRoundTrip(ownerPos, shipHit.point, gasVolumes),
+            });
         }
 
         if (sweepComplete) {
@@ -428,7 +468,7 @@ export class Radar {
             this.sweepJammerError = null;
         }
 
-        for (const track of this.trackingComputer.getTracks()) {
+        for (const track of this.displayedTracks()) {
             this.radarRenderer?.renderRwsContacts(graphics, track);
         }
     }
@@ -512,26 +552,31 @@ export class Radar {
         // Collect every ship return in the beam. Terrain competes ray by ray:
         // where terrain is nearer it paints the ground map and shadows whatever
         // is behind it, so a target sliding behind a rock starves the lock.
-        const rawHits: { point: Phaser.Math.Vector2 }[] = [];
+        const rawHits: BeamHit[] = [];
         for (const line of beamLines) {
             const shipHit = this.nearestHit(line, ownerPos, targets);
             const terrainHit = this.nearestHit(line, ownerPos, terrain);
             const terrainWins = terrainHit && (!shipHit ||
-                Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, terrainHit.x, terrainHit.y) <
-                Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, shipHit.x, shipHit.y));
+                Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, terrainHit.point.x, terrainHit.point.y) <
+                Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, shipHit.point.x, shipHit.point.y));
 
             if (terrainWins) {
-                if (!this.receiver.isAbsorbedByGas(ownerPos, terrainHit, gasVolumes)) {
-                    this.terrainMapper.addSample(terrainHit, this.scene.time.now);
+                if (this.withinDisplayRange(ownerPos, terrainHit.point)
+                    && !this.receiver.isAbsorbedByGas(ownerPos, terrainHit.point, gasVolumes)) {
+                    this.terrainMapper.addSample(terrainHit.point, this.scene.time.now);
                 }
             } else if (shipHit
-                && !this.receiver.isBlockedByDecoy(ownerPos, shipHit, decoyCircles)
-                && !this.receiver.isAbsorbedByGas(ownerPos, shipHit, gasVolumes)) {
-                // Chaff between the antenna and the target can swallow the return,
-                // and gas on the path can absorb it. Starved frames feed the
-                // lock-break counter below, so a target that drags the lock
-                // through a cloud can shake it.
-                rawHits.push({ point: shipHit });
+                && !this.receiver.isBlockedByDecoy(ownerPos, shipHit.point, decoyCircles)) {
+                // Chaff between the antenna and the target swallows the return;
+                // gas only costs it energy, which the concentrated STT beam has
+                // more of to spend. Starved frames feed the lock-break counter
+                // below, so a target that drags the lock through a thick enough
+                // cloud can still shake it.
+                rawHits.push({
+                    point: shipHit.point,
+                    crossSection: shipHit.crossSection,
+                    transmission: this.receiver.gasRoundTrip(ownerPos, shipHit.point, gasVolumes),
+                });
             }
         }
 
@@ -543,7 +588,7 @@ export class Radar {
 
         // Lock illumination: any ship in the beam detects a locked (red) RWR
         // contact and fires its lock-warning event.
-        this.illuminateRwr(targets, beamLines, ownerPos, true);
+        this.illuminateRwr(targets, beamLines, ownerPos, true, gasVolumes);
 
         const returns = this.receiver.processHits(hits, ownerPos, this.range);
         // STT updates every frame, so every timescale differs from search. A high
@@ -571,7 +616,7 @@ export class Radar {
         }
 
         const stt = this.getSttTrack();
-        if (stt) {
+        if (stt && this.withinDisplayRange(ownerPos, stt.pos)) {
             this.radarRenderer?.renderStt(stt, graphics);
         }
     }
@@ -588,13 +633,16 @@ export class Radar {
         const count = Math.max(2, Math.round(widthDeg / STT_BEAM_RAY_SPACING_DEG) + 1);
         const spacing = widthDeg / (count - 1);
 
+        // Traced to the same reach as a search pulse: a tracking beam is
+        // narrower than a search sweep, not shorter.
+        const reach = this.emitter.getReach();
         for (let i = 0; i < count; i++) {
             const rad = Phaser.Math.DegToRad(direction - widthDeg / 2 + spacing * i);
             lines.push(new Phaser.Geom.Line(
                 origin.x,
                 origin.y,
-                origin.x + Math.cos(rad) * this.range,
-                origin.y + Math.sin(rad) * this.range,
+                origin.x + Math.cos(rad) * reach,
+                origin.y + Math.sin(rad) * reach,
             ));
         }
 
@@ -636,11 +684,19 @@ export class Radar {
     // Notify every ship the beam touches that it is being illuminated, so its
     // RWR registers a contact: unlocked (green, search) or locked (red, STT).
     // A beam sampled by several rays still illuminates each ship once.
+    //
+    // Being warned is a one-way problem: the receiver only has to hear the
+    // pulse, where a return has to survive the trip out and back again. So a
+    // ship is warned from ranges at which this radar has no hope of tracking
+    // it - sitting outside the rated range protects nobody from knowing they
+    // are being looked at. Gas on the path costs the pulse energy once here,
+    // not twice: nothing is coming back through it.
     private illuminateRwr(
         targets: Entity[],
         lines: Phaser.Geom.Line[],
         ownerPos: { x: number; y: number },
         isLocked: boolean,
+        gasVolumes: GasVolume[],
     ): void {
         const now = this.scene.time.now;
         for (const entity of targets) {
@@ -650,6 +706,11 @@ export class Radar {
 
             const tgt = entity as PlayerShip | Target;
             const epos = tgt.getPosition();
+            const range = Phaser.Math.Distance.Between(ownerPos.x, ownerPos.y, epos.x, epos.y);
+            if (!isDetected(emissionSignal(range, this.range, gasTransmission(ownerPos, epos, gasVolumes)))) {
+                continue;
+            }
+
             const bearingDeg = Phaser.Math.RadToDeg(
                 Math.atan2(ownerPos.y - epos.y, ownerPos.x - epos.x),
             );
@@ -681,12 +742,15 @@ export class Radar {
         return null;
     }
 
+    // Where this ray first strikes something, and how much of that something is
+    // turned towards the beam. The cross-section is measured here, at the hull,
+    // because this is the only place the geometry is known.
     private nearestHit(
         line: Phaser.Geom.Line,
         ownerPos: { x: number; y: number },
         targets: Entity[],
-    ): Phaser.Math.Vector2 | null {
-        let nearestPoint: Phaser.Math.Vector2 | null = null;
+    ): { point: Phaser.Math.Vector2; crossSection: number } | null {
+        let nearest: { point: Phaser.Math.Vector2; crossSection: number } | null = null;
         let nearestDistSq = Infinity;
 
         for (const target of targets) {
@@ -697,11 +761,23 @@ export class Radar {
             const dSq = Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, hit.x, hit.y);
             if (dSq < nearestDistSq) {
                 nearestDistSq = dSq;
-                nearestPoint = new Phaser.Math.Vector2(hit.x, hit.y);
+                nearest = {
+                    point: new Phaser.Math.Vector2(hit.x, hit.y),
+                    crossSection: crossSection(polygon, ownerPos),
+                };
             }
         }
 
-        return nearestPoint;
+        return nearest;
+    }
+
+    // Whether a point is inside the range the interface actually draws. The
+    // radar routinely knows about things that are not.
+    private withinDisplayRange(
+        ownerPos: { x: number; y: number },
+        point: { x: number; y: number },
+    ): boolean {
+        return Phaser.Math.Distance.Between(ownerPos.x, ownerPos.y, point.x, point.y) <= this.range;
     }
 
     // ── External API ──────────────────────────────────────────────────────

@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import type { Vector2 } from '../../../types';
+import type { GasVolume } from '../../data/types';
 import { decoySettings } from '../../data/radarGameSettings';
+import { emissionSignal, gasTransmission, isDetected } from '../../data/signalPath';
 import {
   MISSILE_RADAR_MAX_MISSED_LOCK_FRAMES,
   MISSILE_SEEKER_BEAM_DEG,
@@ -81,13 +83,15 @@ export class MissileRadar {
   // Chaff (decoyCircles) in the line to a target can mask its return.
   // The seeker's emission also feeds victims' RWRs: every ship in the search
   // cone gets a search contact, everything in the tracking beam a lock warning
-  // ("pitbull") — chaff masks the return, not the illumination.
+  // ("pitbull") — chaff masks the return, not the illumination. Being warned is
+  // one-way, so it reaches past the seeker's own envelope (see isHeardBy).
   update(
     pos: Vector2,
     headingDeg: number,
     delta: number,
     targets: GuidanceTarget[],
     decoyCircles: Phaser.Geom.Circle[] = [],
+    gasVolumes: GasVolume[] = [],
     now = 0,
   ): GuidanceTarget | null {
     if (this.mode === 'off') return null;
@@ -102,9 +106,9 @@ export class MissileRadar {
       this.beamDirDeg = this.slewTo(commanded, delta);
 
       // Everything the beam covers is being illuminated, detected or not.
-      this.illuminateBeam(pos, this.beamDirDeg, MISSILE_SEEKER_BEAM_DEG / 2, targets, now, true);
+      this.illuminateBeam(pos, this.beamDirDeg, MISSILE_SEEKER_BEAM_DEG / 2, targets, gasVolumes, now, true);
 
-      const seen = this.detectInBeam(pos, this.beamDirDeg, targets, decoyCircles);
+      const seen = this.detectInBeam(pos, this.beamDirDeg, targets, decoyCircles, gasVolumes);
       if (seen) {
         // Measurement corrects position and velocity; nothing else does.
         const innX = seen.x - predicted.x;
@@ -131,7 +135,7 @@ export class MissileRadar {
     }
 
     // RWS: search the forward cone and lock the nearest unmasked target found.
-    const found = this.search(pos, headingDeg, targets, decoyCircles);
+    const found = this.search(pos, headingDeg, targets, decoyCircles, gasVolumes);
     if (found) {
       this.mode = 'stt';
       this.lockedTargetId = found.id;
@@ -148,7 +152,9 @@ export class MissileRadar {
     // Still searching: everything inside the cone detects the emission as an
     // (unlocked) RWR contact — chaff masks the return, not the illumination.
     for (const t of targets) {
-      if (t.active && this.inRange(pos, t) && this.inCone(pos, headingDeg, t, this.searchAzimuthDeg)) {
+      if (t.active
+        && this.inCone(pos, headingDeg, t, this.searchAzimuthDeg)
+        && this.isHeardBy(pos, t, gasVolumes)) {
         this.illuminateSearch(pos, t, now);
       }
     }
@@ -181,13 +187,15 @@ export class MissileRadar {
     beamDirDeg: number,
     targets: GuidanceTarget[],
     decoyCircles: Phaser.Geom.Circle[],
+    gasVolumes: GasVolume[],
   ): GuidanceTarget | null {
     return targets
       .filter(t =>
         t.active &&
         this.inRange(pos, t) &&
         this.inCone(pos, beamDirDeg, t, MISSILE_SEEKER_BEAM_DEG / 2) &&
-        !this.isOccluded(pos, t, decoyCircles))
+        !this.isOccluded(pos, t, decoyCircles) &&
+        !this.isAbsorbedByGas(pos, t, gasVolumes))
       .sort((a, b) =>
         Phaser.Math.Distance.Between(pos.x, pos.y, a.x, a.y) -
         Phaser.Math.Distance.Between(pos.x, pos.y, b.x, b.y))[0] ?? null;
@@ -201,11 +209,13 @@ export class MissileRadar {
     beamDirDeg: number,
     halfWidthDeg: number,
     targets: GuidanceTarget[],
+    gasVolumes: GasVolume[],
     now: number,
     isLocked: boolean,
   ): void {
     for (const t of targets) {
-      if (!t.active || !this.inRange(pos, t) || !this.inCone(pos, beamDirDeg, t, halfWidthDeg)) continue;
+      if (!t.active || !this.inCone(pos, beamDirDeg, t, halfWidthDeg)) continue;
+      if (!this.isHeardBy(pos, t, gasVolumes)) continue;
       if (isLocked) this.illuminateLock(pos, t, now);
       else this.illuminateSearch(pos, t, now);
     }
@@ -228,8 +238,32 @@ export class MissileRadar {
     return Phaser.Math.RadToDeg(Math.atan2(pos.y - t.y, pos.x - t.x));
   }
 
+  // The seeker's envelope for *returns*: a weapon-system figure, and a hard one
+  // — a seeker that has not found its target by the time it is inside this has
+  // already failed. What the medium takes out of those returns is handled
+  // separately, in isAbsorbedByGas.
   private inRange(pos: Vector2, t: GuidanceTarget): boolean {
     return Phaser.Math.Distance.Between(pos.x, pos.y, t.x, t.y) <= this.range;
+  }
+
+  // Whether a ship out there can hear this seeker at all. One way, so the
+  // warning carries further than the seeker's own envelope — the same asymmetry
+  // that lets a ship's RWR hear a search radar that cannot yet see it — and gas
+  // on the path costs the emission energy once, not twice.
+  private isHeardBy(pos: Vector2, t: GuidanceTarget, gasVolumes: GasVolume[]): boolean {
+    const range = Phaser.Math.Distance.Between(pos.x, pos.y, t.x, t.y);
+    const transmission = gasTransmission(pos, { x: t.x, y: t.y }, gasVolumes);
+    return isDetected(emissionSignal(range, this.range, transmission));
+  }
+
+  // Gas between the seeker and its target absorbs the energy on the way out and
+  // again on the way back, so a missile fired through a cloud goes in half
+  // blind. Unlike chaff this is not an obstacle — the odds simply scale with how
+  // much gas the beam has to cross.
+  private isAbsorbedByGas(pos: Vector2, t: GuidanceTarget, gasVolumes: GasVolume[]): boolean {
+    if (gasVolumes.length === 0) return false;
+    const oneWay = gasTransmission(pos, { x: t.x, y: t.y }, gasVolumes);
+    return Math.random() > oneWay * oneWay;
   }
 
   private search(
@@ -237,13 +271,15 @@ export class MissileRadar {
     headingDeg: number,
     targets: GuidanceTarget[],
     decoyCircles: Phaser.Geom.Circle[],
+    gasVolumes: GasVolume[],
   ): GuidanceTarget | null {
     return targets
       .filter(t =>
         t.active &&
         this.inRange(pos, t) &&
         this.inCone(pos, headingDeg, t, this.searchAzimuthDeg) &&
-        !this.isOccluded(pos, t, decoyCircles))
+        !this.isOccluded(pos, t, decoyCircles) &&
+        !this.isAbsorbedByGas(pos, t, gasVolumes))
       .sort((a, b) =>
         Phaser.Math.Distance.Between(pos.x, pos.y, a.x, a.y) -
         Phaser.Math.Distance.Between(pos.x, pos.y, b.x, b.y))[0] ?? null;

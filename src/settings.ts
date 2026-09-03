@@ -34,9 +34,13 @@ export const playerShipSettings = {
 }
 
 // RADAR
+// How far an RWR hears a radar is not a number set here: it falls out of the
+// energy in the pulse (see radar/data/signalPath.ts and RWR_NOISE_FLOOR), which
+// is why the old RWR_RANGE_MULTIPLICATOR is gone rather than wired up. The
+// figure it named — about 1.7x the emitter's rated range — is what the current
+// noise floor happens to work out to.
 export const radarModule = {
     RANGE: 600,
-    RWR_RANGE_MULTIPLICATOR: 1.7,
     SCAN_SPEED: 0.04,
 }
 export const radarDefaultSettings = {

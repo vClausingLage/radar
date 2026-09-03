@@ -50,9 +50,47 @@ export const STT_LOCK_BREAK_FRAMES = 45;
 // carrying them has passed its first waypoint or been destroyed.
 export const VIM220_WAYPOINT_FADE_MS = 600;
 
-// Radar equation exponent: detection probability falls off with
-// (range / maxRange)^RADAR_DETECTION_RANGE_POWER.
-export const RADAR_DETECTION_RANGE_POWER = 4;
+// ── Signal path / energy budget (data/signalPath.ts) ───────────────────────
+//
+// RADAR_DEFAULT_RANGE_PX above is a *display* setting: how far out the scope
+// draws its cone, its range ring and its contacts. It is not a wall the pulse
+// stops at. What the radar can actually do is settled by energy instead:
+//
+//   - The pulse spreads as it travels, so the energy reaching a ship out there
+//     falls with the square of the range — one way. That ship only has to hear
+//     it to know it is being swept, which is why an RWR warns well beyond the
+//     range shown on the emitter's own scope.
+//   - A return makes the trip twice and reflects off a hull in between, so it
+//     falls with the fourth power of the range and scales with how much hull
+//     is presented. That is what decides whether a track forms.
+//
+// Both are normalised so that 1 is the least signal a radar receiver can still
+// make a detection out of — its noise floor. The rated range is *defined* as
+// the range where a reference hull in clear space returns exactly that, which
+// is why an average contact fades out about at the ring, a big one is still
+// there beyond it, and a small one has gone before it.
+export const RADAR_TWO_WAY_RANGE_POWER = 4;
+export const RADAR_ONE_WAY_RANGE_POWER = 2;
+
+// Noise floor of a passive warning receiver, as a fraction of a radar
+// receiver's. An RWR has the easier job — it listens for the transmitter
+// itself rather than for a faint echo of it — so it clears its floor further
+// out. The free-space warning range that follows is rated / sqrt(0.35), a bit
+// under 1.7x rated: being outside a radar's range is no protection from
+// knowing it is looking at you.
+export const RWR_NOISE_FLOOR = 0.35;
+
+// Hull width (px, measured across the line of sight) the rated range is quoted
+// for — a cruiser bow-on. A contact presenting more than this throws back more
+// energy and is seen further out; less, and it fades earlier. This is what
+// makes aspect matter: a cargo hauler broadside is well over twice the
+// reflector it is bow-on, so beaming a search radar is a real tactic and not
+// just a display quirk.
+export const RADAR_REFERENCE_CROSS_SECTION_PX = 28;
+
+// Ceiling on that ratio, so one absurdly long hull cannot make every pulse
+// worth tracing halfway across the world.
+export const RADAR_MAX_CROSS_SECTION = 4;
 
 // ── Antenna sweep (systems/modules/antenna.ts) ──────────────────────────────
 
@@ -302,33 +340,38 @@ export const decoySettings = {
     BLOCK_PROBABILITY: 0.7,   // chance a beam passing through is blocked
 }
 
-// ── Gas clouds (entities/gasCloud.ts, systems/modules/receiver.ts) ────────────
+// ── Gas clouds (entities/gasCloud.ts, data/signalPath.ts) ────────────────────
 // A gas cloud is an absorbing medium, not an obstacle: it has no collision body
-// and never blocks a beam outright. Energy crossing it is lost exponentially
-// with the distance travelled inside it (Beer-Lambert), and the loss counts
-// twice because the pulse has to come back out again. That is why a contact
-// behind a cloud flickers in and out instead of disappearing cleanly the way a
-// terrain-shadowed one does — the same behaviour real weather radar returns
-// show through heavy rain.
+// and never blocks a beam outright. It is a cost in the radar's energy budget —
+// energy crossing it is lost exponentially with the distance travelled inside
+// (Beer-Lambert), and the loss counts twice for a return because the echo has to
+// come back out again. So a cloud does not hide a contact, it shortens the range
+// at which the contact can be found: with enough signal left over — a close
+// target, a big one, or a narrow beam's worth of concentration — the radar still
+// sees straight through it, and it is only out at the edge of the budget that the
+// contact flickers and then goes. The same absorption dims a warning receiver's
+// view of the emitter, but only once, since nothing is coming back.
 //
 // Geometrically a cloud is a capsule: everything within RADIUS px of the spine
 // running from its start point to its end point. That capsule is the single
-// source of truth — the visual puffs are laid out along it, and the receiver
-// measures path length against it.
+// source of truth — the visual puffs are laid out along it, and the signal path
+// measures its length against it.
 export const gasCloudSettings = {
     RADIUS: 140,                // px — half-width of the capsule around the spine
     DENSITY: 0.8,               // 0..1 — how absorbing the medium is
     SPREAD_MS: 20000,           // time for the cloud to grow from its start point to its end point (0 = fully formed at spawn)
     // One-way optical depth added per px of path through density 1.0. Tuned so
-    // the gas is close to opaque rather than merely annoying: a beam crossing a
-    // default cloud through its middle (280 px at density 0.8) keeps
-    // exp(-2 x 280 x 0.8 x 0.008) ≈ 3 % of its returns — a contact behind the
-    // core is effectively lost, an STT lock dragged through it breaks. Clipping
-    // the edge is survivable (~40 % of returns through 80 px), and looking down
-    // the length of a long band is hopeless, which is the whole point: the
-    // penalty is geometric, so the counter is to change the geometry.
+    // the gas is a serious obstruction rather than merely annoying. A beam
+    // crossing a default cloud through its middle (280 px at density 0.8) keeps
+    // exp(-280 x 0.8 x 0.008) ≈ 17 % of its energy one way, and 3 % of it over
+    // the round trip: against a fourth-power range law that pulls a 700 px radar
+    // in to roughly 290 px through the core, and its RWR warning range in to
+    // about 480 px. Clipping the edge is survivable (80 px of path still leaves
+    // ~540 px of detection), and looking down the length of a long band is
+    // hopeless, which is the whole point: the penalty is geometric, so the
+    // counter is to change the geometry — or to close the range.
     ATTENUATION_PER_PX: 0.008,
-    PATH_SAMPLE_PX: 8,          // step at which the receiver samples a beam to measure the path inside a cloud
+    PATH_SAMPLE_PX: 8,          // step at which the signal path samples a beam to measure the distance inside a cloud
 
     // ── Appearance ──
     //

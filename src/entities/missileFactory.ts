@@ -20,6 +20,8 @@ const configureMissileCollisionFilter = (scene: Phaser.Scene, missile: Phaser.Ph
   missile.setCollidesWith((~missileCategory) >>> 0);
 };
 
+/* eslint-disable @typescript-eslint/no-namespace */
+
 declare global {
   namespace Phaser.GameObjects {
     interface GameObjectFactory {

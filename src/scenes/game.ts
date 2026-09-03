@@ -116,6 +116,16 @@ export default class Game extends Phaser.Scene
 
   create()
   {
+    // Phaser reuses the scene instance across stop/start, so these still hold
+    // whatever the last run put in them. The game objects themselves went with
+    // the old display list, but the lists did not: a stale gas cloud has no
+    // physics body to be pruned by, and would go on absorbing the beam from a
+    // world that no longer exists.
+    this.targets = [];
+    this.asteroids = [];
+    this.gasClouds = [];
+    this.extraFadeAssets = [];
+
     // Register factories
     createPlayerShipFactory();
     createAsteroidFactory();

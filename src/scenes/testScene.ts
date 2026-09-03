@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import Game from './game';
+import { GasCloud } from '../entities/gasCloud';
 import { PlayerShip, Target } from '../entities/ship';
 
 // The scene the in-game radar tests run in.
@@ -44,6 +45,11 @@ export class TestScene extends Game {
         rangePx: number;
         facingDeg?: number;
         emitting?: boolean;
+        // Which hull to place. It decides how big a reflector the drone is —
+        // a cargo hauler is more than twice the cross-section of a cruiser
+        // broadside, and no bigger than one bow-on — so any test about
+        // detection range has to say which one it means.
+        hull?: 'cruiser' | 'cargo';
     }): Target {
         const player = this.player;
         if (!player) throw new Error('TestScene: no player to place a drone against');
@@ -56,7 +62,7 @@ export class TestScene extends Game {
             // jamming and RWR geometry care about.
             direction: opts.facingDeg ?? opts.bearingDeg + 180,
             speed: 0,
-            type: 'cruiser',
+            type: opts.hull ?? 'cruiser',
             activity: 'inactive',
         });
 
@@ -66,6 +72,41 @@ export class TestScene extends Game {
 
         this.targets.push(drone);
         return drone;
+    }
+
+    // Lay a band of absorbing gas across the world, given as a bearing/range
+    // from the player (the centre of the band) and the direction the band runs
+    // in. Spawned fully formed: a test measures what a cloud does, not how long
+    // it took to get there.
+    spawnGasCloud(opts: {
+        bearingDeg: number;
+        rangePx: number;
+        alongDeg: number;
+        lengthPx: number;
+        radius?: number;
+        density?: number;
+    }): GasCloud {
+        const player = this.player;
+        if (!player) throw new Error('TestScene: no player to place a cloud against');
+
+        const toCentre = Phaser.Math.DegToRad(opts.bearingDeg);
+        const centreX = player.x + Math.cos(toCentre) * opts.rangePx;
+        const centreY = player.y + Math.sin(toCentre) * opts.rangePx;
+
+        const along = Phaser.Math.DegToRad(opts.alongDeg);
+        const halfX = Math.cos(along) * opts.lengthPx / 2;
+        const halfY = Math.sin(along) * opts.lengthPx / 2;
+
+        const cloud = this.add.gasCloud({
+            from: { x: centreX - halfX, y: centreY - halfY },
+            to: { x: centreX + halfX, y: centreY + halfY },
+            radius: opts.radius,
+            density: opts.density,
+            spreadMs: 0,
+        });
+
+        this.gasClouds.push(cloud);
+        return cloud;
     }
 
     // Draw the finished run over the world, so the result is visible in the game

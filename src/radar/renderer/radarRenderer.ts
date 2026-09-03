@@ -30,9 +30,24 @@ export class RadarRenderer {
     this.scene = scene;
   }
 
-  private renderPulse(graphics: Phaser.GameObjects.Graphics, pulse: Pulse, sttMode = false): void {
+  // The sweep line, drawn only as far as the scope's own range ring. The pulse
+  // itself reaches further (see Emitter), but the display is a display: what it
+  // shows beyond its rated range is nothing, so the line is clipped to it
+  // rather than running off past the cone it is drawn inside.
+  private renderPulse(
+    graphics: Phaser.GameObjects.Graphics,
+    pulse: Pulse,
+    radarRange: number,
+    sttMode = false,
+  ): void {
+    const rad = Phaser.Math.DegToRad(pulse.direction);
     graphics.lineStyle(1, sttMode ? 0xff0000 : 0x00ff00, 0.5);
-    graphics.strokeLineShape(pulse.line);
+    graphics.lineBetween(
+      pulse.line.x1,
+      pulse.line.y1,
+      pulse.line.x1 + Math.cos(rad) * radarRange,
+      pulse.line.y1 + Math.sin(rad) * radarRange,
+    );
   }
 
   renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, activeMissiles: Missile[], loadout: Loadout, vim220Waypoints: Vector2[] = [], vim220TimeToActive: number | null = null, jammerStatus: JammerHudStatus | null = null, vim220WaypointAlpha = 1, emconStandby = false): void {
@@ -324,7 +339,7 @@ export class RadarRenderer {
     emconStandby = false,
   ): void {
     if (pulse) {
-      this.renderPulse(graphics, pulse, sttMode);
+      this.renderPulse(graphics, pulse, radarRange, sttMode);
     }
 
     if (missileRange !== null) {

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { GasVolume } from '../../data/types';
 import { Missile, SARHMissile, ActiveRadarMissile } from '../../../entities/missiles';
 import { Track } from '../../data/track';
 import type { GuidanceTarget } from './missileRadar';
@@ -22,6 +23,9 @@ export type GuidanceContext = {
   tracks: Track[];
   targets: GuidanceTarget[];
   decoyCircles: Phaser.Geom.Circle[];
+  // Gas clouds in the world. A seeker is a radar like any other: the medium
+  // costs it energy, so a missile fired into a cloud goes in half blind.
+  gasVolumes: GasVolume[];
   // Scene clock (scene.time.now) — timestamps the seeker's RWR illumination.
   now: number;
 };
@@ -162,7 +166,9 @@ export class MissileGuidance {
     // 3. Seeker live: run its RWS→STT loop and home on the locked target.
     if (missile.missileRadar.isActive()) {
       const headingDeg = Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x));
-      const target = missile.missileRadar.update(from, headingDeg, delta, ctx.targets, ctx.decoyCircles, ctx.now);
+      const target = missile.missileRadar.update(
+        from, headingDeg, delta, ctx.targets, ctx.decoyCircles, ctx.gasVolumes, ctx.now,
+      );
       if (target) {
         return this.interceptVector(
           from,
