@@ -174,8 +174,16 @@ export class PlayerShip extends Ship {
     }
 }
 
+// Whose side an AI ship is on. Radar cannot tell: a track is geometry, an RWR
+// contact is an emitter, and a friendly cargo ship's navigation radar paints
+// the player exactly like a hostile's search radar does. The side only becomes
+// known through identification — visually, or from a datalink declaration —
+// which is what a mission's rules of engagement are built on.
+export type Side = 'hostile' | 'friendly';
+
 export class Target extends Ship {
     public readonly shipType: 'cruiser' | 'cargo';
+    public readonly side: Side;
     public controller?: AiUnitController;
 
     constructor(params: {
@@ -186,6 +194,7 @@ export class Target extends Ship {
         speed: number;
         radar: Radar;
         shipType: 'cruiser' | 'cargo';
+        side?: Side;
     }) {
         // Pass correct texture to parent constructor
         super({
@@ -193,6 +202,7 @@ export class Target extends Ship {
             texture: params.shipType === 'cargo' ? 'cargo' : 'ship'
         });
         this.shipType = params.shipType;
+        this.side = params.side ?? 'hostile';
 
         this.setScale(.4);
     }

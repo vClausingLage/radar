@@ -8,15 +8,17 @@ import { Entity, GasVolume, RadarHost } from "../radar/data/types";
 import { Vector2 } from "../types";
 import { SURVEILLANCE_RANGE_PX } from "../radar/data/radarGameSettings";
 
-// A friendly early-warning emplacement: a rotating dish bolted to a stationary
-// asteroid. The asteroid IS the body — one circular Matter body that both blocks
-// the player's radar (terrain) and anchors the dish. It drives the standard
-// ship Radar in 'dome' mode (full 360° search) and datalinks its tracks to the
+// A friendly early-warning emplacement: a dish bolted to a stationary asteroid.
+// The asteroid IS the body — one circular Matter body that both blocks the
+// player's radar (terrain) and anchors the dish. It drives the standard ship
+// Radar in 'dome' mode (full 360° search) and datalinks its tracks to the
 // player, rather than duplicating the sweep/detect/track pipeline.
 //
 // The station is the radar's host (position + boresight); the dish sprite is a
 // visual overlay on the single rock body — the raycaster reads one body's
-// vertices, so the rock's circle is the detection constraint.
+// vertices, so the rock's circle is the detection constraint. The sprite does
+// not turn with the beam: it is a side-on picture of the antenna, and the
+// sweep is drawn as the datalink's own bearing line instead.
 export class DishRadarStation implements RadarHost {
     readonly id = createEntityId();
 
@@ -41,9 +43,12 @@ export class DishRadarStation implements RadarHost {
             spin: false,
         });
 
-        // Dish centred on the rock, sitting above it in the draw order.
-        this.dish = scene.add.image(position.x, position.y, 'dish_radar')
-            .setDisplaySize(bodyRadius * 1.6, bodyRadius * 1.6)
+        // Dish standing on the rock: its pedestal sits on the rock's surface,
+        // above it in the draw order, and it stays put — the rock itself does
+        // not spin, so the mount never drifts out from under it.
+        const dishSize = bodyRadius * 1.3;
+        this.dish = scene.add.image(position.x, position.y - bodyRadius * 0.35, 'dish_radar')
+            .setDisplaySize(dishSize, dishSize)
             .setDepth(this.rock.depth + 1);
 
         // A standard radar in full-circle mode. No radar/terrain renderer and no
@@ -67,8 +72,8 @@ export class DishRadarStation implements RadarHost {
         return this.range;
     }
 
-    // The rotating overlay sprite — exposed so the scene can opt it into the
-    // same distance-based visual fade as the rock it's mounted on.
+    // The dish overlay sprite — exposed so the scene can opt it into the same
+    // distance-based visual fade as the rock it's mounted on.
     getDishSprite(): Phaser.GameObjects.Image {
         return this.dish;
     }
@@ -101,9 +106,6 @@ export class DishRadarStation implements RadarHost {
         for (const track of this.radar.getTracks()) {
             this.datalink.renderDatalinkContact(graphics, track);
         }
-
-        // Spin the dish to the live beam bearing so the sweep reads visually.
-        this.dish.setRotation(Phaser.Math.DegToRad(bearing));
     }
 
     destroy(): void {

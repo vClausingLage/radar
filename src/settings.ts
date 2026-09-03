@@ -62,6 +62,12 @@ export const VISIBILITY_RANGE_PX = 300;
 // closer than that.
 export const VISIBILITY_FADE_BAND_PX = 100;
 
+// VISUAL IDENTIFICATION — how close the player must get to a contact to
+// identify it by eye ("visual"/"tally" in the brevity code): the range at
+// which the other ship is drawn fully opaque, so what can be identified is
+// exactly what can be seen clearly. Radar never answers the identity question.
+export const VID_RANGE_PX = VISIBILITY_RANGE_PX - VISIBILITY_FADE_BAND_PX;
+
 // TARGETS
 export const targetShipSettings = {
     LOADOUT: {

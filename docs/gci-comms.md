@@ -165,12 +165,20 @@ clips directly (same voice/settings) rather than re-recording them.
 - `plr-*` (player radio voice, OpenAI): `plr-disco`, `plr-flatspin`,
   `plr-bogey-dope`, `plr-fox`.
 
-**Live interaction** (`SupportRadarComms.requestBogeyDope`, Level 1 only, key
-`C`): player transmits "Disco, Flatspin 1-1, bogey dope"; Disco replies with
-the nearest datalink contact's BRA + range + aspect + `hostile` (the game has
-no friendly/neutral contacts yet, so identity is always declared hostile) plus
-a speed order — `gate`/`buster`/`saunter` picked from range-to-contact — or
-"clean" if the picture is empty. Aspect classification (`hot`/`flanking`/
+**Live interaction** (`SupportRadarComms`, Level 1 only). Two kinds of
+traffic. On request (key `C`) the player transmits "Disco, Flatspin 1-1, bogey
+dope"; Disco replies with the nearest datalink contact's BRA + range + aspect +
+identity plus a speed order — `gate`/`buster`/`saunter` picked from
+range-to-contact — or "clean" if the picture is empty. Unprompted
+(`announceNewContact`), Disco passes each new contact its dish forms once the
+track has matured, one call at a time with a gap between them, so the player
+is led to traffic without asking. Identity is declared by the scene, not the
+radar: a contact is a `bogey` until the player has put eyes on it (visual
+identification inside `VID_RANGE_PX`), after which the datalink track sitting
+on that ship is called `friendly`. Only `gci-hostile` is recorded so far — the
+`gci-bogey` / `gci-friendly` keys are already in the stitched message and the
+`AudioPlayer` skips them until the clips exist, so those declarations reach
+the player on the HUD echo only. Aspect classification (`hot`/`flanking`/
 `beaming`/`cold`) is shared with `RadarVoice` via `GameMath.getAspect`.
 
 **Missile-launch call** (`MissileCallout.announceFired`, every scene): a
@@ -186,7 +194,9 @@ deliberate one-off event rather than ambient chatter to throttle.
 **Clip inventory not yet recorded** (future work — vocabulary defined above,
 not wired to any game event yet):
 
-- *Identity:* `bogey`, `bandit`, `friendly`, `contact`, `faded`, `group`
+- *Identity:* `bogey`, `friendly` (both already wired into the bogey-dope /
+  new-contact calls — record them and add the keys to Level 1's preload),
+  `bandit`, `contact`, `faded`, `group`
 - *Geometry:* `bullseye`, `drag`, `angels`
 - *Routing:* `commit`, `vector`, `come-left`, `come-right`
 - *Threat:* `threat`, `defend`, `spike`, `nails`, `singer`, `heads-up`

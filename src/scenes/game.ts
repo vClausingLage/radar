@@ -242,6 +242,12 @@ export default class Game extends Phaser.Scene
     });
   }
 
+  // Whether the ship is up and flyable: always in free play, and in the
+  // campaign once the cold-start procedure has run through.
+  protected isReadyForFlight(): boolean {
+    return !this.requiresColdStart() || (this.startup?.isComplete() ?? false);
+  }
+
   // Park the ship cold and put the startup switches where the flight controls
   // normally sit. Each switch drives the ShipStartup sequence, which calls back
   // to light the engine plumes and to hand the ship over when it is done.
@@ -453,11 +459,20 @@ export default class Game extends Phaser.Scene
     this.gasClouds.forEach(cloud => cloud.destroy());
     this.gasClouds = [];
 
-    // Show game over message
+    this.showOutcome('SHIP DESTROYED', '#ff0000');
+  }
+
+  // The scenario's closing line — loss of the ship here, a mission's own
+  // pass/fail verdict in the campaign levels — pinned to the camera centre.
+  protected showOutcome(text: string, color: string): void {
     const cam = this.cameras.main;
-    this.add.text(cam.centerX, cam.centerY, 'SHIP DESTROYED', {
+    this.add.text(cam.centerX, cam.centerY, text, {
       font: '32px Courier',
-      color: '#ff0000'
-    }).setOrigin(0.5, 0.5).setScrollFactor(0);
+      color,
+      align: 'center',
+      backgroundColor: '#000000aa',
+      padding: { x: 20, y: 12 },
+      wordWrap: { width: Math.min(cam.width - 80, 800) },
+    }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(1000);
   }
 }

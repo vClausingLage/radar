@@ -35,6 +35,7 @@ const DECOY_COOLDOWN_MS = 1200;       // min gap between chaff drops
 const PATROL_LEG_PX = 500;            // straight leg of the search ladder
 const PATROL_STEP_PX = 150;           // sideways step between legs
 const PATROL_MARGIN_PX = 300;         // keep the ladder this far off the world edge
+const ROUTE_ARRIVAL_PX = 60;          // a fixed route's destination counts as reached this close
 
 export class AiUnitController {
     private state: AIState = AIState.PATROL;
@@ -61,6 +62,10 @@ export class AiUnitController {
     private patrolIndex = 0;
     private cargoWaypoints: { x: number; y: number }[] = [];
     private cargoWaypointIndex = 0;
+    // A generated cargo route is a loop; a route handed in via setRoute() is a
+    // flight with a destination, after which the ship holds where it stopped.
+    private routeLoops = true;
+    private arrived = false;
 
     constructor(
         private readonly scene: Phaser.Scene,
@@ -101,6 +106,21 @@ export class AiUnitController {
     }
     public setTurnRate(turnRate: number): void {
         this.turnRate = turnRate;
+    }
+
+    // Replace the generated loop with a fixed itinerary whose last point is the
+    // destination (a landing pad, a station). Only cargo flies routes — a
+    // cruiser's movement is its search ladder and the engagement it leads to.
+    public setRoute(waypoints: { x: number; y: number }[]): void {
+        this.cargoWaypoints = waypoints.map(p => ({ x: p.x, y: p.y }));
+        this.cargoWaypointIndex = 0;
+        this.routeLoops = false;
+        this.arrived = false;
+    }
+
+    // True once a routed ship has reached its destination and stopped.
+    public hasArrived(): boolean {
+        return this.arrived;
     }
 
     private createDebugText(): void {
@@ -167,8 +187,9 @@ export class AiUnitController {
         }
 
         // Border avoidance overrides state steering at the world edge. A
-        // stationary unit can never reach an edge, so it skips both.
-        if (this.activity === 'active') {
+        // stationary unit can never reach an edge, so it skips both — and so
+        // does a ship that has reached its destination and is holding there.
+        if (this.activity === 'active' && !this.arrived) {
             this.avoidBorder();
             this.applyMovement();
         } else {
@@ -427,8 +448,16 @@ export class AiUnitController {
     }
 
     private followCargoRoute(): void {
-        if (this.cargoWaypoints.length === 0) return;
-        if (this.isNearPosition(this.cargoWaypoints[this.cargoWaypointIndex], 150)) {
+        if (this.cargoWaypoints.length === 0 || this.arrived) return;
+        const last = this.cargoWaypointIndex === this.cargoWaypoints.length - 1;
+        // Intermediate turn points are passed wide; the destination of a fixed
+        // route has to be reached, so it is flown closer before we call it.
+        const threshold = last && !this.routeLoops ? ROUTE_ARRIVAL_PX : 150;
+        if (this.isNearPosition(this.cargoWaypoints[this.cargoWaypointIndex], threshold)) {
+            if (last && !this.routeLoops) {
+                this.arrived = true;
+                return;
+            }
             this.cargoWaypointIndex = (this.cargoWaypointIndex + 1) % this.cargoWaypoints.length;
         }
         this.turnToward(this.cargoWaypoints[this.cargoWaypointIndex]);
@@ -502,8 +531,9 @@ export class AiUnitController {
 
     private turnTowardAngle(desiredAngleDeg: number): void {
         // A stationary unit holds its heading — every state still computes its
-        // desired bearing, it just cannot act on it.
-        if (this.activity === 'inactive') return;
+        // desired bearing, it just cannot act on it. Same for a ship that has
+        // landed at the end of its route.
+        if (this.activity === 'inactive' || this.arrived) return;
         const angleDelta = Phaser.Math.Angle.WrapDegrees(desiredAngleDeg - this.ship.angle);
         const turnStep = Phaser.Math.Clamp(angleDelta, -this.turnRate, this.turnRate);
         this.ship.setAngle(this.ship.angle + turnStep);

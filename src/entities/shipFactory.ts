@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { PlayerShip, Target } from './ship';
+import { PlayerShip, Side, Target } from './ship';
+import { Vector2 } from '../types';
 import { Radar } from '../radar/systems/radar';
 import { InterfaceRenderer } from '../radar/renderer/interfaceRenderer';
 import { RadarRenderer } from '../radar/renderer/radarRenderer';
@@ -12,7 +13,9 @@ import { targetShipSettings } from '../settings';
 
 // `activity` tags whether the unit is under way ('active', the default) or a
 // stationary emplacement ('inactive') that holds position and heading while its
-// radar, jammer and weapons keep working.
+// radar, jammer and weapons keep working. `side` defaults to hostile. `route`
+// hands a cargo ship a fixed itinerary — a flight from A to B with a
+// destination — instead of the endless loop it otherwise flies.
 export type TargetParams = {
   x: number;
   y: number;
@@ -20,6 +23,8 @@ export type TargetParams = {
   speed: number;
   type: 'cruiser' | 'cargo';
   activity?: UnitActivity;
+  side?: Side;
+  route?: Vector2[];
 };
 
 declare global {
@@ -80,6 +85,7 @@ export const createPlayerShipFactory = () => {
         scene: this.scene,
       }),
       shipType: params.type,
+      side: params.side,
     });
     if (!target.body) throw new Error('Target body is undefined');
     const targetMissileNoCollideGroup = this.scene.matter.world.nextGroup(true);
@@ -94,6 +100,9 @@ export const createPlayerShipFactory = () => {
     }
     if (params.type === 'cruiser') {
       controller.setTurnRate(targetShipSettings.TURN_RATE_CRUISER);
+    }
+    if (params.route) {
+      controller.setRoute(params.route);
     }
     target.controller = controller;
     target.radar.setLoadout(targetShipSettings.LOADOUT);
