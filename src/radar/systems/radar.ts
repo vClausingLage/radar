@@ -440,7 +440,7 @@ export class Radar {
             // dims what is inside exactly as it dims a contact.
             if (this.withinDisplayRange(ownerPos, terrainHit.point)
                 && !this.receiver.isAbsorbedByGas(ownerPos, terrainHit.point, gasVolumes)) {
-                this.terrainMapper.addSample(terrainHit.point, this.scene.time.now);
+                this.terrainMapper.addSample(terrainHit.point, terrainHit.normal, ownerPos, this.scene.time.now);
             }
         } else if (shipHit
             && !this.receiver.isBlockedByDecoy(ownerPos, shipHit.point, decoyCircles)) {
@@ -563,7 +563,7 @@ export class Radar {
             if (terrainWins) {
                 if (this.withinDisplayRange(ownerPos, terrainHit.point)
                     && !this.receiver.isAbsorbedByGas(ownerPos, terrainHit.point, gasVolumes)) {
-                    this.terrainMapper.addSample(terrainHit.point, this.scene.time.now);
+                    this.terrainMapper.addSample(terrainHit.point, terrainHit.normal, ownerPos, this.scene.time.now);
                 }
             } else if (shipHit
                 && !this.receiver.isBlockedByDecoy(ownerPos, shipHit.point, decoyCircles)) {
@@ -749,21 +749,31 @@ export class Radar {
         line: Phaser.Geom.Line,
         ownerPos: { x: number; y: number },
         targets: Entity[],
-    ): { point: Phaser.Math.Vector2; crossSection: number } | null {
-        let nearest: { point: Phaser.Math.Vector2; crossSection: number } | null = null;
+    ): { point: Phaser.Math.Vector2; crossSection: number; normal: { x: number; y: number } } | null {
+        let nearest: { point: Phaser.Math.Vector2; crossSection: number; normal: { x: number; y: number } } | null = null;
         let nearestDistSq = Infinity;
 
         for (const target of targets) {
-            const polygon = this.raycaster.getBodyPolygons(target);
-            const hit = Phaser.Geom.Intersects.GetLineToPolygon(line, polygon);
+            // A body the antenna stands inside cannot shadow it: the ship
+            // parked on the launchpad is above the slab, not walled in by it,
+            // and a dish is not blinded by its own reflector. Without this
+            // the body's far edges would read as terrain all round.
+            if (this.raycaster.contains(target, ownerPos)) continue;
+            // Against the true surface (a concave body's convex parts), not
+            // the hull: a dent shadows and echoes as drawn.
+            const hit = this.raycaster.nearestPartHit(line, target);
             if (!hit) continue;
 
-            const dSq = Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, hit.x, hit.y);
+            const dSq = Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, hit.point.x, hit.point.y);
             if (dSq < nearestDistSq) {
                 nearestDistSq = dSq;
                 nearest = {
-                    point: new Phaser.Math.Vector2(hit.x, hit.y),
-                    crossSection: crossSection(polygon, ownerPos),
+                    point: hit.point,
+                    // The whole hull is what the beam sees presented to it.
+                    crossSection: crossSection(this.raycaster.getBodyPolygons(target), ownerPos),
+                    // Surface orientation at the hit, for the ground map's
+                    // incidence-dependent return strength.
+                    normal: this.raycaster.surfaceNormalAt(hit.part, hit.point),
                 };
             }
         }

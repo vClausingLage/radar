@@ -41,8 +41,9 @@ TypeScript-private fields are reachable at runtime.
 
 ```js
 const s = game.scene.getScene('Game');          // or 'Level1'
-s.player, s.targets, s.asteroids
-s.station                                        // Level1 dish radar (after cold start)
+s.player, s.targets, s.terrain                   // terrain: [surface, launchpad, rock, dish] in Level1
+s.station                                        // Level1 dish radar; s.station.getPosition() is the antenna
+s.station.getTracks()                            // the datalink picture
 s.player.radar.getTracks(), s.player.radar.getMode()
 s.player.radar.terrainMapper.samples
 s.player.radar.fireControl
@@ -54,4 +55,20 @@ game.sound.sounds.filter(x => x.isPlaying)       // audio verification
 
 A/D turn · R RWS · E lock STT · ESC exit STT · Q cycle weapon · T chaff ·
 J jammer · Space fire · Shift+click VIM-220 waypoint · C (Level 1, once
-airborne) datalink bearing call.
+airborne) datalink bearing call. Throttle is mouse-only (1/3, 2/3, FULL, REV);
+from script use `s.player.setCurrentSpeed(v)` — REV is `-landingSettings.REVERSE_SPEED`.
+
+## Things that bite
+
+- **Level 1 takes 60–70 s to load** in the backgrounded tab (audio decode).
+  Poll `s.scene.settings.status` (3 → 5) or `s.load.progress`; `s.station`
+  and `s.player` exist once it is 5.
+- **Speeds are px per step.** Cruise is 0.1, REV 0.04 — a ship covers 16 px in
+  400 steps. Start a contact probe a few px short of the surface, not 100.
+- **Tweens run slow under `game.step`** (roughly 4–5x their nominal duration).
+  Judge a tween by its progress, not by step count.
+- **Landing / collision recipe** (Level 1, pad top edge is y = 2300):
+  `p.setPosition(1600, 2265); p.setAngle(270); p.setCurrentSpeed(-0.04)` then
+  step until `p.getCurrentSpeed() === 0` (landed, ~270 steps). Heading 90 at
+  0.033 from the same spot is a nose-first crash (`s.player` gone). A crawl
+  north from (1600, 1995) at 0.033 stops against the rock.

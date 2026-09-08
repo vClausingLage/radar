@@ -1,32 +1,54 @@
 import Phaser from "phaser";
 import { Asteroid } from "./asteroid";
+import { Structure } from "./structure";
+import { ASTEROID_2_OUTLINE, DISH_RADAR_OUTLINE } from "./spriteOutlines";
 import { createEntityId } from "./entityId";
+import { Ray } from "../physics/ray";
 import { Radar } from "../radar/systems/radar";
 import { RadarRenderer } from "../radar/renderer/radarRenderer";
 import { Track } from "../radar/data/track";
-import { Entity, GasVolume, RadarHost } from "../radar/data/types";
+import { Entity, GasVolume, RadarHost, Terrain } from "../radar/data/types";
 import { Vector2 } from "../types";
 import { SURVEILLANCE_RANGE_PX } from "../radar/data/radarGameSettings";
 
+// Where the dish stands on the rock. Its pedestal's foot is at this fraction
+// of the dish texture — the base is not centred under the reflector, the
+// building sits left of it (read off dish_radar.png) — and the mount is on the
+// rock's north-eastern flank: this far out from the centre towards the edge on
+// that bearing. The bearing is taken in the rock's own proportions (see
+// mountPoint), so "north-east" lands on the corner of a wide, flat rock rather
+// than a step north of its centre.
+const DISH_FOOT_ORIGIN: Vector2 = { x: 0.39, y: 0.90 };
+const MOUNT_BEARING_DEG = -45; // screen north-east: +x, -y
+const MOUNT_EDGE_FRACTION = 0.55;
+// The reflector's centre as a fraction of the dish texture: where the radar
+// actually is. Up on the pedestal it clears the rock's body, so the rock
+// shadows the dish the way it shadows anyone else.
+const DISH_REFLECTOR_ORIGIN: Vector2 = { x: 0.52, y: 0.36 };
+// Height of the dish picture relative to the rock's radius.
+const DISH_HEIGHT_FACTOR = 1.3;
+
 // A friendly early-warning emplacement: a dish bolted to a stationary asteroid.
-// The asteroid IS the body — one circular Matter body that both blocks the
-// player's radar (terrain) and anchors the dish. It drives the standard ship
-// Radar in 'dome' mode (full 360° search) and datalinks its tracks to the
-// player, rather than duplicating the sweep/detect/track pipeline.
+// Both are ordinary terrain — the rock an asteroid, the dish a structure, each
+// one Matter body shaped to its drawn silhouette — that the scene registers
+// like any other terrain (getTerrain()), so they occlude every radar in the
+// world, this dish's included. The station drives the standard ship Radar in
+// 'dome' mode (full 360° search) and datalinks its tracks to the player,
+// rather than duplicating the sweep/detect/track pipeline.
 //
-// The station is the radar's host (position + boresight); the dish sprite is a
-// visual overlay on the single rock body — the raycaster reads one body's
-// vertices, so the rock's circle is the detection constraint. The sprite does
-// not turn with the beam: it is a side-on picture of the antenna, and the
-// sweep is drawn as the datalink's own bearing line instead.
+// The station is the radar's host: the antenna sits at the reflector of the
+// dish sprite, on the pedestal on the rock's flank, and the coverage ring and
+// sweep are drawn from there. The sprite does not turn with the beam: it is a
+// side-on picture of the antenna, and the sweep is drawn as the datalink's own
+// bearing line instead.
 export class DishRadarStation implements RadarHost {
     readonly id = createEntityId();
 
-    // The rock is a normal Asteroid so the player's radar occludes and ground-maps
-    // it for free. The scene owns it as terrain; exposed so the caller can add it
-    // to the asteroid list.
+    // The rock is a normal Asteroid and the dish a normal Structure, so every
+    // radar occludes and ground-maps them for free once the scene has taken
+    // them as terrain (getTerrain()).
     readonly rock: Asteroid;
-    private readonly dish: Phaser.GameObjects.Image;
+    private readonly dish: Structure;
     private readonly radar: Radar;
     // Draws the shared (cyan) datalink picture. The dome Radar itself has no
     // renderer, so it sweeps silently — this paints its tracks off-board.
@@ -39,17 +61,30 @@ export class DishRadarStation implements RadarHost {
             direction: 0,
             speed: 0,
             texture: 'asteroid_2',
+            outline: ASTEROID_2_OUTLINE,
             bodyRadius,
             spin: false,
+            // Fixed heading: the mount below is picked on the rock as drawn.
+            angle: 0,
         });
 
-        // Dish standing on the rock: its pedestal sits on the rock's surface,
-        // above it in the draw order, and it stays put — the rock itself does
-        // not spin, so the mount never drifts out from under it.
-        const dishSize = bodyRadius * 1.3;
-        this.dish = scene.add.image(position.x, position.y - bodyRadius * 0.35, 'dish_radar')
-            .setDisplaySize(dishSize, dishSize)
-            .setDepth(this.rock.depth + 1);
+        // Dish standing on the rock's north-eastern flank: its pedestal foot is
+        // set on the mount point, above the rock in the draw order, and it
+        // stays put — the rock neither spins nor drifts, so the mount never
+        // moves out from under it. Its body follows the picture (reflector,
+        // struts, building), so a beam from elsewhere echoes off the dish.
+        const dishHeight = bodyRadius * DISH_HEIGHT_FACTOR;
+        const dishScale = dishHeight / scene.textures.get('dish_radar').getSourceImage().height;
+        this.dish = scene.add.structure({
+            position: this.mountPoint(),
+            anchor: DISH_FOOT_ORIGIN,
+            texture: 'dish_radar',
+            scale: dishScale,
+            outline: DISH_RADAR_OUTLINE,
+            // A tower at flight level: ships fly into it, not over it.
+            obstacle: true,
+        });
+        this.dish.setDepth(this.rock.depth + 1);
 
         // A standard radar in full-circle mode. No radar/terrain renderer and no
         // loadout: it builds tracks silently, exactly like the AI ship radars.
@@ -58,9 +93,42 @@ export class DishRadarStation implements RadarHost {
         this.radar.setMode('dome');
     }
 
+    // The mount: a ray from the rock's centre along the mount bearing, cut where
+    // it leaves the rock's body polygon — the body is the shape, so the mount
+    // follows the rock as drawn rather than an assumed circle — with the dish
+    // standing part-way along it. The bearing is stretched by the rock's
+    // extents (a 45° ray on a rock twice as wide as it is tall would leave
+    // through the top edge barely east of centre).
+    private mountPoint(): Vector2 {
+        const centre = { x: this.rock.x, y: this.rock.y };
+        const rad = Phaser.Math.DegToRad(MOUNT_BEARING_DEG);
+        const reach = 2 * Math.max(this.rock.displayWidth, this.rock.displayHeight);
+        const dx = Math.cos(rad) * this.rock.displayWidth;
+        const dy = Math.sin(rad) * this.rock.displayHeight;
+        const len = Math.hypot(dx, dy) || 1;
+        const ray = new Phaser.Geom.Line(
+            centre.x, centre.y,
+            centre.x + (dx / len) * reach, centre.y + (dy / len) * reach,
+        );
+        const edge = Phaser.Geom.Intersects.GetLineToPolygon(ray, new Ray().getBodyPolygons(this.rock));
+        const end = edge ? { x: edge.x, y: edge.y } : { x: ray.x2, y: ray.y2 };
+        return {
+            x: centre.x + (end.x - centre.x) * MOUNT_EDGE_FRACTION,
+            y: centre.y + (end.y - centre.y) * MOUNT_EDGE_FRACTION,
+        };
+    }
+
     // ── RadarHost ──────────────────────────────────────────────────────────
+    // The antenna: the reflector's centre, worked out from the point the dish
+    // sprite is drawn about. It is outside the rock's body, which is what lets
+    // the rock shadow the dish; it is inside the dish's own body, which is why
+    // the dish does not shadow itself (a radar standing inside a body is not
+    // shadowed by it — see Radar.nearestHit).
     getPosition(): Vector2 {
-        return { x: this.rock.x, y: this.rock.y };
+        return {
+            x: this.dish.x + (DISH_REFLECTOR_ORIGIN.x - this.dish.originX) * this.dish.displayWidth,
+            y: this.dish.y + (DISH_REFLECTOR_ORIGIN.y - this.dish.originY) * this.dish.displayHeight,
+        };
     }
 
     // Fixed emplacement: boresight is arbitrary since the dome sweeps all round.
@@ -72,10 +140,10 @@ export class DishRadarStation implements RadarHost {
         return this.range;
     }
 
-    // The dish overlay sprite — exposed so the scene can opt it into the same
-    // distance-based visual fade as the rock it's mounted on.
-    getDishSprite(): Phaser.GameObjects.Image {
-        return this.dish;
+    // The station's solid bodies, for the scene to register as terrain and to
+    // fade as one: rock and dish show and hide together.
+    getTerrain(): Terrain[] {
+        return [this.rock, this.dish];
     }
 
     getTracks(): Track[] {
@@ -83,9 +151,10 @@ export class DishRadarStation implements RadarHost {
     }
 
     // Sweep the dish and paint the shared picture. `ships` are the targets to
-    // detect; `terrain` are occluders — the station's own rock is filtered out
-    // so the dish (mounted on top) never shadows itself. `graphics` carries only
-    // the datalink overlay; the dome radar draws nothing on its own.
+    // detect; `terrain` are the occluders — the whole scene list, the rock
+    // under the dish included, so what is behind the rock stays dark to the
+    // datalink. `graphics` carries only the datalink overlay; the dome radar
+    // draws nothing on its own.
     update(
         delta: number,
         ships: Entity[],
@@ -93,11 +162,10 @@ export class DishRadarStation implements RadarHost {
         graphics: Phaser.GameObjects.Graphics,
         gasVolumes: GasVolume[] = [],
     ): void {
-        const occluders = terrain.filter(t => t !== this.rock);
         // Gas absorbs the dish's energy like anyone else's, so the shared
         // picture thins out over a cloud too — the datalink is a better sensor
         // than the player's, not an omniscient one.
-        this.radar.update(delta, this.getDirection(), ships, graphics, [], occluders, gasVolumes);
+        this.radar.update(delta, this.getDirection(), ships, graphics, [], terrain, gasVolumes);
 
         const origin = this.getPosition();
         const bearing = this.radar.getBeamDirection();
@@ -109,9 +177,9 @@ export class DishRadarStation implements RadarHost {
     }
 
     destroy(): void {
-        this.dish.destroy();
-        // The rock lives in the scene's asteroid list and may already have been
-        // torn down there (e.g. on game-over); guard against a double destroy.
+        // Both live in the scene's terrain list and may already have been torn
+        // down there (e.g. on game-over); guard against a double destroy.
+        if (this.dish.active) this.dish.destroy();
         if (this.rock.active) this.rock.destroy();
     }
 }

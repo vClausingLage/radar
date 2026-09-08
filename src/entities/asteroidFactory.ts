@@ -9,8 +9,10 @@ type AsteroidParams = {
   direction: number;
   speed: number;
   texture?: string;
+  outline?: Vector2[];
   bodyRadius?: number;
   spin?: boolean;
+  angle?: number;
 };
 
 declare global {

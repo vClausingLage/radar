@@ -34,8 +34,9 @@ they rot into junk drawers. Classes stay sleek and readable — realism justifie
 an extra module, never a bloated one.
 
 Corollary: **the Matter body is the single source of truth for geometry.**
-`Ray.getBodyPolygons()` reads `body.vertices`; never introduce a parallel
-collision/detection shape next to it.
+`Ray.nearestPartHit()` walks the body's convex parts (`Ray.getBodyPolygons()`
+is only the hull); never introduce a parallel collision/detection shape next
+to it.
 
 ## Map
 
@@ -50,7 +51,12 @@ src/scenes/level1.ts     Campaign Level 1: cold start (surface/launchpad) then
 src/scenes/startMenu.ts  Menu, ScenarioKey ('duel' | 'occluded' | 'skirmish')
 src/controller/          playerController.ts (key bindings), aiUnitController.ts (intent)
 src/entities/            Ship/PlayerShip/Target, missiles, asteroid, decoy, exhaust,
-                         dishRadarStation + *Factory.ts registering scene.add.* factories
+                         dishRadarStation, structure (static solid scenery: surface,
+                         launchpad) + *Factory.ts registering scene.add.* factories;
+                         spriteOutlines.ts = sprite silhouettes as Matter polygons,
+                         traced with tools/traceOutline.js (no shape editor in Phaser).
+                         Terrain = Asteroid | Structure; Game.registerTerrain() feeds the
+                         one list every radar (the dish's too) is occluded by
 src/radar/systems/radar.ts        The centre. Owns mode state, sweep, STT lock, delegates
 src/radar/systems/fireControl.ts  Weapons: launch, guidance ticks, waypoints, seeker cones
 src/radar/systems/modules/        Signal path: antenna → emitter → receiver → trackingComputer
@@ -61,7 +67,9 @@ src/radar/data/                   track.ts, radarReturn.ts, types.ts (Entity, Ra
                                   radarGameSettings.ts (all radar constants)
 src/radar/renderer/               radarRenderer (scope marks), interfaceRenderer (HUD),
                                   terrainRenderer (ground map)
-src/physics/                      ray.ts (raycast against Matter vertices), collisionRegistrar
+src/physics/                      ray.ts (raycast against Matter vertices), bodyShape.ts (fit a
+                                  body to a traced outline), landing.ts (touchdown rules:
+                                  slow + tail-first on ground = landed, else crash), collisionRegistrar
 src/math/, src/types/             Maths helpers, shared Vector2
 src/settings.ts                   Non-radar gameplay constants (world, ship, camera, loadouts)
 src/audio/                        audioPlayer, radarVoice (BRA callouts), startup, supportRadarComms
@@ -81,9 +89,11 @@ TO_DO.md, decision_tree.md, cowork.md   Roadmap, AI behaviour spec, design inten
    to `illuminationRangePx()` (~1.7x the rated range), **not** to the rated
    range — see the range note below.
 3. Raycast: `nearestHit()` for ships and separately for terrain, returning the
-   hit point and the hull's cross-section. **The nearer return wins** — terrain
-   shadows ships and is handed to `TerrainMapper`; a nearer ship return masks
-   terrain behind it.
+   hit point and the hull's cross-section. Rays test the body's true polygon
+   (`Ray.nearestPartHit`), and a body the antenna stands inside is skipped —
+   the player parked on the pad, the dish inside its own tower. **The nearer
+   return wins** — terrain shadows ships and is handed to `TerrainMapper`; a
+   nearer ship return masks terrain behind it.
 4. Interference: chaff (`Receiver.isBlockedByDecoy`) swallows a return outright;
    gas does not — it is priced into the hit's energy instead
    (`Receiver.gasRoundTrip`). An enemy `Jammer` covering us rewrites the whole
@@ -131,9 +141,19 @@ display-and-weapons concern.
 - OOP, class-per-subsystem, constructor takes a params object. Ship-like
   entities extend `Phaser.Physics.Matter.Sprite`.
 - Entities are created through registered factories (`scene.add.playerShip(...)`,
-  `.target(...)`, `.asteroid(...)`, missiles), registered in `Game.create()`.
-  Wiring (radar attach, renderers, controller, no-collide group) belongs in the
-  factory, not the entity constructor.
+  `.target(...)`, `.asteroid(...)`, `.structure(...)`, missiles), registered in
+  `Game.create()`. Wiring (radar attach, renderers, controller, no-collide
+  group) belongs in the factory, not the entity constructor.
+- **Terrain and contact.** Everything solid goes through `Game.registerTerrain()`
+  (occlusion, ground map, fade); `registerFadeGroup()` ties pieces that show
+  and hide together (pad + surface, rock + dish). A `Structure` is an
+  `obstacle` (tower: ships and missiles crash into it) or ground (sensor body:
+  reports contact, never pushes). What a contact means is decided by
+  `physics/landing.ts` from `landingSettings` in `settings.ts`: fast = crash
+  on anything; slow on an obstacle = stop; slow **and tail-first** on ground =
+  landed (`Game.onPlayerLanded()`), else crash. Only the player lands by hand —
+  AI cargo sets down by `Level1.landTraffic()`. A sprite-shaped body comes
+  from `tools/traceOutline.js` → `spriteOutlines.ts` → `fitBodyToOutline()`.
 - **Constants**: radar/weapon/simulation values go in
   `src/radar/data/radarGameSettings.ts`, grouped under a `// ── section ──`
   header naming the owning module, with a comment explaining the physical

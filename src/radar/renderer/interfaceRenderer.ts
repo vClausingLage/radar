@@ -3,6 +3,7 @@ import { Radar } from "../systems/radar";
 import { RwrContact } from "../systems/modules/rwr";
 import { Ship } from "../../entities/ship";
 import { StartupStepKey, STARTUP_STEPS } from "../../audio/startup";
+import { landingSettings } from "../../settings";
 import {
     GO_STT_WARNING_OFFSET_Y_PX,
     LOCK_WARNING_OFFSET_Y_PX,
@@ -37,6 +38,8 @@ export class InterfaceRenderer {
     private speedOneThirdBtn?: Phaser.GameObjects.Text;
     private speedTwoThirdBtn?: Phaser.GameObjects.Text;
     private speedFullBtn?: Phaser.GameObjects.Text;
+    // Slow astern: the landing setting (see landingSettings).
+    private speedReverseBtn?: Phaser.GameObjects.Text;
     private zoomInBtn?: Phaser.GameObjects.Text;
     private zoomOutBtn?: Phaser.GameObjects.Text;
     private warningText?: Phaser.GameObjects.Text;
@@ -160,6 +163,18 @@ export class InterfaceRenderer {
             ship.setCurrentSpeed(fullSpeed);
         });
 
+        this.speedReverseBtn = this.scene.add.text(0, 0, 'REV', {
+            font: '22px Courier',
+            color: '#000',
+            backgroundColor: '#ffdb4d',
+            padding: { x: 10, y: 5 }
+        })
+        .setInteractive()
+        .setOrigin(0)
+        .on('pointerdown', () => {
+            ship.setCurrentSpeed(-landingSettings.REVERSE_SPEED);
+        });
+
         // ZOOM BUTTONS (fixed to camera)
         this.zoomInBtn = this.scene.add.text(0, 0, '+', {
             font: '32px Courier',
@@ -274,6 +289,7 @@ export class InterfaceRenderer {
         if (this.speedOneThirdBtn) this.speedOneThirdBtn.setBackgroundColor(Math.abs(currentShipSpeed - oneThirdSpeed) < 0.01 ? '#00ff00' : '#ffdb4d');
         if (this.speedTwoThirdBtn) this.speedTwoThirdBtn.setBackgroundColor(Math.abs(currentShipSpeed - twoThirdSpeed) < 0.01 ? '#00ff00' : '#ffdb4d');
         if (this.speedFullBtn) this.speedFullBtn.setBackgroundColor(Math.abs(currentShipSpeed - fullSpeed) < 0.01 ? '#00ff00' : '#ffdb4d');
+        if (this.speedReverseBtn) this.speedReverseBtn.setBackgroundColor(Math.abs(currentShipSpeed + landingSettings.REVERSE_SPEED) < 0.01 ? '#00ff00' : '#ffdb4d');
     }
 
     // ── Cold-start switches ────────────────────────────────────────────────
@@ -287,7 +303,7 @@ export class InterfaceRenderer {
     setFlightControlsVisible(visible: boolean): void {
         [
             this.sttBtn, this.rwsBtn, this.twsBtn, this.emconBtn, this.shootBtn,
-            this.speedOneThirdBtn, this.speedTwoThirdBtn, this.speedFullBtn,
+            this.speedOneThirdBtn, this.speedTwoThirdBtn, this.speedFullBtn, this.speedReverseBtn,
         ].forEach(btn => btn?.setVisible(visible));
     }
 
@@ -388,18 +404,22 @@ export class InterfaceRenderer {
         this.layoutStartupPanel(shipX, topY);
 
         // Position speed buttons to the right, stacked vertically
-        if (this.speedOneThirdBtn && this.speedTwoThirdBtn && this.speedFullBtn) {
+        if (this.speedOneThirdBtn && this.speedTwoThirdBtn && this.speedFullBtn && this.speedReverseBtn) {
             const speedX = shipX + SPEED_BUTTON_OFFSET_X_PX;
             const speedTopY = topY;
             
+            // Astern sits on the far side of 1/3 from the ahead settings.
+            const step = this.speedOneThirdBtn.height + spacingY;
             if (isPointingDown) {
+                this.speedReverseBtn.setPosition(speedX, speedTopY + step);
                 this.speedOneThirdBtn.setPosition(speedX, speedTopY);
-                this.speedTwoThirdBtn.setPosition(speedX, speedTopY - this.speedOneThirdBtn.height - spacingY);
-                this.speedFullBtn.setPosition(speedX, speedTopY - (this.speedOneThirdBtn.height + spacingY) * 2);
+                this.speedTwoThirdBtn.setPosition(speedX, speedTopY - step);
+                this.speedFullBtn.setPosition(speedX, speedTopY - step * 2);
             } else {
+                this.speedReverseBtn.setPosition(speedX, speedTopY - step);
                 this.speedOneThirdBtn.setPosition(speedX, speedTopY);
-                this.speedTwoThirdBtn.setPosition(speedX, speedTopY + this.speedOneThirdBtn.height + spacingY);
-                this.speedFullBtn.setPosition(speedX, speedTopY + (this.speedOneThirdBtn.height + spacingY) * 2);
+                this.speedTwoThirdBtn.setPosition(speedX, speedTopY + step);
+                this.speedFullBtn.setPosition(speedX, speedTopY + step * 2);
             }
         }
 
@@ -590,6 +610,7 @@ export class InterfaceRenderer {
         this.speedOneThirdBtn?.destroy();
         this.speedTwoThirdBtn?.destroy();
         this.speedFullBtn?.destroy();
+        this.speedReverseBtn?.destroy();
         this.zoomInBtn?.destroy();
         this.zoomOutBtn?.destroy();
         this.warningText?.destroy();
@@ -606,6 +627,7 @@ export class InterfaceRenderer {
         this.speedOneThirdBtn = undefined;
         this.speedTwoThirdBtn = undefined;
         this.speedFullBtn = undefined;
+        this.speedReverseBtn = undefined;
         this.zoomInBtn = undefined;
         this.zoomOutBtn = undefined;
         this.warningText = undefined;

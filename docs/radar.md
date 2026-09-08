@@ -148,9 +148,16 @@ paints the jamming ship and **(b)** the victim sits inside that jammer's cone
 All tunables live in `radar/data/radarGameSettings.ts`.
 
 ### `modules/terrainMapper.ts` — `TerrainMapper` (+ `renderer/terrainRenderer.ts`)
-The ground-mapping half of the radar. Asteroids are **not** trackable entities:
-they are passed to `Radar.update` as a separate `terrain` list. Terrain and
-ship returns compete for the beam — the nearer return wins — so terrain still
+The ground-mapping half of the radar. Terrain — asteroids and fixed structures
+(the surface, the launchpad, the dish station's rock and tower; `Terrain` in
+`radar/data/types.ts`) — is **not** trackable: it is passed to `Radar.update`
+as a separate `terrain` list, one list for the whole scene that every radar,
+the dish station's own included, is occluded by. Each piece is one Matter body
+shaped to its sprite (`entities/spriteOutlines.ts`, traced with
+`tools/traceOutline.js`), and the raycaster reads that body — so a rock's
+dents shadow and echo as drawn. A body the antenna stands inside is skipped
+(the ship parked on the pad, the dish inside its own tower); otherwise terrain
+and ship returns compete for the beam — the nearer return wins — so terrain
 masks ships behind it (and a near ship masks the terrain behind it), but a
 terrain hit never enters the receiver/tracking pipeline. Instead the raw hit
 point goes to the `TerrainMapper`, which keeps a short phosphor-decay buffer
@@ -200,7 +207,8 @@ scene's shared `Graphics` object, which `main.ts` clears each frame.
 
 ### `renderer/interfaceRenderer.ts` — `InterfaceRenderer`
 The HUD around the player ship: mode buttons (RWS/TWS/STT/SHOOT), speed
-buttons, zoom, radar-warning text, and the RWR threat diamonds.
+buttons (1/3, 2/3, FULL and REV — slow astern, the landing setting), zoom,
+radar-warning text, and the RWR threat diamonds.
 
 ---
 

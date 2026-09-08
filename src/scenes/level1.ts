@@ -131,9 +131,14 @@ export default class Level1 extends Game {
         return true;
     }
 
+    // Ground and pad are solid bodies: the surface strip walls off the bottom
+    // of the world for every radar, and both show on the ground map. The
+    // ships parked on them are not shadowed by them (see Radar.nearestHit).
+    // The pad is set into the ground, so the two show and hide together.
     protected buildTerrain(): void {
-        this.registerFadeAsset(this.add.image(0, 2380, 'surface').setOrigin(0));
-        this.registerFadeAsset(this.add.image(1400, 2300, 'launchpad').setOrigin(0).setScale(.25));
+        const surface = this.registerTerrain(this.add.structure({ position: { x: 0, y: 2380 }, texture: 'surface' }));
+        const pad = this.registerTerrain(this.add.structure({ position: { x: 1400, y: 2300 }, texture: 'launchpad', scale: 0.25 }));
+        this.registerFadeGroup([surface, pad]);
     }
 
     protected buildScenario(): void {
@@ -145,11 +150,11 @@ export default class Level1 extends Game {
         this.behindGas = false;
 
         this.station = new DishRadarStation(this, { x: 1600, y: 1900 });
-        // The rock is terrain: hand it to the player's radar occlusion/ground map
-        // (which also opts it into the visual fade, since it's a tracked asteroid).
-        this.asteroids.push(this.station.rock);
-        // The dish overlay isn't tracked anywhere else — fade it to match.
-        this.registerFadeAsset(this.station.getDishSprite());
+        // Rock and dish are terrain like any other: they occlude every radar
+        // in the scene — the dish's own included — and show and hide as one.
+        const stationBodies = this.station.getTerrain();
+        stationBodies.forEach(body => this.registerTerrain(body));
+        this.registerFadeGroup(stationBodies);
 
         // The band is in place from the start: the zone exists before the
         // player can fly, so the briefing can point at it.
@@ -324,14 +329,20 @@ export default class Level1 extends Game {
         if (!player || !this.graphics) return;
 
         // Sweep the dish and paint the shared picture. It detects the targets
-        // (not the friendly player) and is occluded by the same terrain list.
-        // The dish shoots through the same gas the player does.
+        // (not the friendly player) and is occluded by the same terrain list,
+        // its own rock included. The dish shoots through the same gas the
+        // player does.
         this.station?.update(
-            delta, this.targets, this.asteroids, this.graphics,
+            delta, this.targets, this.terrain, this.graphics,
             this.gasClouds.map(cloud => cloud.getVolume()),
         );
 
         this.drawIdentified(this.graphics);
+        // Arrivals land whatever the mission state. The verdict takes the
+        // player's controls, not the world's clock — the ship identified on
+        // final approach (the one that completes the tasking) still has to set
+        // down and go, or it sits on the pad forever.
+        this.landArrivedTraffic();
         if (this.outcome) return;
 
         // Disco passes each new contact as its track matures. Not while the
@@ -348,9 +359,8 @@ export default class Level1 extends Game {
         this.watchNoGoZone(player);
     }
 
-    // Visual identification and the landing: a cargo ship inside VID range is
-    // identified; one that has reached the pad drops onto it and is gone; one
-    // that is gone without landing was shot down.
+    // Visual identification: a cargo ship inside VID range is identified; one
+    // that is gone without having landed was shot down.
     private updateTraffic(player: PlayerShip): void {
         for (const ship of this.traffic) {
             if (!ship.active || !ship.body) {
@@ -371,8 +381,14 @@ export default class Level1 extends Game {
                     this.showOutcome('MISSION COMPLETE — ALL INBOUND TRAFFIC IDENTIFIED', '#00ff00');
                 }
             }
+        }
+    }
 
-            if (ship.controller?.hasArrived() && !this.landed.has(ship.id)) {
+    // A cargo ship that has reached the pad drops onto it and is gone.
+    private landArrivedTraffic(): void {
+        for (const ship of this.traffic) {
+            if (!ship.active || !ship.body || this.landed.has(ship.id)) continue;
+            if (ship.controller?.hasArrived()) {
                 this.landed.add(ship.id);
                 this.landTraffic(ship);
             }
@@ -470,6 +486,13 @@ export default class Level1 extends Game {
         const normal = { x: -along.y, y: along.x };
         const probe = { x: GAS_FROM.x + normal.x, y: GAS_FROM.y + normal.y };
         return this.isBehindGas(probe) ? normal : { x: -normal.x, y: -normal.y };
+    }
+
+    protected onPlayerLanded(): void {
+        super.onPlayerLanded();
+        // Not for the cold ship on the pad at the start: its first contact is
+        // the physics engine noticing where it was parked.
+        if (this.isReadyForFlight()) this.showCommsHud('FLATSPIN 1-1 — TOUCHDOWN');
     }
 
     protected destroyPlayer(): void {

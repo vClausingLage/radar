@@ -68,6 +68,20 @@ export const VISIBILITY_FADE_BAND_PX = 100;
 // exactly what can be seen clearly. Radar never answers the identity question.
 export const VID_RANGE_PX = VISIBILITY_RANGE_PX - VISIBILITY_FADE_BAND_PX;
 
+// LANDING — what happens when a hull meets terrain (see physics/landing.ts).
+// Above MAX_TOUCHDOWN_SPEED any contact is a crash, whatever was hit. Below
+// it an obstacle (rock, tower) merely stops the ship, and ground (pad,
+// surface) is a landing only if the ship comes in on its tail: travelling
+// astern, within TAIL_CONE_DEG of straight back. REVERSE_SPEED is the
+// throttle's one astern setting, kept under the limit so a ship backing in is
+// slow enough by construction; the player's 1/3 ahead is under it too, which
+// is why a nose-first arrival is the crash, not the speed.
+export const landingSettings = {
+    MAX_TOUCHDOWN_SPEED: 0.06,
+    TAIL_CONE_DEG: 30,
+    REVERSE_SPEED: 0.04,
+}
+
 // TARGETS
 export const targetShipSettings = {
     LOADOUT: {

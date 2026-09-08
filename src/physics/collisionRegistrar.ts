@@ -1,6 +1,10 @@
 import Phaser from "phaser";
 import { PlayerShip, Target } from "../entities/ship";
+import { Asteroid } from "../entities/asteroid";
+import { Structure } from "../entities/structure";
 import { PhysicsRenderer } from "./renderer/physicsRenderer";
+import { assessTouchdown, touchdownSpeed } from "./landing";
+import { landingSettings } from "../settings";
 import type { Missile } from "../entities/missiles";
 
 export type CollisionDependencies = {
@@ -8,6 +12,8 @@ export type CollisionDependencies = {
   player: PlayerShip;
   physicsRenderer: PhysicsRenderer;
   destroyPlayer: () => void;
+  // The player has set down on ground by the book (see physics/landing.ts).
+  onPlayerLanded: () => void;
 };
 
 type CollisionGameObject = PlayerShip | Target | Missile | Phaser.GameObjects.GameObject;
@@ -45,11 +51,12 @@ export class CollisionRegistrar {
 
         if (!gameObjectA || !gameObjectB) return;
 
-        // Ship-Asteroid collision
-        if (this.isShip(gameObjectA) && this.isAsteroid(gameObjectB)) {
-          destroyShipOnce(gameObjectA as PlayerShip | Target);
-        } else if (this.isAsteroid(gameObjectA) && this.isShip(gameObjectB)) {
-          destroyShipOnce(gameObjectB as PlayerShip | Target);
+        // Ship-Terrain contact: a landing, a crash, or a bump — see
+        // shipMeetsTerrain().
+        if (this.isShip(gameObjectA) && this.isTerrain(gameObjectB)) {
+          this.shipMeetsTerrain(gameObjectA, gameObjectB, destroyShipOnce);
+        } else if (this.isTerrain(gameObjectA) && this.isShip(gameObjectB)) {
+          this.shipMeetsTerrain(gameObjectB, gameObjectA, destroyShipOnce);
         }
 
         // Ship-Ship collision
@@ -58,10 +65,12 @@ export class CollisionRegistrar {
           destroyShipOnce(gameObjectB as PlayerShip | Target);
         }
 
-        // Missile-Asteroid collision
-        else if (this.isMissile(gameObjectA) && this.isAsteroid(gameObjectB)) {
+        // Missile-Terrain collision. Ground is below flight level — a missile
+        // passes over a pad (and is not lost the instant it leaves a ship
+        // parked on one); only rocks and towers stop it.
+        else if (this.isMissile(gameObjectA) && this.isObstacle(gameObjectB)) {
           destroyMissileOnce(gameObjectA as Missile);
-        } else if (this.isAsteroid(gameObjectA) && this.isMissile(gameObjectB)) {
+        } else if (this.isObstacle(gameObjectA) && this.isMissile(gameObjectB)) {
           destroyMissileOnce(gameObjectB as Missile);
         }
 
@@ -91,10 +100,38 @@ export class CollisionRegistrar {
     return obj instanceof PlayerShip || obj instanceof Target;
   }
 
-  private isAsteroid(obj: unknown): boolean {
-    if (!obj || typeof obj !== 'object') return false;
-    const maybeWithTexture = obj as { texture?: { key?: string } };
-    return maybeWithTexture.texture?.key === 'asteroid';
+  private isTerrain(obj: unknown): obj is Asteroid | Structure {
+    return obj instanceof Asteroid || obj instanceof Structure;
+  }
+
+  // Ground a ship can set down on, as opposed to something it can only hit.
+  private isGround(obj: unknown): obj is Structure {
+    return obj instanceof Structure && !obj.obstacle;
+  }
+
+  private isObstacle(obj: unknown): obj is Asteroid | Structure {
+    return this.isTerrain(obj) && !this.isGround(obj);
+  }
+
+  // What a hull meeting terrain means, by the landing rules in
+  // physics/landing.ts. Ground: a slow, tail-first arrival is a landing,
+  // anything else a crash. An obstacle: fatal at speed, at a crawl the hull
+  // just fetches up against it. Only the player lands by hand — AI traffic
+  // sets down by its route script (Level1.landTraffic) and otherwise never
+  // reaches the ground, so its ground contacts are left alone.
+  private shipMeetsTerrain(
+    ship: PlayerShip | Target,
+    terrain: Asteroid | Structure,
+    destroyShipOnce: (ship: PlayerShip | Target) => void,
+  ): void {
+    if (this.isGround(terrain)) {
+      if (ship !== this.deps.player) return;
+      if (assessTouchdown(ship) === 'landed') this.deps.onPlayerLanded();
+      else destroyShipOnce(ship);
+      return;
+    }
+    if (touchdownSpeed(ship) > landingSettings.MAX_TOUCHDOWN_SPEED) destroyShipOnce(ship);
+    else ship.setCurrentSpeed(0);
   }
 
   private isMissile(obj: unknown): obj is Missile {

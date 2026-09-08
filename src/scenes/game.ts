@@ -2,8 +2,9 @@ import Phaser from "phaser";
 import { ScenarioKey } from "./startMenu";
 import { createPlayerShipFactory } from "../entities/shipFactory";
 import { createAsteroidFactory } from "../entities/asteroidFactory";
+import { createStructureFactory } from "../entities/structureFactory";
 import { createGasCloudFactory } from "../entities/gasCloudFactory";
-import { Asteroid } from "../entities/asteroid";
+import { Terrain } from "../radar/data/types";
 import { GasCloud } from "../entities/gasCloud";
 import { PlayerShip, Target } from "../entities/ship";
 import { CAMERA_ZOOM, playerShipSettings, VISIBILITY_FADE_BAND_PX, VISIBILITY_RANGE_PX, world } from "../settings";
@@ -16,12 +17,31 @@ import { ShipStartup } from "../audio/startup";
 import { MissileCallout } from "../audio/missileCallout";
 
 // Anything in the world whose visibility fades with distance from the player:
-// ships and asteroids (tracked below) plus one-off scenery a level registers
-// via registerFadeAsset() (terrain images, the dish station's rotating overlay).
+// ships and terrain (tracked below) plus one-off overlays a level registers
+// via registerFadeAsset() (the dish station's antenna picture).
 export type FadeableAsset = {
   setAlpha(value: number): unknown;
   getBounds(): Phaser.Geom.Rectangle;
 };
+
+// Several assets that show and hide as one. The fade is judged on their
+// combined bounds and the same alpha is dealt to every member, so the pad
+// never thins out while the player is still over the ground it is set into.
+class FadeGroup implements FadeableAsset {
+  constructor(private readonly members: FadeableAsset[]) {}
+
+  getBounds(): Phaser.Geom.Rectangle {
+    const union = this.members[0].getBounds();
+    for (const member of this.members.slice(1)) {
+      Phaser.Geom.Rectangle.Union(union, member.getBounds(), union);
+    }
+    return union;
+  }
+
+  setAlpha(value: number): void {
+    for (const member of this.members) member.setAlpha(value);
+  }
+}
 
 // The free-play scene: a world, a player ship and one of the practice scenarios.
 // The campaign levels subclass this and override the terrain/scenario hooks
@@ -35,7 +55,10 @@ export default class Game extends Phaser.Scene
   protected graphics?: Phaser.GameObjects.Graphics;
   protected player?: PlayerShip;
   protected targets: Target[] = [];
-  protected asteroids: Asteroid[] = [];
+  // Solid world geometry no radar can see through — asteroids, the ground,
+  // the pad. Every radar in the scene, the dish station's included, is
+  // occluded by the whole list. Added through registerTerrain().
+  protected terrain: Terrain[] = [];
   // Absorbing gas volumes. Not obstacles and not trackable entities: they never
   // block a beam, they eat the energy crossing them (see Receiver.isAbsorbedByGas).
   protected gasClouds: GasCloud[] = [];
@@ -48,9 +71,11 @@ export default class Game extends Phaser.Scene
   protected missileCallout?: MissileCallout;
   // Cold-start procedure — only run when requiresColdStart() opts in.
   private startup?: ShipStartup;
-  // Scenery/overlays that aren't ships or asteroids but still fade with
-  // distance (see registerFadeAsset()).
+  // Overlays that aren't ships or terrain but still fade with distance
+  // (see registerFadeAsset()).
   private extraFadeAssets: FadeableAsset[] = [];
+  // Members of a fade group: faded through the group, never on their own.
+  private groupedFadeAssets = new Set<FadeableAsset>();
 
   constructor(key = 'Game')
   {
@@ -122,13 +147,15 @@ export default class Game extends Phaser.Scene
     // physics body to be pruned by, and would go on absorbing the beam from a
     // world that no longer exists.
     this.targets = [];
-    this.asteroids = [];
+    this.terrain = [];
     this.gasClouds = [];
     this.extraFadeAssets = [];
+    this.groupedFadeAssets = new Set();
 
     // Register factories
     createPlayerShipFactory();
     createAsteroidFactory();
+    createStructureFactory();
     createGasCloudFactory();
     createMissileFactory();
 
@@ -174,6 +201,7 @@ export default class Game extends Phaser.Scene
         player: this.player,
         physicsRenderer: this.physicsRenderer,
         destroyPlayer: () => this.destroyPlayer(),
+        onPlayerLanded: () => this.onPlayerLanded(),
       });
       collisionRegistrar.register();
     }
@@ -189,11 +217,27 @@ export default class Game extends Phaser.Scene
   // Static scenery under the ships. Free play is set in open space.
   protected buildTerrain(): void {}
 
-  // Opt a one-off visual (terrain image, station overlay, ...) into the same
-  // distance-based fade that ships and asteroids already get for free by
-  // virtue of being tracked in this.targets/this.asteroids.
+  // Put a solid body into the world. From here on it blocks and shadows
+  // every radar's beam, paints on the ground map, and fades with distance
+  // like a ship does. Returned so a creation can be registered inline.
+  protected registerTerrain<T extends Terrain>(body: T): T {
+    this.terrain.push(body);
+    return body;
+  }
+
+  // Opt a one-off visual (a station overlay, ...) into the same distance-based
+  // fade that ships and terrain already get for free by virtue of being
+  // tracked in this.targets/this.terrain.
   protected registerFadeAsset(asset: FadeableAsset): void {
     this.extraFadeAssets.push(asset);
+  }
+
+  // Tie assets together so they fade as one (a pad and the ground under it).
+  // Members already tracked elsewhere — terrain, ships — are taken out of
+  // their own fade and follow the group's from here on.
+  protected registerFadeGroup(members: FadeableAsset[]): void {
+    members.forEach(member => this.groupedFadeAssets.add(member));
+    this.extraFadeAssets.push(new FadeGroup(members));
   }
 
   // Populate the world for the chosen scenario.
@@ -300,7 +344,7 @@ export default class Game extends Phaser.Scene
       activity: 'inactive',
     }));
     // Asteroid sits between the player's start and the target, blocking line of sight.
-    this.asteroids.push(this.add.asteroid({
+    this.registerTerrain(this.add.asteroid({
       position: { x: 1500, y: 1950 },
       direction: 0,
       speed: 0,
@@ -352,7 +396,7 @@ export default class Game extends Phaser.Scene
         y = Phaser.Math.Between(SPAWN_MARGIN, this.world.height - SPAWN_MARGIN);
       } while (Phaser.Math.Distance.Between(x, y, playerStart.x, playerStart.y) < CLEAR_RADIUS);
 
-      this.asteroids.push(this.add.asteroid({
+      this.registerTerrain(this.add.asteroid({
         position: { x, y },
         direction: Phaser.Math.Between(0, 359),
         speed: Phaser.Math.FloatBetween(0.2, 1.2),
@@ -396,11 +440,11 @@ export default class Game extends Phaser.Scene
     });
 
     // Radar scan (pass all ships; radar excludes its owner internally).
-    // Asteroids are NOT trackable entities: they go in as terrain — they block
-    // the beam and are painted by the ground-mapping display instead.
+    // Terrain is NOT trackable: it goes in as occluders — it blocks the beam
+    // and is painted by the ground-mapping display instead.
     const allShips = [player, ...this.targets];
     allShips.forEach(ship => {
-      ship.radar.update(delta, ship.getDirection(), allShips, this.graphics!, decoyCircles, this.asteroids, gasVolumes);
+      ship.radar.update(delta, ship.getDirection(), allShips, this.graphics!, decoyCircles, this.terrain, gasVolumes);
     });
 
     // Update AI continuous (every frame)
@@ -417,7 +461,7 @@ export default class Game extends Phaser.Scene
     }
   }
 
-  // Fade every ship, asteroid and registered scenery asset by distance from
+  // Fade every ship, terrain body and registered overlay by distance from
   // the player: full alpha inside range - fade band, ramping to fully
   // transparent at range, so objects fade smoothly rather than popping.
   // Distance is to the nearest edge of each object's bounds, not its centre —
@@ -425,8 +469,9 @@ export default class Game extends Phaser.Scene
   // while the player is still over part of it, and a big asteroid's edge
   // would stay hidden well past where it's actually close enough to see.
   private updateVisibilityFade(player: PlayerShip): void {
-    const assets: FadeableAsset[] = [...this.targets, ...this.asteroids, ...this.gasClouds, ...this.extraFadeAssets];
+    const assets: FadeableAsset[] = [...this.targets, ...this.terrain, ...this.gasClouds, ...this.extraFadeAssets];
     for (const asset of assets) {
+      if (this.groupedFadeAssets.has(asset)) continue;
       const bounds = asset.getBounds();
       const dx = Math.max(bounds.left - player.x, 0, player.x - bounds.right);
       const dy = Math.max(bounds.top - player.y, 0, player.y - bounds.bottom);
@@ -434,6 +479,12 @@ export default class Game extends Phaser.Scene
       const alpha = Phaser.Math.Clamp((VISIBILITY_RANGE_PX - distance) / VISIBILITY_FADE_BAND_PX, 0, 1);
       asset.setAlpha(alpha);
     }
+  }
+
+  // The player has set down on a pad or the ground by the landing rules
+  // (physics/landing.ts): hold the ship there. Levels add their radio call.
+  protected onPlayerLanded(): void {
+    this.player?.setCurrentSpeed(0);
   }
 
   protected destroyPlayer(): void {
@@ -453,9 +504,9 @@ export default class Game extends Phaser.Scene
     // this.interfaceRenderer?.destroy();
     this.graphics?.destroy();
 
-    // Destroy targets and asteroids
+    // Destroy targets and terrain
     this.targets.forEach(target => target.destroy());
-    this.asteroids.forEach(asteroid => asteroid.destroy());
+    this.terrain.forEach(body => body.destroy());
     this.gasClouds.forEach(cloud => cloud.destroy());
     this.gasClouds = [];
 

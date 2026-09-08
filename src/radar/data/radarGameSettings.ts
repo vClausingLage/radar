@@ -304,8 +304,8 @@ export const RWR_THREAT_SPIKES = 8;
 
 // ── Terrain mapping (systems/modules/terrainMapper.ts) ─────────────────────
 // Asteroids are painted like a ground-mapping radar, not tracked: raw beam
-// returns persist briefly (phosphor decay) and render as blurry green blobs
-// with a radar shadow cast away from the antenna.
+// returns persist briefly (phosphor decay) and render as speckled resolution
+// cells with a radar shadow cast away from the antenna.
 
 // How long a terrain return stays on screen before fading out entirely.
 export const TERRAIN_SAMPLE_TTL_MS = 5000;
@@ -313,12 +313,45 @@ export const TERRAIN_SAMPLE_TTL_MS = 5000;
 // Cap on stored terrain returns (oldest dropped first).
 export const TERRAIN_MAX_SAMPLES = 600;
 
-// Radius of the largest (outermost, faintest) blob layer per return.
-export const TERRAIN_BLOB_RADIUS_PX = 7;
+// Azimuth resolution of the mapping picture: the beam is this wide, so one
+// echo smears across this much bearing (wider in px the further out it is)
+// and the shadow behind a return is at least this wide. With the antenna
+// stepping ANTENNA_SWEEP_STEP_DEG per frame, neighbouring returns overlap
+// into a continuous band instead of a chain of dots.
+export const TERRAIN_BEAM_WIDTH_DEG = 3;
 
-// Radar shadow cast behind each return: stroke width and peak opacity.
-export const TERRAIN_SHADOW_WIDTH_PX = 10;
-export const TERRAIN_SHADOW_ALPHA = 0.30;
+// Range resolution: a pulse of finite length keeps echoing after its leading
+// edge has hit, so every return is drawn stretched at least this far behind
+// the surface.
+export const TERRAIN_PULSE_LENGTH_PX = 10;
+
+// Bloom: a surface facing the antenna square-on echoes far harder than one
+// caught at a grazing angle, and a strong echo saturates the receiver so the
+// scope video stays lit past the true range extent - the paint smears deeper
+// into the shadow. Extra depth (px) behind a surface at normal incidence;
+// it falls off with the cosine of the incidence angle towards the limbs.
+export const TERRAIN_BLOOM_DEPTH_PX = 30;
+
+// How unevenly that bloom wanders along the surface (0 = uniform, 1 = wildly
+// lumpy). Modelled as a slow random walk from one return to the next, so the
+// depth of the paint varies organically rather than tracing the hull shape.
+export const TERRAIN_BLOOM_ROUGHNESS = 0.5;
+
+// Speckle: the echo of a rough surface is the sum of many scatterers with
+// random phase, so a cell lights up as grainy dashes of random brightness
+// with gaps rather than a solid patch. Dashes per pulse length of depth (a
+// deeper, bloomed return gets proportionally more), the longest dash (px,
+// tangential to the beam), and the fraction of scatterers too faint to
+// register at all.
+export const TERRAIN_SPECKLES_PER_PULSE_LENGTH = 8;
+export const TERRAIN_SPECKLE_LENGTH_PX = 5;
+export const TERRAIN_SPECKLE_DROPOUT_PROB = 0.25;
+
+// Radar shadow behind the mapped surface. Returns are binned by bearing from
+// the antenna and each bin is filled once, from its nearest return out to the
+// display range, so the shadow is one flat tone whatever the distance.
+export const TERRAIN_SHADOW_BIN_DEG = 1;
+export const TERRAIN_SHADOW_ALPHA = 0.45;
 
 // ── Support dish radar (entities/dishRadarStation.ts) ──────────────────────
 // A stationary early-warning dish on an asteroid: it drives the standard Radar

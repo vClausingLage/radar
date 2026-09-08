@@ -26,4 +26,24 @@ export class GameMath {
     static getDistance(x1: number, y1: number, x2: number, y2: number): number {
         return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
     }
+
+    // Area centroid of a simple polygon (shoelace formula), independent of
+    // winding. This is the point Matter puts a fromVertices body's position at
+    // (Vertices.centre), so a sprite whose origin sits here lines up with its
+    // polygon body exactly.
+    static polygonCentroid(points: Vector2[]): Vector2 {
+        let area = 0;
+        let cx = 0;
+        let cy = 0;
+        for (let i = 0; i < points.length; i++) {
+            const p = points[i];
+            const q = points[(i + 1) % points.length];
+            const cross = p.x * q.y - q.x * p.y;
+            area += cross;
+            cx += (p.x + q.x) * cross;
+            cy += (p.y + q.y) * cross;
+        }
+        if (area === 0) return { x: points[0]?.x ?? 0, y: points[0]?.y ?? 0 };
+        return { x: cx / (3 * area), y: cy / (3 * area) };
+    }
 }

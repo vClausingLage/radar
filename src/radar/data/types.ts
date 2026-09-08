@@ -4,10 +4,16 @@
 
 import Phaser from "phaser";
 import { Asteroid } from "../../entities/asteroid";
+import { Structure } from "../../entities/structure";
 import { PlayerShip, Target } from "../../entities/ship";
 import { Vector2 } from "../../types";
 
-export type Entity = PlayerShip | Target | Asteroid;
+// Solid, radar-opaque world geometry: drifting rock and fixed scenery alike.
+// It shadows whatever is behind it and paints on the ground map; it is never
+// a track. One Matter body each — the raycaster reads its vertices.
+export type Terrain = Asteroid | Structure;
+
+export type Entity = PlayerShip | Target | Terrain;
 
 // What a radar needs from whatever it is mounted on: a world position and a
 // boresight direction. Ships satisfy it structurally; so does the stationary

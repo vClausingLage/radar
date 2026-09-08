@@ -9,9 +9,12 @@ and hold a target steady enough to guide a missile onto it. Flying well means
 managing where your radar is looking, which mode it is in, and which weapon
 suits the situation.
 
-The map also contains other ships (targets) and drifting asteroids. Asteroids
-and ships both reflect your radar beam, so clutter and real contacts share the
-same screen — part of the challenge is telling tracks apart.
+The map also contains other ships (targets) and solid terrain: drifting
+asteroids, and in the campaign the ground, the launchpad and the dish radar
+station's rock and tower. Terrain and ships both reflect your radar beam, so
+clutter and real contacts share the same screen — part of the challenge is
+telling tracks apart — and terrain is solid: fly into it and you are gone (see
+*Landing and collisions*).
 
 ---
 
@@ -52,7 +55,25 @@ See [radar.md](radar.md) for how the simulation actually works under the hood.
 
 **TWS** has no key binding — use its on-screen button. On-screen buttons next to
 the ship mirror the mode and fire controls, and the speed buttons (1/3, 2/3,
-FULL) set throttle.
+FULL, REV) set throttle — REV is slow astern, the landing setting.
+
+## Landing and collisions
+
+Terrain is solid. What happens when your hull meets it depends on how fast you
+are going and how you arrive:
+
+- **Fast** (above the touchdown limit, roughly 2/3 throttle and up): a crash,
+  whatever you hit.
+- **Slow into a rock or the dish tower**: you just fetch up against it and
+  stop. Back off and go round.
+- **Slow onto ground** (the launchpad, the surface): a **landing** only if you
+  come in **tail first** — nose pointing away from the surface, backing onto it
+  at REV, within about 30° of straight back, the way a rocket sets down on its
+  engines. Nose or side first is a crash even at a crawl.
+
+So a pad approach is: line up nose-out, select **REV**, and let the ship back
+down onto the pad. On touchdown the throttle drops to zero; select 1/3 to lift
+off again. Missiles fly over ground and are stopped only by rocks and towers.
 
 ## Decoys (chaff)
 
