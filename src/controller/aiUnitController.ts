@@ -374,7 +374,7 @@ export class AiUnitController {
         this.radar.selectWeapon(weapon);
         const before = this.radar.getWeaponLoad(weapon);
         if (before <= 0) return false;
-        this.radar.shoot(this.ship.getDirection());
+        this.radar.shoot();
         return this.radar.getWeaponLoad(weapon) < before;
     }
 

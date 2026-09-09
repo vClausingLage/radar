@@ -47,7 +47,7 @@ export class PlayerController {
   // Space → fire (VIM-177 requires STT lock)
   private onKeyDownSpace = () => {
     if (!this.ship.active || !this.ship.scene) return;
-    this.ship.radar.shoot(this.ship.getDirection());
+    this.ship.radar.shoot();
   };
 
   // ── VIM-220 waypoint ──────────────────────────────────────────────────

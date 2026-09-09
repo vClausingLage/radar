@@ -190,12 +190,9 @@ pnpm lint          # eslint ., flat config in eslint.config.js
 pnpm build         # when TypeScript or the bundle changed
 ```
 
-The build's chunk-size warning is pre-existing, and so are these five lint
-errors — the open LINTING item, not regressions. Leave them unless the task is
-that item: `_angle` unused in `radar.ts shoot()`, `no-useless-assignment` on
-`let x/y` in the asteroid loop in `game.ts` and on `let t` in
-`missileGuidance.ts interceptVector()`, and `audio` unused in
-`tools/elevenLabsApi.js`.
+The build's chunk-size warning is pre-existing. Lint is clean as of
+2026-09-09 — treat any eslint error as a regression. A lint-only cleanup that
+drops a parameter can still break `tsc` at the callers, so run both.
 
 **Do not bump `typescript` past 6.x.** Every `@typescript-eslint` package
 hard-throws on TypeScript 7 (upstream issue #10940), so a bump silently costs

@@ -119,7 +119,7 @@ export class InterfaceRenderer {
         .setInteractive()
         .setOrigin(0)
         .on('pointerdown', () => {
-            this.playerRadar.shoot(ship.angle || 0);
+            this.playerRadar.shoot();
         });
 
         // SPEED BUTTONS

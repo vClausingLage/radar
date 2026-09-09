@@ -189,7 +189,7 @@ const noShotAtAnUndisplayedTrack: GameTest = {
 
         radar.selectWeapon('VIM-220');
         const loadBefore = radar.getWeaponLoad('VIM-220');
-        radar.shoot(ctx.player.getDirection());
+        radar.shoot();
 
         ctx.check('the trigger does nothing', radar.getWeaponLoad('VIM-220') === loadBefore,
             `load ${loadBefore} -> ${radar.getWeaponLoad('VIM-220')}`);
@@ -291,7 +291,7 @@ const rwrWarnsOfMissileSeeker: GameTest = {
 
         radar.selectWeapon('VIM-220');
         const loadBefore = radar.getWeaponLoad('VIM-220');
-        radar.shoot(ctx.player.getDirection());
+        radar.shoot();
         ctx.check('missile left the rail', radar.getWeaponLoad('VIM-220') < loadBefore,
             `load ${loadBefore} -> ${radar.getWeaponLoad('VIM-220')}`);
 
