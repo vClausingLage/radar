@@ -21,35 +21,51 @@ jobs:
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
           port: ${{ secrets.PROD_PORT || '22' }}
-          script_stop: true
           command_timeout: 30m
           script: |
+            # `set -u` is deliberately absent: nvm is a sourced shell function
+            # and is not nounset-clean.
             set -eo pipefail
 
+            # ── Toolchain: nvm → Node → pnpm ─────────────────────────────────
+            # The script installs everything the build needs, so a fresh or
+            # wiped server deploys without manual setup.
+            NVM_VERSION="v0.40.7"
+            NODE_VERSION="24"   # current LTS line — bump on purpose, not by surprise
             export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 
             if [ ! -s "$NVM_DIR/nvm.sh" ]; then
-              echo "nvm was not found at $NVM_DIR/nvm.sh" >&2
-              exit 1
+              echo "nvm not found — installing $NVM_VERSION into $NVM_DIR"
+              mkdir -p "$NVM_DIR"
+              # PROFILE=/dev/null stops the installer from editing shell rc files;
+              # this script sources nvm.sh itself.
+              curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh" | PROFILE=/dev/null bash
             fi
 
             . "$NVM_DIR/nvm.sh"
 
-            # Check for and install the latest Node.js LTS and pnpm releases.
-            # nvm is not fully compatible with nounset (`set -u`) in some environments.
-            set +u
-            nvm install --lts
-            nvm use --lts
-            set -u
-            npm install --global pnpm@latest
+            nvm install "$NODE_VERSION"          # newest patch of the pinned line; no-op if present
+            nvm use "$NODE_VERSION"
+            nvm alias default "$NODE_VERSION"    # login shells on the box see the same node
 
-            echo "Node.js: $(node --version)"
-            echo "pnpm: $(pnpm --version)"
+            # npm ≥ 11.x skips install-time scripts unless the package is allowed
+            # explicitly, and warns on every run otherwise.
+            npm install --global --no-fund --no-audit --allow-scripts=pnpm pnpm@latest
+
+            echo "node: $(node --version)  npm: $(npm --version)  pnpm: $(pnpm --version)"
 
             # Ensure pnpm runs non-interactively in this CI/SSH session.
             export CI=true
 
+            # ── Checkout ─────────────────────────────────────────────────────
             cd "${{ secrets.PROD_APP_DIR }}"
+
+            # Always build from the repository root, whatever depth the secret
+            # points at. pnpm picks the nearest pnpm-workspace.yaml upward; run
+            # from a sub-directory without a package.json, `pnpm build` becomes a
+            # recursive exec over zero packages ("Command build not found").
+            cd "$(git rev-parse --show-toplevel)"
+            echo "repo root: $(pwd)"
 
             git fetch origin main
             git checkout main
@@ -57,3 +73,4 @@ jobs:
 
             pnpm install --frozen-lockfile
             pnpm build
+            echo "built: $(pwd)/dist"
