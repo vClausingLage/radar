@@ -236,7 +236,7 @@ export class MissileGuidance {
     const b = 2 * (rel.x * tv.x + rel.y * tv.y);
     const c = rel.x * rel.x + rel.y * rel.y;
 
-    let t = 0;
+    let t: number;
     if (Math.abs(a) < 1e-6) {
       if (Math.abs(b) < 1e-6) return null;
       t = -c / b;

@@ -311,7 +311,7 @@ export class Radar {
     // confirmed launch fires a 'missile-fired' event on this radar's own
     // emitter — only the player's radar has a listener (see Game.create()),
     // so AI ships firing the same weapons stay silent.
-    shoot(_angle: number): void {
+    shoot(): void {
         const fired = this.fireControl.shoot(this.mode, {
             ship: this.ownerShip(),
             sttTrack: this.displayedSttTrack(),

@@ -389,8 +389,8 @@ export default class Game extends Phaser.Scene
     const SPAWN_MARGIN = 150;
     const CLEAR_RADIUS = 400;
     for (let i = 0; i < ASTEROID_COUNT; i++) {
-      let x = 0;
-      let y = 0;
+      let x: number;
+      let y: number;
       do {
         x = Phaser.Math.Between(SPAWN_MARGIN, this.world.width - SPAWN_MARGIN);
         y = Phaser.Math.Between(SPAWN_MARGIN, this.world.height - SPAWN_MARGIN);

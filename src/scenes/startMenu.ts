@@ -22,12 +22,18 @@ const CONTROLS = [
     'SHIFT + right click  clear VIM-220 waypoints',
 ];
 
+const REPO_URL = 'https://github.com/vClausingLage/radar';
+
 export default class StartMenu extends Phaser.Scene {
     private selected: ScenarioKey = 'duel';
     private scenarioButtons: Phaser.GameObjects.Text[] = [];
 
     constructor() {
         super('StartMenu');
+    }
+
+    preload(): void {
+        this.load.image('github_logo', 'github_logo.png');
     }
 
     create(): void {
@@ -97,6 +103,23 @@ export default class StartMenu extends Phaser.Scene {
             align: 'center',
             lineSpacing: 6,
         }).setOrigin(0.5);
+
+        this.createRepoLink();
+    }
+
+    // GitHub wordmark in the bottom-right corner, opening the repo in a new tab.
+    private createRepoLink(): void {
+        const margin = 16;
+        const logoHeight = 28;
+        const logo = this.add.image(this.scale.width - margin, this.scale.height - margin, 'github_logo')
+            .setOrigin(1, 1)
+            .setInteractive({ useHandCursor: true });
+        logo.setScale(logoHeight / logo.height);
+
+        logo.on('pointerdown', () => window.open(REPO_URL, '_blank', 'noopener'));
+        logo.on('pointerover', () => logo.setAlpha(1));
+        logo.on('pointerout', () => logo.setAlpha(0.7));
+        logo.setAlpha(0.7);
     }
 
     private createCampaignButton(x: number, y: number, label: string, sceneKey: string): void {
