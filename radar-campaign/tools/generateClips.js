@@ -16,6 +16,7 @@
 // --only=<prefix> to limit a run to matching keys (e.g. --only=l2-).
 // A clip that fails is reported and skipped; the run carries on and exits
 // non-zero with a summary of what is missing.
+/* global Buffer */
 import fs from "fs";
 import path from "path";
 import process from "process";

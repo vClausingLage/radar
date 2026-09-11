@@ -1,0 +1,2457 @@
+diff --git a/.claude/skills/radar-game-typescript/SKILL.md b/.claude/skills/radar-game-typescript/SKILL.md
+index c5c5adf..7ad66b3 100644
+--- a/.claude/skills/radar-game-typescript/SKILL.md
++++ b/.claude/skills/radar-game-typescript/SKILL.md
+@@ -46,8 +46,12 @@ src/scenes/game.ts       Base scene: world, factories, player, camera, colliders
+                          per-frame radar update loop, cold-start procedure. Levels
+                          SUBCLASS it and override buildTerrain() / buildScenario() /
+                          briefingMessage() / requiresColdStart()
+-src/scenes/level1.ts     Campaign Level 1: cold start (surface/launchpad) then
+-                         friendly dish radar + datalink, C = bearing call
++src/scenes/campaignLevel.ts  Campaign base: the shared theatre (surface/pad, dish
++                         "Disco" + datalink, gas band, pickets), cold start, VID,
++                         RadioNet story traffic, verdicts, ENTER next/retry
++src/scenes/level1..3.ts  Mule Train (VID traffic) / Shepherd (tow a derelict,
++                         raider) / Backdoor (raid through the gas). Story lines
++                         live in src/audio/radioScript.json
+ src/scenes/startMenu.ts  Menu, ScenarioKey ('duel' | 'occluded' | 'skirmish')
+ src/controller/          playerController.ts (key bindings), aiUnitController.ts (intent)
+ src/entities/            Ship/PlayerShip/Target, missiles, asteroid, decoy, exhaust,
+@@ -72,7 +76,8 @@ src/physics/                      ray.ts (raycast against Matter vertices), body
+                                   slow + tail-first on ground = landed, else crash), collisionRegistrar
+ src/math/, src/types/             Maths helpers, shared Vector2
+ src/settings.ts                   Non-radar gameplay constants (world, ship, camera, loadouts)
+-src/audio/                        audioPlayer, radarVoice (BRA callouts), startup, supportRadarComms
++src/audio/                        audioPlayer, radarVoice (BRA callouts), startup, supportRadarComms,
++                                  radioNet + radioScript.json (campaign story traffic, subtitled)
+ public/                           Sprites; audio in public/audio
+ docs/                             radar.md, player.md, GCI.md, gci-comms.md
+ TO_DO.md, decision_tree.md, cowork.md   Roadmap, AI behaviour spec, design intent
+@@ -152,7 +157,7 @@ display-and-weapons concern.
+   `physics/landing.ts` from `landingSettings` in `settings.ts`: fast = crash
+   on anything; slow on an obstacle = stop; slow **and tail-first** on ground =
+   landed (`Game.onPlayerLanded()`), else crash. Only the player lands by hand —
+-  AI cargo sets down by `Level1.landTraffic()`. A sprite-shaped body comes
++  AI cargo sets down by `CampaignLevel.landShip()`. A sprite-shaped body comes
+   from `tools/traceOutline.js` → `spriteOutlines.ts` → `fitBodyToOutline()`.
+ - **Constants**: radar/weapon/simulation values go in
+   `src/radar/data/radarGameSettings.ts`, grouped under a `// ── section ──`
+diff --git a/.claude/skills/radar-game-typescript/references/dev-automation.md b/.claude/skills/radar-game-typescript/references/dev-automation.md
+index 6af87cb..1b10bd6 100644
+--- a/.claude/skills/radar-game-typescript/references/dev-automation.md
++++ b/.claude/skills/radar-game-typescript/references/dev-automation.md
+@@ -71,4 +71,5 @@ from script use `s.player.setCurrentSpeed(v)` — REV is `-landingSettings.REVER
+   `p.setPosition(1600, 2265); p.setAngle(270); p.setCurrentSpeed(-0.04)` then
+   step until `p.getCurrentSpeed() === 0` (landed, ~270 steps). Heading 90 at
+   0.033 from the same spot is a nose-first crash (`s.player` gone). A crawl
+-  north from (1600, 1995) at 0.033 stops against the rock.
++  north from (1600, 1600) at 0.033 stops against the rock (the station rock is
++  centred on (1600, 1500) since the campaign levels moved it north).
+diff --git a/docs/campaign.md b/docs/campaign.md
+new file mode 100644
+index 0000000..651bb3b
+--- /dev/null
++++ b/docs/campaign.md
+@@ -0,0 +1,106 @@
++# Campaign — "The Door in the Gas"
++
++Three short missions flown from the same rock. The same theatre every time.
++A pad on the surface, the dish radar **Disco** on its asteroid to the north,
++and the gas band to the north-west. Nothing inside the band or behind it
++shows on anyone's radar. The Compact holds on the far side. It watches the
++band from there, and later comes through it.
++
++The tone is milsim with a straight face: brevity code, readbacks, ROE and a
++radar that can't tell friend from foe. The humour comes from the people on
++the frequency, not from the game winking at the player.
++
++All lines live in `src/audio/radioScript.json` (subtitle `text`, spoken
++`say`). `tools/generateClips.js` records them to `public/audio/story/`.
++
++## Cast
++
++| Call sign | Who | Voice |
++|---|---|---|
++| **ANVIL** | Wing ops, the colonel who runs the rock. Briefs, debriefs and owns the ROE. Protective of his coffee. | ElevenLabs "Bill" |
++| **DISCO** | GCI controller on the dish. Dry and unflappable. Nothing surprises him, and he still notices everything. | ElevenLabs (the existing GCI voice) |
++| **FLATSPIN 1-1** | The player. Terse. | OpenAI `ash` (the existing player voice) |
++| **MULE 2-1** | Hauler flight lead. Veteran trucker, wry. | ElevenLabs "Brian" |
++| **MULE 2-2** | Hauler. Very nervous about fighters. | ElevenLabs "Eric" |
++| **MULE 2-4** | Hauler. The flight gossip. | ElevenLabs "Chris" |
++| **MULE 2-3** | The flight's straggler. Dead transponder, always late, panics loudly and recovers fast. | ElevenLabs "Charlie" |
++| **LANTERN 5** | Chief engineer of a crippled survey ship. Frightened, brave and polite. | ElevenLabs "Alice" |
++
++To recast a part, change its voice ID in `STORY_VOICES` in
++`tools/generateClips.js`, then rerun with `--force --only=<key prefix>`.
++
++## Level 1 — Mule Train
++
++*Tasking:* Mule flight is inbound from the north with the monthly resupply:
++three haulers, transponders off. Radar shows three bogeys, and three raiders
++would look exactly the same. Put eyes on every hauler before it reaches the
++pad. Stay east of the gas: pickets sit in its shadow, and if one gets a track
++on you the approach is burned.
++
++*Beats:* Anvil briefs during the cold start and Disco checks in. The player
++calls airborne and Disco vectors north. Each hauler answers when the player
++identifies it. Mule 2-1 is guarding the colonel's coffee. Mule 2-2 is
++extremely friendly, please. Mule 2-4 reports that 2-3 is "late again,
++probably stopped for gas — the other kind". That line plants the rest of the
++campaign.
++
++*Win:* all three identified. *Lose:* a picket tracks you, or you shoot a
++Mule.
++
++## Level 2 — Shepherd
++
++*Tasking:* The survey ship **Lantern 5** went quiet while mapping the far
++edge of the gas. Disco has her as a weak return drifting out of the band. Her
++reactor is scrammed and she has no drive and no transponder, and her way is
++carrying her back into the gas. Find her, identify her, hold alongside while
++the tow line goes across, and drag her home.
++
++*Mechanics:* Lantern is a hulk with no controller, her radar in EMCON and her
++engines out. Her drift is the clock. To pass the line, hold within ~130 px at
++1/3 ahead or slower for 5 s. Under tow she trails on a one-way line
++(`entities/towLine.ts`). Within 300 px of the pad she is cast off and glides
++down onto it.
++
++*Twist:* the line going across is the cue for the ship that crippled her to
++come back out of the gas. Disco declares it hostile the moment the dish holds
++it. The player has to fight while towing.
++
++*Beats:* Lantern's engineer: "eleven souls aboard, air for a while — not a
++long while." When the tow line is fast: "please don't take the scenic
++route." After the splash she promises to name a crater after you. Anvil:
++drinks are on the survey corps, "they just don't know it yet."
++
++*Win:* Lantern on the pad. *Lose:* she drifts into the gas, she is
++destroyed, or a picket tracks you.
++
++## Level 3 — Backdoor
++
++*Tasking:* The picket line went dark two hours ago. "Either they've gone
++home, or they're coming through. Nobody on this rock believes they've gone
++home." Hold a CAP between the gas and the pad. Mule 2-3 is still overdue, so
++anything coming out of the cloud is a bogey until you have eyes on it.
++
++*Beats:* A single contact emerges with no squawk. Disco: "Declare bogey. Go
++VID — do not engage." It's Mule 2-3: "Don't shoot! Transponder's been dead
++since Tuesday — I filed a ticket!" He's had company since the far side of
++the gas. Two raiders come out behind him. Disco declares them hostile and
++clears the player hot, and Anvil sets condition red. The raiders chase the
++hauler, and their routes run to the pad and to the dish.
++
++*Win:* both raiders splashed and Mule 2-3 down. Anvil: "The door held… and
++would somebody please fix Mule 2-3's transponder." *Lose:* a raider reaches
++the pad or the dish, or Mule 2-3 is lost. The ROE trap is real: STT locks the
++strongest track, so with the hauler close in front of you that lock is him.
++
++## How it's wired
++
++- `scenes/campaignLevel.ts` holds the shared theatre (surface, pad, dish,
++  gas band, pickets, raiders), cold start, VID, the no-go zone, verdicts, and
++  ENTER (next mission or retry) / M (menu).
++- `audio/radioNet.ts` is one frequency. Transmissions go out in order and
++  never over each other or over Disco's datalink calls. Each line shows as a
++  subtitle along the top. A line without a recording stays up for its reading
++  time, so the story plays in full before any voices are generated.
++- Raiders are cruisers with an ingress route
++  (`AiUnitController.setRoute`). The route is their search: they break off to
++  engage whatever they find, then rejoin it.
+diff --git a/docs/gci-comms.md b/docs/gci-comms.md
+index b2524fb..b8f9654 100644
+--- a/docs/gci-comms.md
++++ b/docs/gci-comms.md
+@@ -191,6 +191,15 @@ VIM-220 (ARH) — brevity code for the guidance kind, matching real Fox 1/3
+ usage. No cooldown (`AudioPlayer` built with `cooldownMs: 0`), since it's a
+ deliberate one-off event rather than ambient chatter to throttle.
+ 
++**Campaign story traffic** (`RadioNet`, all campaign levels): briefings,
++check-ins and the other ships on the frequency are whole recorded
++transmissions rather than stitched words — one clip per line, scripted in
++`src/audio/radioScript.json` and recorded by the same `generateClips.js` into
++`public/audio/story/`. They share Disco's frequency (one `AudioPlayer`), so a
++scripted line never goes out over a datalink call and vice versa; each is
++subtitled along the top of the screen, and shown for its reading time until
++its clip exists. Cast and story: [campaign.md](campaign.md).
++
+ **Clip inventory not yet recorded** (future work — vocabulary defined above,
+ not wired to any game event yet):
+ 
+diff --git a/src/audio/radioNet.ts b/src/audio/radioNet.ts
+new file mode 100644
+index 0000000..6a9d6d4
+--- /dev/null
++++ b/src/audio/radioNet.ts
+@@ -0,0 +1,112 @@
++import Phaser from 'phaser';
++import { AudioPlayer } from './audioPlayer';
++import radioScript from './radioScript.json';
++
++// The campaign's scripted radio traffic — briefings, check-ins, the other
++// ships on the frequency. Every line lives in radioScript.json: who says it,
++// the subtitle, and (for the clip generator) what the voice actually speaks.
++// tools/generateClips.js records each line to public/audio/story/<key>.mp3.
++export type RadioLineKey = keyof typeof radioScript.lines;
++export type RadioSpeakerKey = keyof typeof radioScript.speakers;
++
++// What the scene shows while a line is on the air.
++export type RadioTransmission = {
++    key: RadioLineKey;
++    speaker: string;
++    color: string;
++    text: string;
++};
++
++// A transmission without its recording is still shown for the time it takes
++// to read — so the story plays whole before the voices are generated.
++const READING_MS_PER_CHAR = 55;
++const READING_MIN_MS = 1800;
++// Dead air between two transmissions: nobody on a real net keys up on top of
++// the last word.
++const GAP_BETWEEN_LINES_MS = 450;
++
++type OnAir = {
++    key: RadioLineKey;
++    audioDone: boolean;
++    holdUntil: number;
++};
++
++// One radio frequency. Transmissions go out one at a time, in order, and never
++// on top of anything else on the same net: the AudioPlayer is shared with the
++// datalink comms (SupportRadarComms), so a scripted line waits for a contact
++// call to finish and vice versa (the comms ask isBusy() before keying up).
++export class RadioNet {
++    private queue: RadioLineKey[] = [];
++    private onAir?: OnAir;
++    private quietUntil = 0;
++
++    constructor(
++        private readonly scene: Phaser.Scene,
++        private readonly audio: AudioPlayer,
++        // Called with each transmission as it starts, and with null when the
++        // net goes quiet again.
++        private readonly onTransmission: (transmission: RadioTransmission | null) => void,
++    ) {}
++
++    // Clip keys and paths for every scripted line, for a scene's preload.
++    static clips(): { key: RadioLineKey; path: string }[] {
++        return (Object.keys(radioScript.lines) as RadioLineKey[])
++            .map(key => ({ key, path: `audio/story/${key}.mp3` }));
++    }
++
++    // Queue lines behind whatever is already waiting.
++    say(...keys: RadioLineKey[]): void {
++        this.queue.push(...keys);
++    }
++
++    // Drop what is still waiting and put these next — for the verdict at the
++    // end of a mission, which must not sit behind idle chatter. A line already
++    // on the air finishes: a transmission cannot be un-said.
++    interrupt(...keys: RadioLineKey[]): void {
++        this.queue = [...keys];
++    }
++
++    // Something is on the air or waiting to go out.
++    isBusy(): boolean {
++        return this.onAir !== undefined || this.queue.length > 0;
++    }
++
++    update(): void {
++        const now = this.scene.time.now;
++
++        if (this.onAir) {
++            if (!this.onAir.audioDone || now < this.onAir.holdUntil) return;
++            this.onAir = undefined;
++            this.quietUntil = now + GAP_BETWEEN_LINES_MS;
++            this.onTransmission(null);
++        }
++
++        if (this.queue.length === 0 || now < this.quietUntil) return;
++        // Someone else (a Disco contact call) has the frequency.
++        if (this.audio.isPlaying()) return;
++
++        const key = this.queue.shift()!;
++        const line = radioScript.lines[key];
++        const speaker = radioScript.speakers[line.speaker as RadioSpeakerKey];
++        const recorded = this.scene.cache.audio.exists(key);
++
++        const onAir: OnAir = {
++            key,
++            audioDone: false,
++            // With a recording the clip decides how long the line lasts;
++            // without one, reading time does.
++            holdUntil: recorded ? now : now + Math.max(READING_MIN_MS, line.text.length * READING_MS_PER_CHAR),
++        };
++        this.onAir = onAir;
++        // A missing clip is skipped by the player and completes at once.
++        const accepted = this.audio.playMessage([key], () => { onAir.audioDone = true; });
++        if (!accepted) onAir.audioDone = true;
++
++        this.onTransmission({
++            key,
++            speaker: speaker?.label ?? line.speaker.toUpperCase(),
++            color: speaker?.color ?? '#ffffff',
++            text: line.text,
++        });
++    }
++}
+diff --git a/src/audio/radioScript.json b/src/audio/radioScript.json
+new file mode 100644
+index 0000000..9f758be
+--- /dev/null
++++ b/src/audio/radioScript.json
+@@ -0,0 +1,69 @@
++{
++  "speakers": {
++    "anvil":    { "label": "ANVIL",        "color": "#ffb000", "role": "Wing operations — the colonel running the outpost. Briefs, debriefs, owns the ROE." },
++    "disco":    { "label": "DISCO",        "color": "#00aeef", "role": "GCI controller on the dish-radar rock. Dry, unflappable, deadpan." },
++    "flatspin": { "label": "FLATSPIN 1-1", "color": "#7cff7c", "role": "The player. Terse." },
++    "mule21":   { "label": "MULE 2-1",     "color": "#d9d9d9", "role": "Hauler flight lead. Veteran trucker, wry." },
++    "mule22":   { "label": "MULE 2-2",     "color": "#d9d9d9", "role": "Hauler. Nervous about fighters." },
++    "mule24":   { "label": "MULE 2-4",     "color": "#d9d9d9", "role": "Hauler. Gossip." },
++    "mule23":   { "label": "MULE 2-3",     "color": "#d9d9d9", "role": "The flight's perpetual straggler. Panics loudly, recovers fast." },
++    "lantern":  { "label": "LANTERN 5",    "color": "#ff9ecf", "role": "Chief engineer of a crippled survey ship. Frightened, brave, polite." }
++  },
++  "lines": {
++    "nogo-warning":      { "speaker": "disco",    "text": "Flatspin, Disco. You're behind the gas. I have no picture there. Come east, now." },
++    "fail-detected":     { "speaker": "disco",    "text": "Flatspin, Disco... the picket has you. You're burned. Abort, abort. R-T-B.", "say": "Flatspin, Disco... the picket has you. You're burned. Abort, abort. R.T.B." },
++    "fail-fratricide":   { "speaker": "anvil",    "text": "Flatspin, Anvil. That was a friendly. Land. Now. We'll talk on the ground." },
++    "fail-lost":         { "speaker": "disco",    "text": "Flatspin, Disco, how copy? ... Flatspin, Disco... Anvil, Disco. Flatspin is off my scope." },
++    "splash":            { "speaker": "flatspin", "text": "Disco, Flatspin, splash one." },
++    "splash-ack":        { "speaker": "disco",    "text": "Disco copies splash. Good kill." },
++    "tally-hostile":     { "speaker": "flatspin", "text": "Disco, Flatspin, tally one. Hostile." },
++
++    "l1-brief-1":        { "speaker": "anvil",    "text": "Flatspin, Anvil. Mule flight is inbound from the north with this month's resupply. Three haulers. Transponders off — standard practice this close to the gas." },
++    "l1-brief-2":        { "speaker": "anvil",    "text": "So your radar sees three bogeys, exactly the way it would see three raiders. Close to visual range and put eyes on every one of them before they reach the pad." },
++    "l1-brief-3":        { "speaker": "anvil",    "text": "The gas to the west is a no-go line. The Compact keeps pickets in its shadow, and Disco can't see through it. If they get a track on you, the whole approach is burned. Don't be a hero." },
++    "l1-checkin":        { "speaker": "disco",    "text": "Flatspin 1-1, Disco. Good morning. Picture: three contacts, north, slow. Call airborne.", "say": "Flatspin one-one, Disco. Good morning. Picture: three contacts, north, slow. Call airborne." },
++    "l1-airborne":       { "speaker": "flatspin", "text": "Disco, Flatspin 1-1, airborne, as fragged.", "say": "Disco, Flatspin one-one, airborne, as fragged." },
++    "l1-tasking":        { "speaker": "disco",    "text": "Flatspin, Disco, copy. Vector north. I'd like to know those are really Mules. Bogey dope on request." },
++    "l1-vid":            { "speaker": "flatspin", "text": "Disco, Flatspin, visual. Friendly, one Mule." },
++    "l1-mule21":         { "speaker": "mule21",   "text": "Flatspin, Mule 2-1. We see you. Nice paint job. Kindly keep your thumb off the pickle button — we're carrying the colonel's coffee.", "say": "Flatspin, Mule two-one. We see you. Nice paint job. Kindly keep your thumb off the pickle button. We're carrying the colonel's coffee." },
++    "l1-mule22":         { "speaker": "mule22",   "text": "Mule 2-2, visual on the fighter. Er... friendly. Very friendly. Extremely friendly. Please.", "say": "Mule two-two, visual on the fighter. Er... friendly. Very friendly. Extremely friendly. Please." },
++    "l1-mule24":         { "speaker": "mule24",   "text": "Mule 2-4. And before anyone asks — 2-3 is late again. Probably stopped for gas. The other kind.", "say": "Mule two-four. And before anyone asks, two-three is late again. Probably stopped for gas. The other kind." },
++    "l1-complete":       { "speaker": "disco",    "text": "Flatspin, Disco. All three Mules identified. Picture clean. Nice work." },
++    "l1-complete-2":     { "speaker": "anvil",    "text": "Anvil copies. The coffee is safe. As of now you're the most popular pilot on this rock, Flatspin." },
++
++    "l2-brief-1":        { "speaker": "anvil",    "text": "Flatspin, Anvil. The survey ship Lantern 5 went quiet an hour ago, mapping the far edge of the gas. Disco has a weak return drifting out of it. No drive, no transponder, no answer.", "say": "Flatspin, Anvil. The survey ship Lantern Five went quiet an hour ago, mapping the far edge of the gas. Disco has a weak return drifting out of it. No drive, no transponder, no answer." },
++    "l2-brief-2":        { "speaker": "anvil",    "text": "Find her, put eyes on her, get a tow line across and drag her home. And Flatspin — something put her in that state. Assume it's still out there." },
++    "l2-checkin":        { "speaker": "disco",    "text": "Flatspin, Disco. The drifter is sliding west, toward the gas, at walking pace. If she drifts into the soup, the pickets will have her and I won't even see it. Clock's running." },
++    "l2-airborne":       { "speaker": "flatspin", "text": "Disco, Flatspin 1-1, airborne. Heading for the drifter.", "say": "Disco, Flatspin one-one, airborne. Heading for the drifter." },
++    "l2-tasking":        { "speaker": "disco",    "text": "Copy, Flatspin. Your contact is north-northwest. Buster." },
++    "l2-vid":            { "speaker": "flatspin", "text": "Lantern 5, Flatspin 1-1. Visual. How copy?", "say": "Lantern Five, Flatspin one-one. Visual. How copy?" },
++    "l2-lantern-1":      { "speaker": "lantern",  "text": "Flatspin... oh, thank God. Lantern 5. Reactor scrammed, we're on batteries, eleven souls aboard. We have air for a while. Not a long while.", "say": "Flatspin... oh, thank God. Lantern Five. Reactor scrammed, we're on batteries, eleven souls aboard. We have air for a while. Not a long while." },
++    "l2-alongside":      { "speaker": "flatspin", "text": "Lantern, Flatspin. Coming alongside. Stand by for the tow line." },
++    "l2-hooked":         { "speaker": "lantern",  "text": "Line's fast — we're hooked up! Take us home, Flatspin. And please don't take the scenic route." },
++    "l2-popup":          { "speaker": "disco",    "text": "Flatspin, Disco! Pop-up contact, single, out of the gas, hot. That'll be whoever hit Lantern. Declared hostile. You are cleared hot." },
++    "l2-scared":         { "speaker": "lantern",  "text": "Flatspin, that thing is pointed straight at us!" },
++    "l2-thanks":         { "speaker": "lantern",  "text": "Was that... for us? Thank you. Sincerely. I'm naming a crater after you. A big one." },
++    "l2-complete":       { "speaker": "disco",    "text": "Flatspin, Disco. Lantern 5 is on the pad. Eleven souls, all accounted for.", "say": "Flatspin, Disco. Lantern Five is on the pad. Eleven souls, all accounted for." },
++    "l2-complete-2":     { "speaker": "anvil",    "text": "Anvil copies. Good work, Flatspin. Drinks are on the survey corps tonight. They just don't know it yet." },
++    "l2-fail-drift":     { "speaker": "disco",    "text": "Flatspin, Disco. Lantern 5 has drifted into the gas. I've lost her.", "say": "Flatspin, Disco. Lantern Five has drifted into the gas. I've lost her." },
++    "l2-fail-lost":      { "speaker": "disco",    "text": "Lantern 5, Disco, how copy? ... Lantern 5, Disco... Anvil, Disco. Lantern 5 is off my scope.", "say": "Lantern Five, Disco, how copy? ... Lantern Five, Disco... Anvil, Disco. Lantern Five is off my scope." },
++
++    "l3-brief-1":        { "speaker": "anvil",    "text": "Flatspin, Anvil. Two hours ago the picket line behind the gas went dark. Either they've gone home, or they're coming through. Nobody on this rock believes they've gone home." },
++    "l3-brief-2":        { "speaker": "anvil",    "text": "Your job is to hold the door. Anything hostile that comes out of that cloud does not reach the pad or the dish." },
++    "l3-checkin":        { "speaker": "disco",    "text": "Flatspin, Disco. One more thing: Mule 2-3 is still overdue, last seen on the far side of the gas. So when something comes out of that cloud — you look before you shoot.", "say": "Flatspin, Disco. One more thing: Mule two-three is still overdue, last seen on the far side of the gas. So when something comes out of that cloud, you look before you shoot." },
++    "l3-airborne":       { "speaker": "flatspin", "text": "Disco, Flatspin 1-1, airborne. Holding east of the gas.", "say": "Disco, Flatspin one-one, airborne. Holding east of the gas." },
++    "l3-tasking":        { "speaker": "disco",    "text": "Copy, Flatspin. Set up a CAP between the gas and the pad. Nothing on my scope. Yet." },
++    "l3-popup-mule":     { "speaker": "disco",    "text": "Flatspin, Disco. Pop-up contact, single, emerging from the gas, heading for the pad. No squawk. Declare bogey. Go VID — do not engage.", "say": "Flatspin, Disco. Pop-up contact, single, emerging from the gas, heading for the pad. No squawk. Declare bogey. Go V.I.D. Do not engage." },
++    "l3-mule23-1":       { "speaker": "mule23",   "text": "Don't shoot! Don't shoot! Mule 2-3, friendly, friendly! My transponder's been dead since Tuesday — I filed a ticket!", "say": "Don't shoot! Don't shoot! Mule two-three, friendly, friendly! My transponder's been dead since Tuesday, I filed a ticket!" },
++    "l3-vid-mule":       { "speaker": "flatspin", "text": "Disco, Flatspin, visual. Friendly, Mule 2-3. He's late.", "say": "Disco, Flatspin, visual. Friendly, Mule two-three. He's late." },
++    "l3-mule23-2":       { "speaker": "mule23",   "text": "Late, he says. I've had company since the far side of the gas. Two of them. Pretty sure they're right behind me." },
++    "l3-popup-raid":     { "speaker": "disco",    "text": "Flatspin, Disco! Two new contacts, out of the gas behind Mule. Hostile, hostile. Flatspin, you are cleared hot." },
++    "l3-condition-red":  { "speaker": "anvil",    "text": "All stations, Anvil. Condition red. This is not a drill." },
++    "l3-one-left":       { "speaker": "disco",    "text": "Disco copies splash. One bandit remaining." },
++    "l3-mule-landed":    { "speaker": "mule23",   "text": "Mule 2-3 is down and safe. Flatspin — next time I'm late, I'm blaming you.", "say": "Mule two-three is down and safe. Flatspin, next time I'm late, I'm blaming you." },
++    "l3-complete":       { "speaker": "disco",    "text": "Flatspin, Disco. Picture clean. No further contacts from the gas." },
++    "l3-complete-2":     { "speaker": "anvil",    "text": "Flatspin, Anvil. The door held. Good hunting today. And would somebody please fix Mule 2-3's transponder.", "say": "Flatspin, Anvil. The door held. Good hunting today. And would somebody please fix Mule two-three's transponder." },
++    "l3-fail-raid":      { "speaker": "anvil",    "text": "They're through! All stations, Anvil — take cover, take cover!" },
++    "l3-fail-lost":      { "speaker": "disco",    "text": "Mule 2-3, Disco, how copy? ... Anvil, Disco. Mule 2-3 is off my scope.", "say": "Mule two-three, Disco, how copy? ... Anvil, Disco. Mule two-three is off my scope." }
++  }
++}
+diff --git a/src/controller/aiUnitController.ts b/src/controller/aiUnitController.ts
+index 60a5072..2f73237 100644
+--- a/src/controller/aiUnitController.ts
++++ b/src/controller/aiUnitController.ts
+@@ -109,8 +109,9 @@ export class AiUnitController {
+     }
+ 
+     // Replace the generated loop with a fixed itinerary whose last point is the
+-    // destination (a landing pad, a station). Only cargo flies routes — a
+-    // cruiser's movement is its search ladder and the engagement it leads to.
++    // destination (a landing pad, a station). Cargo flies it as a delivery; a
++    // cruiser flies it as an ingress route — a raid — leaving it to engage
++    // whatever it finds and rejoining it afterwards (see executePatrol).
+     public setRoute(waypoints: { x: number; y: number }[]): void {
+         this.cargoWaypoints = waypoints.map(p => ({ x: p.x, y: p.y }));
+         this.cargoWaypointIndex = 0;
+@@ -297,6 +298,14 @@ export class AiUnitController {
+             return;
+         }
+ 
++        // A raider handed an ingress route flies it instead of a search ladder:
++        // the route is its search. Whatever its radar finds on the way pulls it
++        // off into the engagement cycle, and it rejoins the route afterwards.
++        if (!this.routeLoops) {
++            this.followCargoRoute();
++            return;
++        }
++
+         this.followPatrolLadder();
+     }
+ 
+diff --git a/src/entities/towLine.ts b/src/entities/towLine.ts
+new file mode 100644
+index 0000000..3a8bf7d
+--- /dev/null
++++ b/src/entities/towLine.ts
+@@ -0,0 +1,79 @@
++import Phaser from "phaser";
++import { Ship, Target } from "./ship";
++
++// A tow cable between a tug and a hull with no drive of its own. Not a Matter
++// constraint: a constraint would also pull the tug back, and a fighter's
++// engines dwarf anything a drifting hulk could do to it. So the line is
++// one-way — it takes up slack, then drags the tow along behind at the tug's
++// pace, turning it to trail on the line like a real tow does.
++//
++// Hauling happens through the tow's velocity only; it keeps its own Matter
++// body, so it is still a radar return, still a missile target, and still
++// wrecked by anything it is dragged into.
++const LINE_LENGTH_PX = 95;
++// How hard a taut line pulls: the slack beyond LINE_LENGTH_PX is closed at
++// this fraction per step, capped at MAX_TOW_SPEED.
++const LINE_STIFFNESS = 0.02;
++// A little over the tug's full speed, so the tow keeps up but never overtakes.
++const MAX_TOW_SPEED = 0.12;
++// A slack line leaves the tow coasting — bleeding speed through nothing but
++// the line dragging on it.
++const SLACK_DAMPING = 0.98;
++// How fast (deg per step) the tow swings round to trail on the line.
++const TRAIL_TURN_DEG = 1.2;
++
++export class TowLine {
++    private attached = true;
++
++    constructor(
++        private readonly tug: Ship,
++        private readonly tow: Target,
++    ) {}
++
++    isAttached(): boolean {
++        return this.attached && this.tug.active && !!this.tug.body && this.tow.active && !!this.tow.body;
++    }
++
++    // Cast off: the tow keeps whatever way it has on.
++    release(): void {
++        this.attached = false;
++    }
++
++    // Once per frame: haul, then draw the line into the shared per-frame graphics.
++    update(graphics: Phaser.GameObjects.Graphics): void {
++        if (!this.isAttached()) return;
++
++        const dx = this.tug.x - this.tow.x;
++        const dy = this.tug.y - this.tow.y;
++        const distance = Math.hypot(dx, dy) || 1;
++        const slack = distance - LINE_LENGTH_PX;
++
++        if (slack > 0) {
++            const speed = Math.min(slack * LINE_STIFFNESS + Math.max(0, this.tug.getCurrentSpeed()), MAX_TOW_SPEED);
++            this.tow.setVelocity((dx / distance) * speed, (dy / distance) * speed);
++            const bearing = Phaser.Math.RadToDeg(Math.atan2(dy, dx));
++            const delta = Phaser.Math.Angle.WrapDegrees(bearing - this.tow.angle);
++            this.tow.setAngle(this.tow.angle + Phaser.Math.Clamp(delta, -TRAIL_TURN_DEG, TRAIL_TURN_DEG));
++        } else {
++            const velocity = this.tow.body!.velocity;
++            this.tow.setVelocity(velocity.x * SLACK_DAMPING, velocity.y * SLACK_DAMPING);
++        }
++
++        // Taut: a straight line. Slack: it sags off to one side.
++        graphics.lineStyle(1.5, 0xcfcfcf, 0.9);
++        if (slack > 0) {
++            graphics.lineBetween(this.tow.x, this.tow.y, this.tug.x, this.tug.y);
++        } else {
++            const sag = Math.min(-slack, LINE_LENGTH_PX) * 0.4;
++            const curve = new Phaser.Curves.QuadraticBezier(
++                new Phaser.Math.Vector2(this.tow.x, this.tow.y),
++                new Phaser.Math.Vector2(
++                    (this.tow.x + this.tug.x) / 2 - (dy / distance) * sag,
++                    (this.tow.y + this.tug.y) / 2 + (dx / distance) * sag,
++                ),
++                new Phaser.Math.Vector2(this.tug.x, this.tug.y),
++            );
++            curve.draw(graphics, 16);
++        }
++    }
++}
+diff --git a/src/main.ts b/src/main.ts
+index 492c5c8..9d51666 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -2,6 +2,8 @@ import Phaser from "phaser";
+ import StartMenu from "./scenes/startMenu";
+ import Game from "./scenes/game";
+ import Level1 from "./scenes/level1";
++import Level2 from "./scenes/level2";
++import Level3 from "./scenes/level3";
+ 
+ const debugConfig = import.meta.env.DEV ? {
+   showBody: true,
+@@ -19,7 +21,7 @@ const debugConfig = import.meta.env.DEV ? {
+ 
+ const config = {
+   type: Phaser.AUTO,
+-  scene: [StartMenu, Game, Level1],
++  scene: [StartMenu, Game, Level1, Level2, Level3],
+   scale: {
+     mode: Phaser.Scale.FIT,
+     autoCenter: Phaser.Scale.CENTER_BOTH,
+diff --git a/src/physics/collisionRegistrar.ts b/src/physics/collisionRegistrar.ts
+index 1c1d82a..5e001be 100644
+--- a/src/physics/collisionRegistrar.ts
++++ b/src/physics/collisionRegistrar.ts
+@@ -117,7 +117,7 @@ export class CollisionRegistrar {
+   // physics/landing.ts. Ground: a slow, tail-first arrival is a landing,
+   // anything else a crash. An obstacle: fatal at speed, at a crawl the hull
+   // just fetches up against it. Only the player lands by hand — AI traffic
+-  // sets down by its route script (Level1.landTraffic) and otherwise never
++  // sets down by its route script (CampaignLevel.landShip) and otherwise never
+   // reaches the ground, so its ground contacts are left alone.
+   private shipMeetsTerrain(
+     ship: PlayerShip | Target,
+diff --git a/src/scenes/campaignLevel.ts b/src/scenes/campaignLevel.ts
+new file mode 100644
+index 0000000..e8491f3
+--- /dev/null
++++ b/src/scenes/campaignLevel.ts
+@@ -0,0 +1,756 @@
++import Phaser from "phaser";
++import Game from "./game";
++import { DishRadarStation } from "../entities/dishRadarStation";
++import { PlayerShip, Target } from "../entities/ship";
++import { Track } from "../radar/data/track";
++import { AudioPlayer } from "../audio/audioPlayer";
++import { ContactCall, ContactIdentity, SupportRadarComms } from "../audio/supportRadarComms";
++import { RadioLineKey, RadioNet, RadioTransmission } from "../audio/radioNet";
++import { gasCloudSettings } from "../radar/data/radarGameSettings";
++import { playerShipSettings, VID_RANGE_PX } from "../settings";
++import { Vector2 } from "../types";
++
++// ── The theatre every campaign level is fought in ───────────────────────────
++// (one-off placements, so they live with the scenes rather than in settings)
++
++// The gas band: a wall of absorbing gas from the south-west corner up to the
++// middle of the northern edge, fully formed before the crew even starts the
++// ship. It splits the world into a friendly east and a shadowed north-west.
++export const GAS_FROM: Vector2 = { x: 0, y: 2000 };
++export const GAS_TO: Vector2 = { x: 1250, y: 0 };
++
++// The pad, and the dish rock "Disco" stands on. The rock sits well north of
++// the pad so the dish covers deep into the approaches and there is open
++// space to work in between the two.
++export const PAD_POSITION: Vector2 = { x: 1400, y: 2300 };
++export const STATION_POSITION: Vector2 = { x: 1600, y: 1500 };
++
++// Hostile pickets hold station in the gas shadow, strung out along the band
++// like a real picket line. Where along it is random every run, but they are
++// always at least this far behind the capsule's edge: the dish's energy has
++// to cross the whole band twice to echo off them, which the budget does not
++// cover, so Disco has no picture there — that is what makes it a no-go zone
++// rather than just a hazard. Each faces the band, so its search cone covers
++// the approach through the gas. The AI has no friend-or-foe logic — any track
++// is a target — so the line is laid out so no picket sits inside a
++// neighbour's cone: spaced along the band, in a thin depth band, with the
++// heading jitter kept short of the cone edge.
++const PICKET_MIN_DEPTH_PX = gasCloudSettings.RADIUS + 200;
++const PICKET_DEPTH_BAND_PX = 100;
++const PICKET_SPACING_PX = 260;
++const PICKET_HEADING_JITTER_DEG = 25;
++// A neighbour closer than this to a picket's boresight would be inside its
++// RWS cone (half-width 30°) once the jitter is added; the jitter is flipped
++// away from it instead.
++const PICKET_CONE_CLEAR_DEG = 40;
++const PICKET_WORLD_MARGIN_PX = 150;
++const PICKET_PLACEMENT_ATTEMPTS = 500;
++
++// Raiders come through the band rather than round it: they start inside the
++// gas, where neither the dish nor anyone else can hold them, and pop up on
++// the scopes as they leave the far edge. Their ingress route first pushes
++// straight out of the band, then heads for the target.
++const RAIDER_SPEED = 0.12;
++const RAIDER_EXIT_PX = gasCloudSettings.RADIUS + 200;
++
++// A picket has found the player when one of its tracks sits on the player's
++// hull. Tracks are built from hits on the hull surface, so this margin only
++// has to absorb the tracking computer's own scatter — a jammer's false track
++// is displaced by at least JAMMER_DISTANCE_ERROR_MIN_PX and stays outside it.
++const DETECTION_MARGIN_PX = 30;
++
++// A datalink track this close to a ship is that ship.
++const IDENTITY_MATCH_PX = 120;
++
++// Landing traffic shrinks away onto the pad over this long.
++const LANDING_MS = 1500;
++// ...or glides across to its spot on the pad first, when towed in.
++const LANDING_GLIDE_MS = 4000;
++
++// Scripted radio traffic starts a beat after the scene opens, once the
++// briefing card is up.
++const OPENING_RADIO_DELAY_MS = 1500;
++// The ship counts as airborne once it has moved this far off its parking spot.
++const AIRBORNE_DISTANCE_PX = 40;
++
++// Radio subtitles sit along the top edge of the screen, above the tasking
++// line — the bottom belongs to the RWR and the cold-start switches.
++const RADIO_HUD_TOP_MARGIN_PX = 12;
++const RADIO_HUD_WIDTH_PX = 760;
++
++// A campaign level: the shared theatre — surface and pad, the friendly dish
++// radar "Disco" (player call sign: "Flatspin 1-1"), the gas band and whatever
++// holds in its shadow — plus the radio net that carries the story. Levels
++// subclass this and fill in the mission: who is out there (buildMission), what
++// is said (openingTransmissions and the event hooks) and what wins or loses
++// it (updateMission).
++//
++// Radar gives geometry, never identity. A contact is a bogey until someone
++// puts eyes on it — the player inside VID range — or Disco declares it; the
++// friendly/hostile ship lists here are the scene's ground truth, which the
++// radio and datalink only ever reveal through those two routes.
++export default abstract class CampaignLevel extends Game {
++    protected station?: DishRadarStation;
++    protected comms?: SupportRadarComms;
++    protected radio?: RadioNet;
++    // Transient HUD line echoing the last comms exchange (the visual half of the
++    // datalink callout), pinned to the camera.
++    private commsHud?: Phaser.GameObjects.Text;
++    // Standing tasking lines: the level and how the mission stands.
++    private missionHud?: Phaser.GameObjects.Text;
++    // Subtitle of whatever is on the radio net right now.
++    private radioHud?: Phaser.GameObjects.Text;
++
++    // ── Mission state ──
++    protected friendlies: Target[] = [];
++    protected hostiles: Target[] = [];
++    protected pickets: Target[] = [];
++    private callsigns = new Map<number, string>();
++    // Ships identified by eye; hostiles declared (by eye or by Disco).
++    protected identified = new Set<number>();
++    protected declaredHostile = new Set<number>();
++    // Friendlies that set down, and hostiles already reported destroyed.
++    protected landed = new Set<number>();
++    private splashed = new Set<number>();
++    protected outcome?: 'failed' | 'complete';
++    protected airborneAt?: number;
++    // Whether the player was behind the gas last frame, so the zone warning
++    // fires on crossing in rather than every frame spent there.
++    private behindGas = false;
++
++    // ── What a level defines ──
++
++    // "LEVEL 1 — MULE TRAIN", for the HUD.
++    protected abstract levelTitle(): string;
++    // Populate the world beyond the shared theatre.
++    protected abstract buildMission(): void;
++    // One line on the HUD: how the tasking stands.
++    protected abstract missionStatus(): string;
++    // The scene the ENTER key leads to after a win; none after the last level.
++    protected nextLevel(): string | undefined {
++        return undefined;
++    }
++    // Radio traffic played while the crew runs the cold start.
++    protected openingTransmissions(): RadioLineKey[] {
++        return [];
++    }
++    // The ship has left the pad.
++    protected onAirborne?(): void;
++    // The player has put eyes on a friendly.
++    protected onFriendlyIdentified?(ship: Target): void;
++    // A friendly has set down on the pad.
++    protected onFriendlyLanded?(ship: Target): void;
++    // A friendly is gone without having landed.
++    protected onFriendlyLost(ship: Target): void {
++        this.failMission(`${this.callsignOf(ship)} DESTROYED`, 'fail-fratricide');
++    }
++    // A hostile is gone. Without an override the splash is simply called
++    // and acknowledged.
++    protected onHostileDestroyed?(ship: Target): void;
++    // Per-frame mission logic, while the outcome is still open.
++    protected updateMission?(player: PlayerShip, delta: number): void;
++
++    protected requiresColdStart(): boolean {
++        return true;
++    }
++
++    preload() {
++        super.preload();
++        // Ground scenery, campaign-only — the practice scenarios are set in open space.
++        this.load.image('launchpad', 'launchpad.png');
++        this.load.image('surface', 'surface.png');
++
++        // GCI ("Disco") voice clips — ElevenLabs. Bogey-dope BRAA replies reuse
++        // the same vocabulary as the player's own RadarVoice callouts, but as a
++        // distinct speaker every shared word needs its own recording.
++        const gciClips = [
++            'gci-disco', 'gci-flatspin', 'gci-bra', 'gci-for',
++            'gci-hot', 'gci-flanking', 'gci-beaming', 'gci-cold',
++            'gci-clean', 'gci-hostile', 'gci-buster', 'gci-gate', 'gci-saunter',
++            'gci-zero', 'gci-one', 'gci-two', 'gci-three', 'gci-four',
++            'gci-five', 'gci-six', 'gci-seven', 'gci-eight', 'gci-nine',
++            'gci-100', 'gci-200', 'gci-300', 'gci-400', 'gci-500',
++            'gci-600', 'gci-700', 'gci-800', 'gci-900', 'gci-1000',
++        ];
++        // Player's radio voice — GPT, matching RadarVoice's existing clips.
++        // ('plr-flatspin' is loaded globally by Game.preload() — the missile
++        // Fox call shares it.)
++        const playerClips = ['plr-disco', 'plr-bogey-dope'];
++        [...gciClips, ...playerClips].forEach(key => this.load.audio(key, `audio/${key}.mp3`));
++
++        // The story's radio traffic (tools/generateClips.js). Lines not yet
++        // recorded fail to load and are shown as subtitles only.
++        RadioNet.clips().forEach(({ key, path }) => this.load.audio(key, path));
++    }
++
++    // Ground and pad are solid bodies: the surface strip walls off the bottom
++    // of the world for every radar, and both show on the ground map. The
++    // ships parked on them are not shadowed by them (see Radar.nearestHit).
++    // The pad is set into the ground, so the two show and hide together.
++    protected buildTerrain(): void {
++        const surface = this.registerTerrain(this.add.structure({ position: { x: 0, y: 2380 }, texture: 'surface' }));
++        const pad = this.registerTerrain(this.add.structure({ position: PAD_POSITION, texture: 'launchpad', scale: 0.25 }));
++        this.registerFadeGroup([surface, pad]);
++    }
++
++    protected buildScenario(): void {
++        // Phaser reuses the scene instance on restart: start from nothing.
++        this.friendlies = [];
++        this.hostiles = [];
++        this.pickets = [];
++        this.callsigns.clear();
++        this.identified.clear();
++        this.declaredHostile.clear();
++        this.landed.clear();
++        this.splashed.clear();
++        this.outcome = undefined;
++        this.airborneAt = undefined;
++        this.behindGas = false;
++
++        this.station = new DishRadarStation(this, STATION_POSITION);
++        // Rock and dish are terrain like any other: they occlude every radar
++        // in the scene — the dish's own included — and show and hide as one.
++        const stationBodies = this.station.getTerrain();
++        stationBodies.forEach(body => this.registerTerrain(body));
++        this.registerFadeGroup(stationBodies);
++
++        // The band is in place from the start: the zone exists before the
++        // player can fly, so the briefing can point at it.
++        this.gasClouds.push(this.add.gasCloud({ from: GAS_FROM, to: GAS_TO, spreadMs: 0 }));
++
++        this.buildMission();
++    }
++
++    create() {
++        super.create();
++
++        // One radio frequency, shared by the scripted traffic and Disco's
++        // datalink calls so the two never talk over each other. No cooldown:
++        // each C press is answered immediately; the unprompted contact calls
++        // throttle themselves.
++        const net = new AudioPlayer(this, 0);
++        this.comms = new SupportRadarComms(net);
++        this.radio = new RadioNet(this, net, transmission => this.showRadioHud(transmission));
++
++        this.commsHud = this.add.text(this.scale.width / 2, 120, '', {
++            font: '20px Courier',
++            color: '#00aeef',
++            backgroundColor: '#000000aa',
++            padding: { x: 12, y: 6 },
++        }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(1000).setVisible(false);
++
++        this.missionHud = this.add.text(16, 16, '', {
++            font: '16px Courier',
++            color: '#00aeef',
++            backgroundColor: '#000000aa',
++            padding: { x: 10, y: 5 },
++        }).setOrigin(0, 0).setScrollFactor(0).setDepth(1000);
++        this.updateMissionHud();
++
++        this.radioHud = this.add.text(0, 0, '', {
++            font: '18px Courier',
++            color: '#ffffff',
++            backgroundColor: '#000000cc',
++            padding: { x: 14, y: 8 },
++            wordWrap: { width: Math.min(this.scale.width - 80, RADIO_HUD_WIDTH_PX) },
++        }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(1001).setVisible(false);
++
++        const opening = this.openingTransmissions();
++        if (opening.length > 0) {
++            this.time.delayedCall(OPENING_RADIO_DELAY_MS, () => {
++                if (!this.outcome) this.radio?.say(...opening);
++            });
++        }
++
++        this.input.keyboard?.on('keydown-C', this.onRequestBogeyDope);
++        this.input.keyboard?.on('keydown-ENTER', this.onContinue);
++        this.input.keyboard?.on('keydown-M', this.onMenu);
++        this.events.once('shutdown', () => {
++            this.input.keyboard?.off('keydown-C', this.onRequestBogeyDope);
++            this.input.keyboard?.off('keydown-ENTER', this.onContinue);
++            this.input.keyboard?.off('keydown-M', this.onMenu);
++        });
++    }
++
++    // ── Spawning ──
++
++    // A named ship: the call sign is what the HUD and the verdicts use.
++    protected setCallsign(ship: Target, callsign: string): void {
++        this.callsigns.set(ship.id, callsign);
++    }
++
++    protected callsignOf(ship: Target): string {
++        return this.callsigns.get(ship.id) ?? (ship.side === 'friendly' ? 'FRIENDLY' : 'HOSTILE');
++    }
++
++    // Hostile cruisers holding station in the gas shadow. Stationary: a picket
++    // is an emplacement, not a patrol. See the PICKET_* constants for the
++    // layout rules. `keepClear` reserves a stretch of the band (distance along
++    // the spine ± half-width) for a raid to come through without passing
++    // inside a picket's cone.
++    protected spawnPickets(count: number, keepClear?: { along: number; halfWidth: number }): void {
++        const along = this.spineDirection();
++        const inward = this.shadowNormal();
++        const length = this.spineLength();
++
++        // Stations as distances along the band, kept apart from each other and
++        // inside the world once pushed back to their depth.
++        const stations: { along: number; pos: Vector2 }[] = [];
++        for (let attempt = 0; attempt < PICKET_PLACEMENT_ATTEMPTS && stations.length < count; attempt++) {
++            const t = Phaser.Math.FloatBetween(0, length);
++            if (stations.some(s => Math.abs(s.along - t) < PICKET_SPACING_PX)) continue;
++            if (keepClear && Math.abs(t - keepClear.along) < keepClear.halfWidth) continue;
++            const depth = PICKET_MIN_DEPTH_PX + Phaser.Math.FloatBetween(0, PICKET_DEPTH_BAND_PX);
++            const pos = {
++                x: GAS_FROM.x + along.x * t + inward.x * depth,
++                y: GAS_FROM.y + along.y * t + inward.y * depth,
++            };
++            if (pos.x < PICKET_WORLD_MARGIN_PX || pos.y < PICKET_WORLD_MARGIN_PX
++                || pos.x > this.world.width - PICKET_WORLD_MARGIN_PX
++                || pos.y > this.world.height - PICKET_WORLD_MARGIN_PX) continue;
++            stations.push({ along: t, pos });
++        }
++
++        // Boresight straight at the band, plus a jitter that is flipped away
++        // from any neighbour it would otherwise bring inside the cone.
++        const towardGas = Phaser.Math.RadToDeg(Math.atan2(-inward.y, -inward.x));
++        for (const station of stations) {
++            let jitter = Phaser.Math.Between(-PICKET_HEADING_JITTER_DEG, PICKET_HEADING_JITTER_DEG);
++            for (const other of stations) {
++                if (other === station) continue;
++                const bearing = Phaser.Math.RadToDeg(
++                    Math.atan2(other.pos.y - station.pos.y, other.pos.x - station.pos.x),
++                );
++                const off = Phaser.Math.Angle.WrapDegrees(bearing - (towardGas + jitter));
++                if (Math.abs(off) < PICKET_CONE_CLEAR_DEG) jitter = -jitter;
++            }
++            const picket = this.add.target({
++                x: station.pos.x,
++                y: station.pos.y,
++                direction: towardGas + jitter,
++                speed: 0,
++                type: 'cruiser',
++                activity: 'inactive',
++            });
++            this.pickets.push(picket);
++            this.hostiles.push(picket);
++            this.targets.push(picket);
++        }
++    }
++
++    // A raider that comes through the band: it starts `depth` px into the gas
++    // from the spine at `along` (positive = towards the shadow side), pushes
++    // straight out of the far edge, then flies at `destination`. It prosecutes
++    // anything its radar finds on the way — and it cannot tell friend from
++    // foe any better than the player can, so it goes for the traffic too.
++    protected spawnRaider(along: number, depth: number, destination: Vector2): Target {
++        const inward = this.shadowNormal();
++        const start = this.spinePoint(along, depth);
++        const exit = this.spinePoint(along, -RAIDER_EXIT_PX);
++        const raider = this.add.target({
++            x: start.x,
++            y: start.y,
++            direction: Phaser.Math.RadToDeg(Math.atan2(-inward.y, -inward.x)),
++            speed: RAIDER_SPEED,
++            type: 'cruiser',
++            route: [exit, destination],
++        });
++        this.hostiles.push(raider);
++        this.targets.push(raider);
++        return raider;
++    }
++
++    // A friendly ship on the scene's books.
++    protected addFriendly(ship: Target, callsign: string): Target {
++        this.setCallsign(ship, callsign);
++        this.friendlies.push(ship);
++        this.targets.push(ship);
++        return ship;
++    }
++
++    // Whether Disco's dish holds a track on this ship.
++    protected stationTracks(ship: Target): boolean {
++        if (!this.station || !ship.active || !ship.body) return false;
++        return this.station.getTracks().some(track =>
++            Phaser.Math.Distance.Between(ship.x, ship.y, track.pos.x, track.pos.y) < IDENTITY_MATCH_PX,
++        );
++    }
++
++    // ── Comms ──
++
++    // Key a "bogey dope" call: the player transmits the request (GPT voice) and
++    // Disco replies with the nearest datalink contact's BRAA picture and a speed
++    // order (ElevenLabs voice), or "clean" if there's nothing on the scope. Echo
++    // the same picture on the HUD so it reaches the player by voice and sight.
++    private onRequestBogeyDope = () => {
++        if (!this.player || !this.station || !this.comms) return;
++        // EMCON forbids any active transmission, including keying the radio —
++        // the request never goes out, so Disco never answers.
++        if (this.player.radar.getMode() === 'emcon') {
++            this.showCommsHud('EMCON — TRANSMISSION HELD');
++            return;
++        }
++        // Somebody else is talking: you do not key up over them.
++        if (this.radio?.isBusy()) {
++            this.showCommsHud('RADIO NET BUSY — STAND BY');
++            return;
++        }
++        const call = this.comms.requestBogeyDope(this.player, this.station.getTracks(), this.identifyContact);
++        this.showCommsHud(call ? `DISCO — ${this.describeCall(call)}` : 'DISCO — PICTURE CLEAN');
++    };
++
++    // Disco's own declaration of a datalink track. The dish sees geometry
++    // only; the identity comes from what the player has put eyes on and what
++    // the controller has declared.
++    private identifyContact = (track: Track): ContactIdentity => {
++        const on = (ship: Target) => ship.active && ship.body
++            && Phaser.Math.Distance.Between(ship.x, ship.y, track.pos.x, track.pos.y) < IDENTITY_MATCH_PX;
++        if (this.friendlies.some(ship => this.identified.has(ship.id) && on(ship))) return 'friendly';
++        if (this.hostiles.some(ship => this.declaredHostile.has(ship.id) && on(ship))) return 'hostile';
++        return 'bogey';
++    };
++
++    private describeCall(call: ContactCall): string {
++        return `BRA ${String(call.bearing).padStart(3, '0')} FOR ${Math.round(call.rangePx)}, `
++            + `${call.aspect.toUpperCase()}, ${call.identity.toUpperCase()} — ${call.speedOrder.toUpperCase()}`;
++    }
++
++    protected showCommsHud(text: string): void {
++        if (!this.commsHud) return;
++        this.tweens.killTweensOf(this.commsHud);
++        this.commsHud.setText(text).setVisible(true).setAlpha(1);
++        this.tweens.add({
++            targets: this.commsHud,
++            alpha: 0,
++            delay: 3500,
++            duration: 800,
++            onComplete: () => this.commsHud?.setVisible(false),
++        });
++    }
++
++    private showRadioHud(transmission: RadioTransmission | null): void {
++        if (!this.radioHud) return;
++        if (!transmission) {
++            this.radioHud.setVisible(false);
++            return;
++        }
++        this.radioHud
++            .setText(`${transmission.speaker}:  ${transmission.text}`)
++            .setColor(transmission.color)
++            .setVisible(true);
++    }
++
++    // Keep the subtitle at the top centre of the screen whatever the zoom:
++    // a scroll-factor-0 object is still zoomed about the camera centre, so the
++    // screen point is mapped back to the local point that lands on it (the
++    // same correction InterfaceRenderer.positionRwr() makes).
++    private pinRadioHud(): void {
++        if (!this.radioHud?.visible) return;
++        const cam = this.cameras.main;
++        const centreX = cam.width * cam.originX;
++        const centreY = cam.height * cam.originY;
++        this.radioHud
++            .setScale(1 / cam.zoom)
++            .setPosition(centreX, (RADIO_HUD_TOP_MARGIN_PX - centreY) / cam.zoom + centreY);
++    }
++
++    private updateMissionHud(): void {
++        const text = `${this.levelTitle()}\n${this.missionStatus()}`;
++        if (this.missionHud && this.missionHud.text !== text) this.missionHud.setText(text);
++    }
++
++    // ── Per-frame ──
++
++    update(time: number, delta: number): void {
++        super.update(time, delta);
++        // The net keeps talking even after the ship is gone — that is when the
++        // verdict goes out.
++        this.radio?.update();
++        this.pinRadioHud();
++
++        // Base update bailed (player gone / graphics torn down): don't draw.
++        const player = this.player;
++        if (!player || !this.graphics) return;
++
++        // Sweep the dish and paint the shared picture. It detects the targets
++        // (not the friendly player) and is occluded by the same terrain list,
++        // its own rock included. The dish shoots through the same gas the
++        // player does.
++        this.station?.update(
++            delta, this.targets, this.terrain, this.graphics,
++            this.gasClouds.map(cloud => cloud.getVolume()),
++        );
++
++        this.drawIdentified(this.graphics);
++        // Arrivals land whatever the mission state. The verdict takes the
++        // player's controls, not the world's clock — the ship identified on
++        // final approach still has to set down and go, or it sits on the pad
++        // forever.
++        this.landArrivedTraffic();
++        if (this.outcome) return;
++
++        const parked = playerShipSettings.START_POSITION;
++        if (this.airborneAt === undefined && this.isReadyForFlight()
++            && Phaser.Math.Distance.Between(player.x, player.y, parked.x, parked.y) > AIRBORNE_DISTANCE_PX) {
++            this.airborneAt = this.time.now;
++            this.onAirborne?.();
++        }
++
++        // Disco passes each new contact as its track matures. Not while the
++        // ship is still cold on the pad — the radio is not powered yet — and
++        // not over scripted traffic. EMCON does not stop these: it silences
++        // our transmitter, not our receiver.
++        if (this.station && this.comms && this.isReadyForFlight() && !this.radio?.isBusy()) {
++            const call = this.comms.announceNewContact(
++                player, this.station.getTracks(), this.identifyContact, this.time.now,
++            );
++            if (call) this.showCommsHud(`DISCO — NEW CONTACT, ${this.describeCall(call)}`);
++        }
++
++        this.updateIdentification(player);
++        this.updateLosses();
++        if (!this.outcome) this.watchNoGoZone(player);
++        if (!this.outcome) this.updateMission?.(player, delta);
++        this.updateMissionHud();
++    }
++
++    // Visual identification: anything inside VID range is identified — a
++    // friendly by its hull, a hostile declared on sight ("tally").
++    private updateIdentification(player: PlayerShip): void {
++        const inVid = (ship: Target) => ship.active && ship.body
++            && Phaser.Math.Distance.Between(player.x, player.y, ship.x, ship.y) <= VID_RANGE_PX;
++
++        for (const ship of this.friendlies) {
++            if (this.identified.has(ship.id) || !inVid(ship)) continue;
++            this.identified.add(ship.id);
++            this.showCommsHud(`FLATSPIN 1-1 — VISUAL, FRIENDLY ${this.callsignOf(ship)}`);
++            this.onFriendlyIdentified?.(ship);
++            if (this.outcome) return;
++        }
++        for (const ship of this.hostiles) {
++            if (this.identified.has(ship.id) || !inVid(ship)) continue;
++            this.identified.add(ship.id);
++            this.declaredHostile.add(ship.id);
++            this.showCommsHud('FLATSPIN 1-1 — TALLY, HOSTILE');
++            this.radio?.say('tally-hostile');
++        }
++    }
++
++    // A friendly gone without having landed was destroyed; a hostile gone is
++    // a splash.
++    private updateLosses(): void {
++        for (const ship of this.friendlies) {
++            if (ship.active || this.landed.has(ship.id)) continue;
++            this.onFriendlyLost(ship);
++            return;
++        }
++        for (const ship of this.hostiles) {
++            if (ship.active || this.splashed.has(ship.id)) continue;
++            this.splashed.add(ship.id);
++            this.declaredHostile.add(ship.id);
++            this.showCommsHud(`SPLASH — ${this.callsignOf(ship)}`);
++            if (this.onHostileDestroyed) this.onHostileDestroyed(ship);
++            else this.radio?.say('splash', 'splash-ack');
++        }
++    }
++
++    // Routed friendlies that have reached the pad drop onto it and are gone.
++    private landArrivedTraffic(): void {
++        for (const ship of this.friendlies) {
++            if (!ship.active || !ship.body || this.landed.has(ship.id)) continue;
++            if (ship.controller?.hasArrived()) this.landShip(ship);
++        }
++    }
++
++    // Set a friendly down on the pad: it shrinks away as it descends — gliding
++    // onto `touchdown` if it is not already over its spot — then the entity
++    // goes: a landed ship is no longer a contact for anyone's radar.
++    protected landShip(ship: Target, touchdown?: Vector2): void {
++        if (this.landed.has(ship.id)) return;
++        this.landed.add(ship.id);
++        ship.controller?.destroy();
++        ship.controller = undefined;
++        ship.setVelocity(0, 0);
++        // Descending below flight level: nothing up here can hit it any more.
++        ship.setCollidesWith(0);
++        this.tweens.add({
++            targets: ship,
++            // Not all the way to zero: the Matter body scales with the sprite,
++            // and a zero-size body is degenerate geometry for the raycaster.
++            scale: 0.05,
++            ...(touchdown ? { x: touchdown.x, y: touchdown.y } : {}),
++            duration: touchdown ? LANDING_GLIDE_MS : LANDING_MS,
++            onComplete: () => {
++                if (ship.active) ship.destroy();
++            },
++        });
++        if (!this.outcome) this.onFriendlyLanded?.(ship);
++    }
++
++    // The no-go zone. Crossing the band draws a warning from Disco; being
++    // tracked by a picket in its shadow ends the mission — not being seen is
++    // the whole task, and the RWR's search warning is the cue to turn back
++    // before that happens (an emitter is heard long before it gets an echo).
++    private watchNoGoZone(player: PlayerShip): void {
++        const behind = this.isBehindGas({ x: player.x, y: player.y });
++        if (behind && !this.behindGas) {
++            this.showCommsHud('DISCO — FLATSPIN, YOU ARE BEHIND THE GAS. NO PICTURE THERE — COME EAST');
++            this.radio?.say('nogo-warning');
++        }
++        this.behindGas = behind;
++
++        const hull = Math.max(player.displayWidth, player.displayHeight) / 2 + DETECTION_MARGIN_PX;
++        const hullSq = hull * hull;
++        for (const picket of this.pickets) {
++            if (!picket.active || !picket.body) continue;
++            const seen = picket.radar.getTracks().some(track =>
++                Phaser.Math.Distance.Squared(track.pos.x, track.pos.y, player.x, player.y) <= hullSq,
++            );
++            if (seen) {
++                this.failMission('DETECTED BY A HOSTILE PICKET BEHIND THE GAS', 'fail-detected');
++                return;
++            }
++        }
++    }
++
++    // ── Verdicts ──
++
++    protected failMission(reason: string, ...radio: RadioLineKey[]): void {
++        if (this.outcome) return;
++        this.outcome = 'failed';
++        // Take the controls away: the verdict is in, the ship holds where it is.
++        const player = this.player;
++        if (player) {
++            player.controller?.destroy();
++            player.controller = undefined;
++            player.setCurrentSpeed(0);
++        }
++        if (radio.length > 0) this.radio?.interrupt(...radio);
++        this.showOutcome(`MISSION FAILED — ${reason}`, '#ff0000');
++    }
++
++    // A win lets the last exchange finish before the debrief goes out.
++    protected completeMission(text: string, ...radio: RadioLineKey[]): void {
++        if (this.outcome) return;
++        this.outcome = 'complete';
++        this.radio?.say(...radio);
++        this.showOutcome(`MISSION COMPLETE — ${text}`, '#00ff00');
++    }
++
++    protected showOutcome(text: string, color: string): void {
++        super.showOutcome(text, color);
++        const next = this.outcome === 'complete'
++            ? (this.nextLevel() ? 'ENTER  next mission' : 'ENTER  campaign complete — back to menu')
++            : 'ENTER  retry';
++        const cam = this.cameras.main;
++        this.add.text(cam.centerX, cam.centerY + 60, `${next}      M  menu`, {
++            font: '18px Courier',
++            color: '#aaaaaa',
++            backgroundColor: '#000000aa',
++            padding: { x: 12, y: 6 },
++        }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(1000);
++    }
++
++    private onContinue = () => {
++        if (!this.outcome) return;
++        if (this.outcome === 'failed') {
++            this.scene.restart();
++            return;
++        }
++        this.scene.start(this.nextLevel() ?? 'StartMenu');
++    };
++
++    private onMenu = () => {
++        if (this.outcome) this.scene.start('StartMenu');
++    };
++
++    // Mark identified ships on the tactical picture: a ring in datalink cyan
++    // around a friendly, red around a declared hostile — the contacts on the
++    // scope whose identity is known.
++    private drawIdentified(graphics: Phaser.GameObjects.Graphics): void {
++        const ring = (ship: Target, colour: number) => {
++            graphics.lineStyle(1, colour, 0.8);
++            graphics.strokeCircle(ship.x, ship.y, Math.max(ship.displayWidth, ship.displayHeight) / 2 + 10);
++        };
++        for (const ship of this.friendlies) {
++            if (ship.active && ship.body && this.identified.has(ship.id)) ring(ship, 0x00aeef);
++        }
++        for (const ship of this.hostiles) {
++            if (ship.active && ship.body && this.identified.has(ship.id)) ring(ship, 0xff3030);
++        }
++    }
++
++    // ── Gas band geometry ──
++    // The band runs the full height of the world, so "behind" is simply the
++    // side of its spine line the pad is not on.
++
++    private sideOfSpine(pos: Vector2): number {
++        const sx = GAS_TO.x - GAS_FROM.x;
++        const sy = GAS_TO.y - GAS_FROM.y;
++        return sx * (pos.y - GAS_FROM.y) - sy * (pos.x - GAS_FROM.x);
++    }
++
++    protected isBehindGas(pos: Vector2): boolean {
++        const padSide = Math.sign(this.sideOfSpine(PAD_POSITION));
++        return Math.sign(this.sideOfSpine(pos)) === -padSide;
++    }
++
++    // Perpendicular distance from the spine, positive into the shadow.
++    protected depthBehindSpine(pos: Vector2): number {
++        const inward = this.shadowNormal();
++        return (pos.x - GAS_FROM.x) * inward.x + (pos.y - GAS_FROM.y) * inward.y;
++    }
++
++    // Inside the gas capsule itself.
++    protected isInGas(pos: Vector2): boolean {
++        return Math.abs(this.depthBehindSpine(pos)) <= gasCloudSettings.RADIUS;
++    }
++
++    protected spineLength(): number {
++        return Phaser.Math.Distance.Between(GAS_FROM.x, GAS_FROM.y, GAS_TO.x, GAS_TO.y);
++    }
++
++    // The point `along` px up the spine from its start, pushed `depth` px off
++    // it (positive into the shadow, negative towards the pad).
++    protected spinePoint(along: number, depth = 0): Vector2 {
++        const dir = this.spineDirection();
++        const inward = this.shadowNormal();
++        return {
++            x: GAS_FROM.x + dir.x * along + inward.x * depth,
++            y: GAS_FROM.y + dir.y * along + inward.y * depth,
++        };
++    }
++
++    // Unit vector along the spine, from its start to its end.
++    private spineDirection(): Vector2 {
++        const length = this.spineLength();
++        return { x: (GAS_TO.x - GAS_FROM.x) / length, y: (GAS_TO.y - GAS_FROM.y) / length };
++    }
++
++    // Unit normal to the spine pointing into the shadow, away from the pad.
++    protected shadowNormal(): Vector2 {
++        const along = this.spineDirection();
++        const normal = { x: -along.y, y: along.x };
++        const probe = { x: GAS_FROM.x + normal.x, y: GAS_FROM.y + normal.y };
++        return this.isBehindGas(probe) ? normal : { x: -normal.x, y: -normal.y };
++    }
++
++    protected onPlayerLanded(): void {
++        super.onPlayerLanded();
++        // Not for the cold ship on the pad at the start: its first contact is
++        // the physics engine noticing where it was parked.
++        if (this.isReadyForFlight()) this.showCommsHud('FLATSPIN 1-1 — TOUCHDOWN');
++    }
++
++    protected destroyPlayer(): void {
++        if (!this.player) return;
++        // The verdict is the loss of the ship; Disco is the one who notices.
++        if (!this.outcome) {
++            this.outcome = 'failed';
++            this.radio?.interrupt('fail-lost');
++        }
++        super.destroyPlayer();
++        this.station?.destroy();
++        this.station = undefined;
++    }
++}
+diff --git a/src/scenes/game.ts b/src/scenes/game.ts
+index fa5257b..b77f37f 100644
+--- a/src/scenes/game.ts
++++ b/src/scenes/game.ts
+@@ -45,7 +45,7 @@ class FadeGroup implements FadeableAsset {
+ 
+ // The free-play scene: a world, a player ship and one of the practice scenarios.
+ // The campaign levels subclass this and override the terrain/scenario hooks
+-// rather than rebuilding the world wiring (see scenes/level1.ts).
++// rather than rebuilding the world wiring (see scenes/campaignLevel.ts).
+ export default class Game extends Phaser.Scene
+ {
+   protected world = {
+diff --git a/src/scenes/level1.ts b/src/scenes/level1.ts
+index ac0f124..02bb4af 100644
+--- a/src/scenes/level1.ts
++++ b/src/scenes/level1.ts
+@@ -1,44 +1,8 @@
+-import Phaser from "phaser";
+-import Game from "./game";
+-import { DishRadarStation } from "../entities/dishRadarStation";
+-import { PlayerShip, Target } from "../entities/ship";
+-import { Track } from "../radar/data/track";
+-import { AudioPlayer } from "../audio/audioPlayer";
+-import { ContactCall, ContactIdentity, SupportRadarComms } from "../audio/supportRadarComms";
+-import { gasCloudSettings } from "../radar/data/radarGameSettings";
+-import { VID_RANGE_PX } from "../settings";
++import CampaignLevel from "./campaignLevel";
++import { Target } from "../entities/ship";
++import { RadioLineKey } from "../audio/radioNet";
+ import { Vector2 } from "../types";
+ 
+-// ── Scenario geometry (one-off placements, so they live with the scene) ─────
+-
+-// The gas band: a wall of absorbing gas from the south-west corner up to the
+-// middle of the northern edge, fully formed before the crew even starts the
+-// ship. It splits the world into a friendly east and a shadowed west.
+-const GAS_FROM: Vector2 = { x: 0, y: 2000 };
+-const GAS_TO: Vector2 = { x: 1250, y: 0 };
+-
+-// Hostile pickets hold station in the gas shadow, strung out along the band
+-// like a real picket line. Where along it is random every run, but they are
+-// always at least this far behind the capsule's edge: the dish's energy has
+-// to cross the whole band twice to echo off them, which the budget does not
+-// cover, so Disco has no picture there — that is what makes it a no-go zone
+-// rather than just a hazard. Each faces the band, so its search cone covers
+-// the approach through the gas. The AI has no friend-or-foe logic — any track
+-// is a target — so the line is laid out so no picket sits inside a
+-// neighbour's cone: spaced along the band, in a thin depth band, with the
+-// heading jitter kept short of the cone edge.
+-const PICKET_COUNT = 3;
+-const PICKET_MIN_DEPTH_PX = gasCloudSettings.RADIUS + 200;
+-const PICKET_DEPTH_BAND_PX = 100;
+-const PICKET_SPACING_PX = 260;
+-const PICKET_HEADING_JITTER_DEG = 25;
+-// A neighbour closer than this to a picket's boresight would be inside its
+-// RWS cone (half-width 30°) once the jitter is added; the jitter is flipped
+-// away from it instead.
+-const PICKET_CONE_CLEAR_DEG = 40;
+-const PICKET_WORLD_MARGIN_PX = 150;
+-const PICKET_PLACEMENT_ATTEMPTS = 500;
+-
+ // Inbound traffic: cargo ships flying the lane down the east side of the gas
+ // to the pad. They start staggered along the lane so they arrive one after
+ // another, and land beside the player's parking spot, not on it.
+@@ -47,181 +11,59 @@ const TRAFFIC_ROUTE: Vector2[] = [
+     { x: 1900, y: 2100 },
+     { x: 1450, y: 2350 },
+ ];
+-const TRAFFIC_STARTS: Vector2[] = [
+-    { x: 1900, y: 1050 },
+-    { x: 1900, y: 500 },
+-    { x: 1900, y: 80 },
++// Nearest first; each with its call sign and what it says when the player
++// puts eyes on it. (Mule 2-3 is late. Mule 2-3 is always late.)
++const TRAFFIC: { start: Vector2; callsign: string; reply: RadioLineKey }[] = [
++    { start: { x: 1900, y: 1050 }, callsign: 'MULE 2-1', reply: 'l1-mule21' },
++    { start: { x: 1900, y: 500 }, callsign: 'MULE 2-2', reply: 'l1-mule22' },
++    { start: { x: 1900, y: 80 }, callsign: 'MULE 2-4', reply: 'l1-mule24' },
+ ];
+ const TRAFFIC_SPEED = 0.15;
+-const LANDING_MS = 1500;
+-
+-// A picket has found the player when one of its tracks sits on the player's
+-// hull. Tracks are built from hits on the hull surface, so this margin only
+-// has to absorb the tracking computer's own scatter — a jammer's false track
+-// is displaced by at least JAMMER_DISTANCE_ERROR_MIN_PX and stays outside it.
+-const DETECTION_MARGIN_PX = 30;
+-
+-// A datalink track this close to an identified ship is that ship.
+-const IDENTITY_MATCH_PX = 120;
+ 
+-// Campaign — Level 1. The ship sits powered down on the launchpad; the player
+-// brings it to life with the cold-start procedure (BAT, ENG1, ENG2, SYS) before
+-// flight controls are handed over. Once airborne, the tasking: friendly cargo
+-// traffic is inbound from the north to this pad, and the player has to
+-// identify each one visually — radar cannot tell a friendly cargo ship's
+-// return from anyone else's. A friendly early-warning dish radar on an
+-// asteroid, call sign "Disco" (player call sign: "Flatspin 1-1"), sweeps 360°
+-// out to long range and datalinks its contacts to the player in cyan, passes
+-// each new contact over the radio as it forms, and answers C ("bogey dope")
+-// with the nearest contact's BRAA picture and a speed order.
++// Campaign — Level 1, "Mule Train". The ship sits powered down on the pad;
++// the player brings it to life with the cold-start procedure (BAT, ENG1, ENG2,
++// SYS) while Anvil briefs over the radio. The tasking: friendly cargo traffic
++// is inbound from the north to this pad with transponders off, and the player
++// has to identify each hauler visually — radar cannot tell a friendly cargo
++// ship's return from anyone else's. Disco datalinks its contacts in cyan,
++// passes each new one over the radio as it forms, and answers C ("bogey
++// dope") with the nearest contact's BRAA picture and a speed order.
+ //
+ // West of the gas band is the no-go zone: Disco cannot see through the gas,
+ // and hostile pickets are holding in its shadow. The mission fails if a picket
+ // gets a track on the player, or if the player shoots down the traffic.
+-export default class Level1 extends Game {
+-    private station?: DishRadarStation;
+-    private comms?: SupportRadarComms;
+-    // Transient HUD line echoing the last comms exchange (the visual half of the
+-    // datalink callout), pinned to the camera.
+-    private commsHud?: Phaser.GameObjects.Text;
+-    // Standing tasking line: traffic identified so far.
+-    private missionHud?: Phaser.GameObjects.Text;
+-
+-    // ── Mission state ──
+-    private traffic: Target[] = [];
+-    private pickets: Target[] = [];
+-    // Traffic ids the player has identified by eye, and those that have landed.
+-    private identified = new Set<number>();
+-    private landed = new Set<number>();
+-    private outcome?: 'failed' | 'complete';
+-    // Whether the player was behind the gas last frame, so the zone warning
+-    // fires on crossing in rather than every frame spent there.
+-    private behindGas = false;
++export default class Level1 extends CampaignLevel {
++    private replies = new Map<number, RadioLineKey>();
+ 
+     constructor() {
+         super('Level1');
+     }
+ 
+-    preload() {
+-        super.preload();
+-        // Ground scenery, campaign-only — the practice scenarios are set in open space.
+-        this.load.image('launchpad', 'launchpad.png');
+-        this.load.image('surface', 'surface.png');
+-
+-        // GCI ("Disco") voice clips — ElevenLabs. Bogey-dope BRAA replies reuse
+-        // the same vocabulary as the player's own RadarVoice callouts, but as a
+-        // distinct speaker every shared word needs its own recording.
+-        const gciClips = [
+-            'gci-disco', 'gci-flatspin', 'gci-bra', 'gci-for',
+-            'gci-hot', 'gci-flanking', 'gci-beaming', 'gci-cold',
+-            'gci-clean', 'gci-hostile', 'gci-buster', 'gci-gate', 'gci-saunter',
+-            'gci-zero', 'gci-one', 'gci-two', 'gci-three', 'gci-four',
+-            'gci-five', 'gci-six', 'gci-seven', 'gci-eight', 'gci-nine',
+-            'gci-100', 'gci-200', 'gci-300', 'gci-400', 'gci-500',
+-            'gci-600', 'gci-700', 'gci-800', 'gci-900', 'gci-1000',
+-        ];
+-        // Player's radio voice — GPT, matching RadarVoice's existing clips.
+-        // ('plr-flatspin' is loaded globally by Game.preload() — the missile
+-        // Fox call shares it.)
+-        const playerClips = ['plr-disco', 'plr-bogey-dope'];
+-        [...gciClips, ...playerClips].forEach(key => this.load.audio(key, `audio/${key}.mp3`));
++    protected levelTitle(): string {
++        return 'LEVEL 1 — MULE TRAIN';
+     }
+ 
+-    protected requiresColdStart(): boolean {
+-        return true;
++    protected nextLevel(): string {
++        return 'Level2';
+     }
+ 
+-    // Ground and pad are solid bodies: the surface strip walls off the bottom
+-    // of the world for every radar, and both show on the ground map. The
+-    // ships parked on them are not shadowed by them (see Radar.nearestHit).
+-    // The pad is set into the ground, so the two show and hide together.
+-    protected buildTerrain(): void {
+-        const surface = this.registerTerrain(this.add.structure({ position: { x: 0, y: 2380 }, texture: 'surface' }));
+-        const pad = this.registerTerrain(this.add.structure({ position: { x: 1400, y: 2300 }, texture: 'launchpad', scale: 0.25 }));
+-        this.registerFadeGroup([surface, pad]);
++    protected briefingMessage(): string {
++        return 'LEVEL 1 — MULE TRAIN. Cold ship on the pad: run BAT, ENG1, ENG2, SYS. Tasking: friendly cargo traffic is inbound from the north to this pad. Radar cannot tell friend from bogey — close to visual range and identify each one. Disco (cyan datalink) calls new contacts and answers C with a bogey dope. The gas band to the west is a no-go line: Disco has no picture behind it and hostile pickets hold there. If a picket tracks you, or you shoot the traffic, the mission is over.';
+     }
+ 
+-    protected buildScenario(): void {
+-        this.traffic = [];
+-        this.pickets = [];
+-        this.identified.clear();
+-        this.landed.clear();
+-        this.outcome = undefined;
+-        this.behindGas = false;
+-
+-        this.station = new DishRadarStation(this, { x: 1600, y: 1900 });
+-        // Rock and dish are terrain like any other: they occlude every radar
+-        // in the scene — the dish's own included — and show and hide as one.
+-        const stationBodies = this.station.getTerrain();
+-        stationBodies.forEach(body => this.registerTerrain(body));
+-        this.registerFadeGroup(stationBodies);
+-
+-        // The band is in place from the start: the zone exists before the
+-        // player can fly, so the briefing can point at it.
+-        this.gasClouds.push(this.add.gasCloud({ from: GAS_FROM, to: GAS_TO, spreadMs: 0 }));
+-
+-        this.spawnPickets();
++    protected buildMission(): void {
++        this.replies.clear();
++        this.spawnPickets(3);
+         this.spawnTraffic();
+     }
+ 
+-    // Hostile cruisers holding station in the gas shadow. Stationary: a picket
+-    // is an emplacement, not a patrol. See the PICKET_* constants for the
+-    // layout rules.
+-    private spawnPickets(): void {
+-        const along = this.spineDirection();
+-        const inward = this.shadowNormal();
+-        const length = Phaser.Math.Distance.Between(GAS_FROM.x, GAS_FROM.y, GAS_TO.x, GAS_TO.y);
+-
+-        // Stations as distances along the band, kept apart from each other and
+-        // inside the world once pushed back to their depth.
+-        const stations: { along: number; pos: Vector2 }[] = [];
+-        for (let attempt = 0; attempt < PICKET_PLACEMENT_ATTEMPTS && stations.length < PICKET_COUNT; attempt++) {
+-            const t = Phaser.Math.FloatBetween(0, length);
+-            if (stations.some(s => Math.abs(s.along - t) < PICKET_SPACING_PX)) continue;
+-            const depth = PICKET_MIN_DEPTH_PX + Phaser.Math.FloatBetween(0, PICKET_DEPTH_BAND_PX);
+-            const pos = {
+-                x: GAS_FROM.x + along.x * t + inward.x * depth,
+-                y: GAS_FROM.y + along.y * t + inward.y * depth,
+-            };
+-            if (pos.x < PICKET_WORLD_MARGIN_PX || pos.y < PICKET_WORLD_MARGIN_PX
+-                || pos.x > this.world.width - PICKET_WORLD_MARGIN_PX
+-                || pos.y > this.world.height - PICKET_WORLD_MARGIN_PX) continue;
+-            stations.push({ along: t, pos });
+-        }
+-
+-        // Boresight straight at the band, plus a jitter that is flipped away
+-        // from any neighbour it would otherwise bring inside the cone.
+-        const towardGas = Phaser.Math.RadToDeg(Math.atan2(-inward.y, -inward.x));
+-        for (const station of stations) {
+-            let jitter = Phaser.Math.Between(-PICKET_HEADING_JITTER_DEG, PICKET_HEADING_JITTER_DEG);
+-            for (const other of stations) {
+-                if (other === station) continue;
+-                const bearing = Phaser.Math.RadToDeg(
+-                    Math.atan2(other.pos.y - station.pos.y, other.pos.x - station.pos.x),
+-                );
+-                const off = Phaser.Math.Angle.WrapDegrees(bearing - (towardGas + jitter));
+-                if (Math.abs(off) < PICKET_CONE_CLEAR_DEG) jitter = -jitter;
+-            }
+-            const picket = this.add.target({
+-                x: station.pos.x,
+-                y: station.pos.y,
+-                direction: towardGas + jitter,
+-                speed: 0,
+-                type: 'cruiser',
+-                activity: 'inactive',
+-            });
+-            this.pickets.push(picket);
+-            this.targets.push(picket);
+-        }
+-    }
+-
+     // Friendly cargo inbound down the lane east of the gas, staggered so they
+     // reach the pad one at a time. Cargo never attacks — it flies its route and
+     // defends itself if locked — so the only thing that distinguishes it from
+     // the pickets is the side it is on, which no sensor in the game can read.
+     private spawnTraffic(): void {
+-        for (const start of TRAFFIC_STARTS) {
+-            const cargo = this.add.target({
++        for (const { start, callsign, reply } of TRAFFIC) {
++            const cargo = this.addFriendly(this.add.target({
+                 x: start.x,
+                 y: start.y,
+                 direction: 90,
+@@ -229,275 +71,33 @@ export default class Level1 extends Game {
+                 type: 'cargo',
+                 side: 'friendly',
+                 route: TRAFFIC_ROUTE,
+-            });
+-            this.traffic.push(cargo);
+-            this.targets.push(cargo);
++            }), callsign);
++            this.replies.set(cargo.id, reply);
+         }
+     }
+ 
+-    create() {
+-        super.create();
+-
+-        // On-demand comms: no cooldown, so each C press is answered immediately;
+-        // the unprompted contact calls throttle themselves.
+-        this.comms = new SupportRadarComms(new AudioPlayer(this, 0));
+-
+-        this.commsHud = this.add.text(this.scale.width / 2, 120, '', {
+-            font: '20px Courier',
+-            color: '#00aeef',
+-            backgroundColor: '#000000aa',
+-            padding: { x: 12, y: 6 },
+-        }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(1000).setVisible(false);
+-
+-        this.missionHud = this.add.text(16, 16, '', {
+-            font: '16px Courier',
+-            color: '#00aeef',
+-            backgroundColor: '#000000aa',
+-            padding: { x: 10, y: 5 },
+-        }).setOrigin(0, 0).setScrollFactor(0).setDepth(1000);
+-        this.updateMissionHud();
+-
+-        this.input.keyboard?.on('keydown-C', this.onRequestBogeyDope);
+-        this.events.once('shutdown', () => {
+-            this.input.keyboard?.off('keydown-C', this.onRequestBogeyDope);
+-        });
++    protected missionStatus(): string {
++        const seen = this.friendlies.filter(cargo => this.identified.has(cargo.id)).length;
++        return `TASKING — VID INBOUND TRAFFIC ${seen}/${this.friendlies.length}   NO-GO WEST OF THE GAS`;
+     }
+ 
+-    protected briefingMessage(): string {
+-        return 'LEVEL 1 — Cold ship on the pad: run BAT, ENG1, ENG2, SYS. Tasking: friendly cargo traffic is inbound from the north to this pad. Radar cannot tell friend from bogey — close to visual range and identify each one. Disco (cyan datalink) calls new contacts and answers C with a bogey dope. The gas band to the west is a no-go line: Disco has no picture behind it and hostile pickets hold there. If a picket tracks you, or you shoot the traffic, the mission is over.';
++    protected openingTransmissions(): RadioLineKey[] {
++        return ['l1-brief-1', 'l1-brief-2', 'l1-brief-3', 'l1-checkin'];
+     }
+ 
+-    // ── Comms ──
+-
+-    // Key a "bogey dope" call: the player transmits the request (GPT voice) and
+-    // Disco replies with the nearest datalink contact's BRAA picture and a speed
+-    // order (ElevenLabs voice), or "clean" if there's nothing on the scope. Echo
+-    // the same picture on the HUD so it reaches the player by voice and sight.
+-    private onRequestBogeyDope = () => {
+-        if (!this.player || !this.station || !this.comms) return;
+-        // EMCON forbids any active transmission, including keying the radio —
+-        // the request never goes out, so Disco never answers.
+-        if (this.player.radar.getMode() === 'emcon') {
+-            this.showCommsHud('EMCON — TRANSMISSION HELD');
+-            return;
+-        }
+-        const call = this.comms.requestBogeyDope(this.player, this.station.getTracks(), this.identifyContact);
+-        this.showCommsHud(call ? `DISCO — ${this.describeCall(call)}` : 'DISCO — PICTURE CLEAN');
+-    };
+-
+-    // Disco's own declaration of a datalink track. The dish sees geometry
+-    // only; the identity comes from what the player has already put eyes on.
+-    private identifyContact = (track: Track): ContactIdentity => {
+-        const seen = this.traffic.some(ship =>
+-            ship.active && ship.body && this.identified.has(ship.id)
+-            && Phaser.Math.Distance.Between(ship.x, ship.y, track.pos.x, track.pos.y) < IDENTITY_MATCH_PX,
+-        );
+-        return seen ? 'friendly' : 'bogey';
+-    };
+-
+-    private describeCall(call: ContactCall): string {
+-        return `BRA ${String(call.bearing).padStart(3, '0')} FOR ${Math.round(call.rangePx)}, `
+-            + `${call.aspect.toUpperCase()}, ${call.identity.toUpperCase()} — ${call.speedOrder.toUpperCase()}`;
++    protected onAirborne(): void {
++        this.radio?.say('l1-airborne', 'l1-tasking');
+     }
+ 
+-    private showCommsHud(text: string): void {
+-        if (!this.commsHud) return;
+-        this.tweens.killTweensOf(this.commsHud);
+-        this.commsHud.setText(text).setVisible(true).setAlpha(1);
+-        this.tweens.add({
+-            targets: this.commsHud,
+-            alpha: 0,
+-            delay: 3500,
+-            duration: 800,
+-            onComplete: () => this.commsHud?.setVisible(false),
+-        });
+-    }
+-
+-    private updateMissionHud(): void {
+-        this.missionHud?.setText(
+-            `TASKING — VID INBOUND TRAFFIC ${this.identified.size}/${this.traffic.length}   NO-GO WEST OF THE GAS`,
+-        );
+-    }
+-
+-    // ── Per-frame ──
+-
+-    update(time: number, delta: number): void {
+-        super.update(time, delta);
+-
+-        // Base update bailed (player gone / graphics torn down): don't draw.
+-        const player = this.player;
+-        if (!player || !this.graphics) return;
+-
+-        // Sweep the dish and paint the shared picture. It detects the targets
+-        // (not the friendly player) and is occluded by the same terrain list,
+-        // its own rock included. The dish shoots through the same gas the
+-        // player does.
+-        this.station?.update(
+-            delta, this.targets, this.terrain, this.graphics,
+-            this.gasClouds.map(cloud => cloud.getVolume()),
+-        );
+-
+-        this.drawIdentified(this.graphics);
+-        // Arrivals land whatever the mission state. The verdict takes the
+-        // player's controls, not the world's clock — the ship identified on
+-        // final approach (the one that completes the tasking) still has to set
+-        // down and go, or it sits on the pad forever.
+-        this.landArrivedTraffic();
+-        if (this.outcome) return;
+-
+-        // Disco passes each new contact as its track matures. Not while the
+-        // ship is still cold on the pad — the radio is not powered yet. EMCON
+-        // does not stop these: it silences our transmitter, not our receiver.
+-        if (this.station && this.comms && this.isReadyForFlight()) {
+-            const call = this.comms.announceNewContact(
+-                player, this.station.getTracks(), this.identifyContact, this.time.now,
+-            );
+-            if (call) this.showCommsHud(`DISCO — NEW CONTACT, ${this.describeCall(call)}`);
+-        }
+-
+-        this.updateTraffic(player);
+-        this.watchNoGoZone(player);
+-    }
+-
+-    // Visual identification: a cargo ship inside VID range is identified; one
+-    // that is gone without having landed was shot down.
+-    private updateTraffic(player: PlayerShip): void {
+-        for (const ship of this.traffic) {
+-            if (!ship.active || !ship.body) {
+-                if (!this.landed.has(ship.id)) {
+-                    this.failMission('FRIENDLY TRAFFIC DESTROYED');
+-                    return;
+-                }
+-                continue;
+-            }
+-
+-            if (!this.identified.has(ship.id)
+-                && Phaser.Math.Distance.Between(player.x, player.y, ship.x, ship.y) <= VID_RANGE_PX) {
+-                this.identified.add(ship.id);
+-                this.updateMissionHud();
+-                this.showCommsHud(`FLATSPIN 1-1 — VISUAL, FRIENDLY CARGO (${this.identified.size}/${this.traffic.length})`);
+-                if (this.identified.size === this.traffic.length) {
+-                    this.outcome = 'complete';
+-                    this.showOutcome('MISSION COMPLETE — ALL INBOUND TRAFFIC IDENTIFIED', '#00ff00');
+-                }
+-            }
+-        }
+-    }
+-
+-    // A cargo ship that has reached the pad drops onto it and is gone.
+-    private landArrivedTraffic(): void {
+-        for (const ship of this.traffic) {
+-            if (!ship.active || !ship.body || this.landed.has(ship.id)) continue;
+-            if (ship.controller?.hasArrived()) {
+-                this.landed.add(ship.id);
+-                this.landTraffic(ship);
+-            }
++    protected onFriendlyIdentified(ship: Target): void {
++        const reply = this.replies.get(ship.id);
++        this.radio?.say('l1-vid', ...(reply ? [reply] : []));
++        if (this.friendlies.every(cargo => this.identified.has(cargo.id))) {
++            this.completeMission('ALL INBOUND TRAFFIC IDENTIFIED', 'l1-complete', 'l1-complete-2');
+         }
+     }
+ 
+-    // Set the cargo down on the pad: it shrinks away as it descends, then the
+-    // entity goes — a landed ship is no longer a contact for anyone's radar.
+-    private landTraffic(ship: Target): void {
+-        ship.controller?.destroy();
+-        this.tweens.add({
+-            targets: ship,
+-            // Not all the way to zero: the Matter body scales with the sprite,
+-            // and a zero-size body is degenerate geometry for the raycaster.
+-            scale: 0.05,
+-            duration: LANDING_MS,
+-            onComplete: () => {
+-                if (ship.active) ship.destroy();
+-            },
+-        });
+-    }
+-
+-    // The no-go zone. Crossing the band draws a warning from Disco; being
+-    // tracked by a picket in its shadow ends the mission — not being seen is
+-    // the whole task, and the RWR's search warning is the cue to turn back
+-    // before that happens (an emitter is heard long before it gets an echo).
+-    private watchNoGoZone(player: PlayerShip): void {
+-        const behind = this.isBehindGas({ x: player.x, y: player.y });
+-        if (behind && !this.behindGas) {
+-            this.showCommsHud('DISCO — FLATSPIN, YOU ARE BEHIND THE GAS. NO PICTURE THERE — COME EAST');
+-        }
+-        this.behindGas = behind;
+-
+-        const hull = Math.max(player.displayWidth, player.displayHeight) / 2 + DETECTION_MARGIN_PX;
+-        const hullSq = hull * hull;
+-        for (const picket of this.pickets) {
+-            if (!picket.active || !picket.body) continue;
+-            const seen = picket.radar.getTracks().some(track =>
+-                Phaser.Math.Distance.Squared(track.pos.x, track.pos.y, player.x, player.y) <= hullSq,
+-            );
+-            if (seen) {
+-                this.failMission('DETECTED BY A HOSTILE PICKET BEHIND THE GAS');
+-                return;
+-            }
+-        }
+-    }
+-
+-    private failMission(reason: string): void {
+-        if (this.outcome) return;
+-        this.outcome = 'failed';
+-        // Take the controls away: the verdict is in, the ship holds where it is.
+-        const player = this.player;
+-        if (player) {
+-            player.controller?.destroy();
+-            player.controller = undefined;
+-            player.setCurrentSpeed(0);
+-        }
+-        this.showOutcome(`MISSION FAILED — ${reason}`, '#ff0000');
+-    }
+-
+-    // Mark identified traffic on the tactical picture: a ring in datalink cyan
+-    // around the hull, the one contact on the scope whose identity is known.
+-    private drawIdentified(graphics: Phaser.GameObjects.Graphics): void {
+-        graphics.lineStyle(1, 0x00aeef, 0.8);
+-        for (const ship of this.traffic) {
+-            if (!ship.active || !ship.body || !this.identified.has(ship.id)) continue;
+-            graphics.strokeCircle(ship.x, ship.y, Math.max(ship.displayWidth, ship.displayHeight) / 2 + 10);
+-        }
+-    }
+-
+-    // ── Gas band geometry ──
+-    // The band runs the full height of the world, so "behind" is simply the
+-    // side of its spine line the pad is not on.
+-
+-    private sideOfSpine(pos: Vector2): number {
+-        const sx = GAS_TO.x - GAS_FROM.x;
+-        const sy = GAS_TO.y - GAS_FROM.y;
+-        return sx * (pos.y - GAS_FROM.y) - sy * (pos.x - GAS_FROM.x);
+-    }
+-
+-    private isBehindGas(pos: Vector2): boolean {
+-        const padSide = Math.sign(this.sideOfSpine(TRAFFIC_ROUTE[TRAFFIC_ROUTE.length - 1]));
+-        return Math.sign(this.sideOfSpine(pos)) === -padSide;
+-    }
+-
+-    // Unit vector along the spine, from its start to its end.
+-    private spineDirection(): Vector2 {
+-        const length = Phaser.Math.Distance.Between(GAS_FROM.x, GAS_FROM.y, GAS_TO.x, GAS_TO.y);
+-        return { x: (GAS_TO.x - GAS_FROM.x) / length, y: (GAS_TO.y - GAS_FROM.y) / length };
+-    }
+-
+-    // Unit normal to the spine pointing into the shadow, away from the pad.
+-    private shadowNormal(): Vector2 {
+-        const along = this.spineDirection();
+-        const normal = { x: -along.y, y: along.x };
+-        const probe = { x: GAS_FROM.x + normal.x, y: GAS_FROM.y + normal.y };
+-        return this.isBehindGas(probe) ? normal : { x: -normal.x, y: -normal.y };
+-    }
+-
+-    protected onPlayerLanded(): void {
+-        super.onPlayerLanded();
+-        // Not for the cold ship on the pad at the start: its first contact is
+-        // the physics engine noticing where it was parked.
+-        if (this.isReadyForFlight()) this.showCommsHud('FLATSPIN 1-1 — TOUCHDOWN');
+-    }
+-
+-    protected destroyPlayer(): void {
+-        super.destroyPlayer();
+-        this.station?.destroy();
+-        this.station = undefined;
++    protected onFriendlyLost(): void {
++        this.failMission('FRIENDLY TRAFFIC DESTROYED', 'fail-fratricide');
+     }
+ }
+diff --git a/src/scenes/level2.ts b/src/scenes/level2.ts
+new file mode 100644
+index 0000000..d613a03
+--- /dev/null
++++ b/src/scenes/level2.ts
+@@ -0,0 +1,190 @@
++import Phaser from "phaser";
++import CampaignLevel, { PAD_POSITION } from "./campaignLevel";
++import { PlayerShip, Target } from "../entities/ship";
++import { TowLine } from "../entities/towLine";
++import { RadioLineKey } from "../audio/radioNet";
++import { gasCloudSettings } from "../radar/data/radarGameSettings";
++import { playerShipSettings } from "../settings";
++
++// Where the crippled survey ship is found: this far up the gas spine, and
++// this far out of the band on the friendly side, drifting back towards it.
++// The drift is slow, but it is the clock: the player has to cold-start, cross
++// to her and pass a line before she slides back into the gas.
++const LANTERN_ALONG_PX = 1080;
++const LANTERN_OFFSET_PX = gasCloudSettings.RADIUS + 360;
++const LANTERN_DRIFT_SPEED = 0.018;
++
++// Passing the tow line: hold alongside, inside this range and no faster than
++// a third of full ahead, for this long. Drifting out of position loses the
++// line and it has to be passed again.
++const HOOKUP_RANGE_PX = 130;
++const HOOKUP_MAX_SPEED = playerShipSettings.SPEED / 3 + 0.005;
++const HOOKUP_MS = 5000;
++
++// Home: a tow brought this close to the pad is cast off and set down — from
++// flight level, so the tug never has to cross the ground (which only takes a
++// ship landing tail-first; see physics/landing.ts). She glides down onto the
++// pad beside the player's own parking spot.
++const HOME_RADIUS_PX = 300;
++const LANTERN_TOUCHDOWN = { x: 1280, y: 2290 };
++
++// The raider that crippled her comes out of the gas once she is under tow —
++// out of the southern stretch of the band, well clear of the picket line
++// (which is kept off that stretch so none of them has it in its cone).
++const RAIDER_ALONG_PX = 650;
++const RAIDER_DEPTH_PX = 40;
++const PICKET_KEEP_CLEAR_PX = 700;
++
++type Phase = 'search' | 'alongside' | 'tow' | 'home';
++
++// Campaign — Level 2, "Shepherd". A survey ship, Lantern 5, came off worst
++// against something in the gas: reactor scrammed, transmitter dark, drifting
++// out of the band and now back into it. The player finds her, identifies her
++// by eye, holds alongside to pass a tow line and drags her home — and on the
++// way the raider that did it comes back through the gas to finish the job.
++//
++// Lantern is a hulk, not a ship: no controller, radar in EMCON, engines out.
++// She moves only by the way she had on, and then only by the tow line.
++export default class Level2 extends CampaignLevel {
++    private lantern?: Target;
++    private raider?: Target;
++    private towLine?: TowLine;
++    private phase: Phase = 'search';
++    private hookupMs = 0;
++    private raiderSeen = false;
++
++    constructor() {
++        super('Level2');
++    }
++
++    protected levelTitle(): string {
++        return 'LEVEL 2 — SHEPHERD';
++    }
++
++    protected nextLevel(): string {
++        return 'Level3';
++    }
++
++    protected briefingMessage(): string {
++        return 'LEVEL 2 — SHEPHERD. The survey ship Lantern 5 is disabled and drifting back into the gas. Find her and identify her by eye, then hold alongside at 1/3 or slower until the tow line is across, and tow her to the pad. Whatever crippled her is still out there. If she drifts into the gas, the pickets will have her.';
++    }
++
++    protected buildMission(): void {
++        this.towLine = undefined;
++        this.raider = undefined;
++        this.phase = 'search';
++        this.hookupMs = 0;
++        this.raiderSeen = false;
++
++        this.spawnPickets(2, { along: RAIDER_ALONG_PX, halfWidth: PICKET_KEEP_CLEAR_PX });
++
++        const start = this.spinePoint(LANTERN_ALONG_PX, -LANTERN_OFFSET_PX);
++        const inward = this.shadowNormal();
++        const lantern = this.addFriendly(this.add.target({
++            x: start.x,
++            y: start.y,
++            direction: Phaser.Math.RadToDeg(Math.atan2(inward.y, inward.x)),
++            speed: LANTERN_DRIFT_SPEED,
++            type: 'cargo',
++            side: 'friendly',
++        }), 'LANTERN 5');
++        // A dead ship: no brain, no emitter, no plumes. What way she has on,
++        // she keeps — nothing in space takes it off her.
++        lantern.controller?.destroy();
++        lantern.controller = undefined;
++        lantern.radar.enterEmcon();
++        lantern.shutDownEngines();
++        this.lantern = lantern;
++    }
++
++    protected missionStatus(): string {
++        switch (this.phase) {
++            case 'search':
++                return 'TASKING — FIND AND VID THE DRIFTER BEFORE SHE REACHES THE GAS';
++            case 'alongside':
++                return `TASKING — HOLD ALONGSIDE AT 1/3 OR SLOWER — TOW LINE ${Math.round((this.hookupMs / HOOKUP_MS) * 100)}%`;
++            case 'tow':
++            case 'home':
++                return 'TASKING — TOW LANTERN 5 TO THE PAD';
++        }
++    }
++
++    protected openingTransmissions(): RadioLineKey[] {
++        return ['l2-brief-1', 'l2-brief-2', 'l2-checkin'];
++    }
++
++    protected onAirborne(): void {
++        this.radio?.say('l2-airborne', 'l2-tasking');
++    }
++
++    protected onFriendlyIdentified(): void {
++        if (this.phase !== 'search') return;
++        this.phase = 'alongside';
++        this.radio?.say('l2-vid', 'l2-lantern-1', 'l2-alongside');
++    }
++
++    protected onFriendlyLost(): void {
++        this.failMission('LANTERN 5 LOST', 'l2-fail-lost');
++    }
++
++    protected onHostileDestroyed(ship: Target): void {
++        if (ship === this.raider) this.radio?.say('splash', 'splash-ack', 'l2-thanks');
++    }
++
++    protected onFriendlyLanded(): void {
++        this.completeMission('LANTERN 5 IS HOME', 'l2-complete', 'l2-complete-2');
++    }
++
++    protected updateMission(player: PlayerShip, delta: number): void {
++        const lantern = this.lantern;
++        if (!lantern?.active || !lantern.body) return;
++
++        if (this.graphics) this.towLine?.update(this.graphics);
++
++        // Loose, she drifts — and the gas is where her way is taking her.
++        if (this.phase === 'search' || this.phase === 'alongside') {
++            if (this.isInGas({ x: lantern.x, y: lantern.y })) {
++                this.failMission('LANTERN 5 DRIFTED INTO THE GAS', 'l2-fail-drift');
++                return;
++            }
++        }
++
++        if (this.phase === 'alongside') this.passTowLine(player, lantern, delta);
++
++        if (this.phase === 'tow') {
++            this.watchRaider();
++            if (Phaser.Math.Distance.Between(lantern.x, lantern.y, PAD_POSITION.x, PAD_POSITION.y) <= HOME_RADIUS_PX) {
++                this.phase = 'home';
++                this.towLine?.release();
++                this.landShip(lantern, LANTERN_TOUCHDOWN);
++            }
++        }
++    }
++
++    // Station-keeping while the line goes across: close, slow, and steady.
++    private passTowLine(player: PlayerShip, lantern: Target, delta: number): void {
++        const close = Phaser.Math.Distance.Between(player.x, player.y, lantern.x, lantern.y) <= HOOKUP_RANGE_PX;
++        const slow = Math.abs(player.getCurrentSpeed()) <= HOOKUP_MAX_SPEED;
++        this.hookupMs = close && slow ? this.hookupMs + delta : 0;
++        if (this.hookupMs < HOOKUP_MS) return;
++
++        this.phase = 'tow';
++        this.towLine = new TowLine(player, lantern);
++        this.showCommsHud('LANTERN 5 — TOW LINE FAST');
++        this.radio?.say('l2-hooked');
++
++        // Whoever did this has been waiting for someone to come for her.
++        this.raider = this.spawnRaider(RAIDER_ALONG_PX, RAIDER_DEPTH_PX, PAD_POSITION);
++    }
++
++    // The raider pops up on Disco's scope as it leaves the gas: declared on
++    // the spot — it is coming out of the enemy's side at a rescue.
++    private watchRaider(): void {
++        const raider = this.raider;
++        if (this.raiderSeen || !raider?.active || !this.stationTracks(raider)) return;
++        this.raiderSeen = true;
++        this.declaredHostile.add(raider.id);
++        this.showCommsHud('DISCO — POP-UP, SINGLE, HOT — HOSTILE. CLEARED HOT');
++        this.radio?.say('l2-popup', 'l2-scared');
++    }
++}
+diff --git a/src/scenes/level3.ts b/src/scenes/level3.ts
+new file mode 100644
+index 0000000..4f0e921
+--- /dev/null
++++ b/src/scenes/level3.ts
+@@ -0,0 +1,186 @@
++import Phaser from "phaser";
++import CampaignLevel, { PAD_POSITION, STATION_POSITION } from "./campaignLevel";
++import { Target } from "../entities/ship";
++import { RadioLineKey } from "../audio/radioNet";
++import { Vector2 } from "../types";
++
++// Mule 2-3 comes through the middle of the band, heading for the pad. It is a
++// hauler with a dead transponder: to every sensor it is a bogey, exactly like
++// what follows it.
++const MULE_ALONG_PX = 1100;
++const MULE_SPEED = 0.13;
++const MULE_LANDING: Vector2 = { x: 1300, y: 2330 };
++// It comes out this long after the player is off the pad.
++const MULE_DELAY_MS = 20000;
++
++// The raid: two cruisers line abreast, far enough apart along the band that
++// neither has the other in its cone, a little deeper in the gas than Mule —
++// they are chasing him. They enter the band once he has a lead on them: the
++// gas soaks up their radar as well as Disco's, so from the far side of it
++// they cannot hold him, and he comes out with the length of the band between
++// them. (Much less, and they shoot him down inside it, before the dish has
++// a picture or the player a chance.) If he is held up, they come anyway.
++const RAID_SPACING_PX = 170;
++const RAID_DEPTH_PX = 120;
++const RAID_MULE_LEAD_PX = 550;
++const RAID_LATEST_MS = 90000;
++// One goes for the pad, one for the dish. Their route ends short of the
++// target: a raider over the target is the loss, not one parked on it.
++const RAID_TARGETS: { destination: Vector2; name: string }[] = [
++    { destination: { x: PAD_POSITION.x, y: PAD_POSITION.y - 120 }, name: 'THE PAD' },
++    { destination: { x: STATION_POSITION.x - 250, y: STATION_POSITION.y }, name: 'THE DISH' },
++];
++// Any raider this close to the pad or the dish has reached it.
++const RAID_TARGET_RADIUS_PX = 260;
++
++// Campaign — Level 3, "Backdoor". The picket line behind the gas has gone
++// dark; the player holds a CAP between the gas and the pad. First out of the
++// cloud is Mule 2-3, the straggler, transponder dead — a bogey until the
++// player looks. Behind him come two raiders, declared hostile by Disco the
++// moment the dish holds them. Neither may reach the pad or the dish, and the
++// hauler has to make it down.
++export default class Level3 extends CampaignLevel {
++    private mule?: Target;
++    private raiders: { ship: Target; name: string }[] = [];
++    private muleSpawnAt?: number;
++    private muleStart?: Vector2;
++    private raidDueAt?: number;
++    private muleSeen = false;
++    private raidSeen = false;
++
++    constructor() {
++        super('Level3');
++    }
++
++    protected levelTitle(): string {
++        return 'LEVEL 3 — BACKDOOR';
++    }
++
++    protected briefingMessage(): string {
++        return 'LEVEL 3 — BACKDOOR. The picket line behind the gas has gone dark. Hold between the gas and the pad. Mule 2-3 is overdue with a dead transponder — whatever comes out of the gas is a bogey until you have eyes on it. Nothing hostile reaches the pad or the dish, and Mule 2-3 has to make it down.';
++    }
++
++    protected buildMission(): void {
++        this.mule = undefined;
++        this.raiders = [];
++        this.muleSpawnAt = undefined;
++        this.muleStart = undefined;
++        this.raidDueAt = undefined;
++        this.muleSeen = false;
++        this.raidSeen = false;
++        // No pickets: they are the raid.
++    }
++
++    protected missionStatus(): string {
++        if (!this.mule) return 'TASKING — HOLD BETWEEN THE GAS AND THE PAD';
++        const splashed = this.raiders.filter(r => !r.ship.active).length;
++        const mule = this.landed.has(this.mule.id) ? 'DOWN' : this.identified.has(this.mule.id) ? 'IDENTIFIED' : 'BOGEY';
++        const raid = this.raiders.length > 0 ? `   RAIDERS SPLASHED ${splashed}/${this.raiders.length}` : '';
++        return `TASKING — MULE 2-3: ${mule}${raid}`;
++    }
++
++    protected openingTransmissions(): RadioLineKey[] {
++        return ['l3-brief-1', 'l3-brief-2', 'l3-checkin'];
++    }
++
++    protected onAirborne(): void {
++        this.radio?.say('l3-airborne', 'l3-tasking');
++        this.muleSpawnAt = this.time.now + MULE_DELAY_MS;
++    }
++
++    protected onFriendlyIdentified(ship: Target): void {
++        if (ship !== this.mule) return;
++        this.radio?.say('l3-mule23-1', 'l3-vid-mule', 'l3-mule23-2');
++    }
++
++    protected onFriendlyLost(): void {
++        this.failMission('MULE 2-3 LOST', 'l3-fail-lost');
++    }
++
++    protected onFriendlyLanded(): void {
++        this.radio?.say('l3-mule-landed');
++        this.checkComplete();
++    }
++
++    protected onHostileDestroyed(): void {
++        const left = this.raiders.filter(r => r.ship.active).length;
++        this.radio?.say('splash', left > 0 ? 'l3-one-left' : 'splash-ack');
++        this.checkComplete();
++    }
++
++    private checkComplete(): void {
++        if (!this.mule || !this.landed.has(this.mule.id)) return;
++        if (this.raiders.length === 0 || this.raiders.some(r => r.ship.active)) return;
++        this.completeMission('THE DOOR HELD', 'l3-complete', 'l3-complete-2');
++    }
++
++    protected updateMission(): void {
++        const now = this.time.now;
++
++        if (!this.mule && this.muleSpawnAt !== undefined && now >= this.muleSpawnAt) {
++            this.spawnMule();
++            this.raidDueAt = now + RAID_LATEST_MS;
++        }
++        if (this.raiders.length === 0 && this.raidDueAt !== undefined && this.raidIsDue(now)) {
++            this.spawnRaid();
++        }
++
++        // Pop-ups: Disco calls what the dish can hold, when it can hold it —
++        // unless the player has already put eyes on it.
++        if (this.mule && !this.muleSeen && this.stationTracks(this.mule)) {
++            this.muleSeen = true;
++            if (!this.identified.has(this.mule.id)) {
++                this.showCommsHud('DISCO — POP-UP, SINGLE, NO SQUAWK — BOGEY. VID, DO NOT ENGAGE');
++                this.radio?.say('l3-popup-mule');
++            }
++        }
++        if (!this.raidSeen && this.raiders.some(r => this.stationTracks(r.ship))) {
++            this.raidSeen = true;
++            this.raiders.forEach(r => this.declaredHostile.add(r.ship.id));
++            this.showCommsHud('DISCO — TWO NEW CONTACTS — HOSTILE, HOSTILE. CLEARED HOT');
++            this.radio?.say('l3-popup-raid', 'l3-condition-red');
++        }
++
++        for (const { ship, name } of this.raiders) {
++            if (!ship.active || !ship.body) continue;
++            const overPad = Phaser.Math.Distance.Between(ship.x, ship.y, PAD_POSITION.x, PAD_POSITION.y) <= RAID_TARGET_RADIUS_PX;
++            const overDish = Phaser.Math.Distance.Between(ship.x, ship.y, STATION_POSITION.x, STATION_POSITION.y) <= RAID_TARGET_RADIUS_PX;
++            if (overPad || overDish) {
++                this.failMission(`RAIDERS REACHED ${overPad ? 'THE PAD' : name}`, 'l3-fail-raid');
++                return;
++            }
++        }
++    }
++
++    private raidIsDue(now: number): boolean {
++        if (now >= (this.raidDueAt ?? Infinity)) return true;
++        const mule = this.mule;
++        if (!mule?.active || !mule.body || !this.muleStart) return true;
++        return Phaser.Math.Distance.Between(mule.x, mule.y, this.muleStart.x, this.muleStart.y) >= RAID_MULE_LEAD_PX;
++    }
++
++    private spawnMule(): void {
++        const inward = this.shadowNormal();
++        const start = this.spinePoint(MULE_ALONG_PX, 0);
++        this.muleStart = start;
++        const exit = this.spinePoint(MULE_ALONG_PX, -300);
++        this.mule = this.addFriendly(this.add.target({
++            x: start.x,
++            y: start.y,
++            direction: Phaser.Math.RadToDeg(Math.atan2(-inward.y, -inward.x)),
++            speed: MULE_SPEED,
++            type: 'cargo',
++            side: 'friendly',
++            route: [exit, MULE_LANDING],
++        }), 'MULE 2-3');
++    }
++
++    private spawnRaid(): void {
++        RAID_TARGETS.forEach(({ destination, name }, i) => {
++            const along = MULE_ALONG_PX + (i === 0 ? -RAID_SPACING_PX : RAID_SPACING_PX);
++            const ship = this.spawnRaider(along, RAID_DEPTH_PX, destination);
++            this.setCallsign(ship, `RAIDER ${i + 1}`);
++            this.raiders.push({ ship, name });
++        });
++    }
++}
+diff --git a/src/scenes/startMenu.ts b/src/scenes/startMenu.ts
+index 80ca73e..1c0f880 100644
+--- a/src/scenes/startMenu.ts
++++ b/src/scenes/startMenu.ts
+@@ -13,6 +13,12 @@ const SCENARIOS: ScenarioOption[] = [
+     { key: 'skirmish', label: 'Skirmish — mixed ships & asteroids' },
+ ];
+ 
++const CAMPAIGN: { key: string; label: string }[] = [
++    { key: 'Level1', label: '1 — MULE TRAIN' },
++    { key: 'Level2', label: '2 — SHEPHERD' },
++    { key: 'Level3', label: '3 — BACKDOOR' },
++];
++
+ const CONTROLS = [
+     'A / D  turn left / right',
+     'Q  cycle missiles      SPACE  fire',
+@@ -38,6 +44,9 @@ export default class StartMenu extends Phaser.Scene {
+ 
+     create(): void {
+         const cx = this.scale.width / 2;
++        // Phaser reuses the scene instance: the campaign's M / ENTER bring the
++        // menu back, and last run's buttons were destroyed with its display list.
++        this.scenarioButtons = [];
+ 
+         // Title
+         this.add.text(cx, 90, 'RADAR GAME', {
+@@ -63,8 +72,12 @@ export default class StartMenu extends Phaser.Scene {
+             startButton.setStyle({ backgroundColor: '#000000', color: '#ffffff' });
+         });
+ 
+-        // Campaign entry — its own scene, independent of the practice scenarios.
+-        this.createCampaignButton(cx, 470, 'CAMPAIGN — LEVEL 1', 'Level1');
++        // Campaign — its own scenes, independent of the practice scenarios.
++        this.add.text(cx, 432, 'CAMPAIGN', {
++            fontSize: '18px',
++            color: '#888888',
++        }).setOrigin(0.5);
++        CAMPAIGN.forEach((level, i) => this.createCampaignButton(cx, 470 + i * 44, level.label, level.key));
+ 
+         // Scenario selector (under Start)
+         this.add.text(cx, 250, 'SCENARIO', {
+@@ -124,7 +137,7 @@ export default class StartMenu extends Phaser.Scene {
+ 
+     private createCampaignButton(x: number, y: number, label: string, sceneKey: string): void {
+         const button = this.add.text(x, y, label, {
+-            fontSize: '24px',
++            fontSize: '20px',
+             color: '#ffffff',
+             backgroundColor: '#000000',
+             padding: { x: 20, y: 10 },
+diff --git a/tools/generateClips.js b/tools/generateClips.js
+index 59be69c..ba4cb32 100644
+--- a/tools/generateClips.js
++++ b/tools/generateClips.js
+@@ -7,8 +7,15 @@
+ //     are either unprefixed (RadarVoice's existing vocabulary) or 'plr-' (new
+ //     player radio calls added alongside the GCI comms).
+ //
++// Plus the campaign's story traffic (src/audio/radioScript.json): whole
++// transmissions, one clip per line, into public/audio/story/<key>.mp3. The
++// cast is below (STORY_VOICES) — each speaker in the script is one voice.
++//
+ // Run with `node tools/generateClips.js`. Existing files are left alone —
+-// pass --force to regenerate everything (re-billed on every clip).
++// pass --force to regenerate everything (re-billed on every clip), or
++// --only=<prefix> to limit a run to matching keys (e.g. --only=l2-).
++// A clip that fails is reported and skipped; the run carries on and exits
++// non-zero with a summary of what is missing.
+ import fs from "fs";
+ import path from "path";
+ import process from "process";
+@@ -20,6 +27,8 @@ const currentFilePath = fileURLToPath(import.meta.url);
+ const currentDirPath = path.dirname(currentFilePath);
+ const envFilePath = path.join(currentDirPath, ".env");
+ const outputDir = path.resolve(currentDirPath, "..", "public", "audio");
++const storyOutputDir = path.join(outputDir, "story");
++const radioScriptPath = path.resolve(currentDirPath, "..", "src", "audio", "radioScript.json");
+ 
+ if (typeof process.loadEnvFile === "function") {
+   process.loadEnvFile(envFilePath);
+@@ -58,6 +67,23 @@ const GCI_MODEL_ID = "eleven_turbo_v2_5";
+ const PLAYER_VOICE = "ash";
+ const PLAYER_SPEED = 1.3;
+ 
++// The story cast. Every speaker in radioScript.json maps to a voice here.
++// ElevenLabs voice IDs are from the default voice library — swap any of them
++// for one from your own library to recast a part. Disco keeps the GCI voice
++// above so his story lines and his stitched BRA calls are the same man; the
++// player keeps the OpenAI voice for the same reason.
++const STORY_MODEL_ID = "eleven_multilingual_v2";
++const STORY_VOICES = {
++  disco:    { engine: "elevenlabs", id: GCI_VOICE_ID },
++  anvil:    { engine: "elevenlabs", id: "pqHfZKP75CyOlkJxvsaD" }, // Bill — older, gravelly: the colonel
++  mule21:   { engine: "elevenlabs", id: "nPczCjzI2devNBz1zQrb" }, // Brian — deep, wry: the flight lead
++  mule22:   { engine: "elevenlabs", id: "cjVigY5qzO86Huf0OWal" }, // Eric — the nervous one
++  mule24:   { engine: "elevenlabs", id: "iP95p4xoKVk53GoZ742B" }, // Chris — the gossip
++  mule23:   { engine: "elevenlabs", id: "IKne3meq5aSn9XLyUdCD" }, // Charlie — the straggler
++  lantern:  { engine: "elevenlabs", id: "Xb7hH8MSUJpSbSDYk0k2" }, // Alice — the survey ship's engineer
++  flatspin: { engine: "openai", instructions: "A calm, terse fighter pilot on the radio. Clipped, professional, no drama." },
++};
++
+ // key -> { voice: 'gci' | 'player', text }
+ const CLIPS = {
+   // ── GCI ("Disco") — new bogey-dope vocabulary ──────────────────────────
+@@ -114,29 +140,85 @@ async function generateGpt(text) {
+   return Buffer.from(await speech.arrayBuffer());
+ }
+ 
+-async function generateElevenLabs(text) {
+-  const audio = await elevenlabs.textToSpeech.convert(GCI_VOICE_ID, {
++async function generateGptLine(text, instructions) {
++  const speech = await openai.audio.speech.create({
++    model: "gpt-4o-mini-tts",
++    speed: PLAYER_SPEED,
++    voice: PLAYER_VOICE,
++    input: text,
++    instructions,
++  });
++  return Buffer.from(await speech.arrayBuffer());
++}
++
++async function generateElevenLabs(text, voiceId = GCI_VOICE_ID, modelId = GCI_MODEL_ID) {
++  const audio = await elevenlabs.textToSpeech.convert(voiceId, {
+     text,
+-    modelId: GCI_MODEL_ID,
++    modelId,
+   });
+   const chunks = [];
+   for await (const chunk of audio) chunks.push(chunk);
+   return Buffer.concat(chunks);
+ }
+ 
+-const force = process.argv.includes("--force");
+-fs.mkdirSync(outputDir, { recursive: true });
++// One job per clip: where it goes, what is said, and how it is made.
++const jobs = Object.entries(CLIPS).map(([key, { voice, text }]) => ({
++  key,
++  file: path.join(outputDir, `${key}.mp3`),
++  label: voice,
++  text,
++  make: () => (voice === "gci" ? generateElevenLabs(text) : generateGpt(text)),
++}));
++
++const radioScript = JSON.parse(fs.readFileSync(radioScriptPath, "utf8"));
++for (const [key, line] of Object.entries(radioScript.lines)) {
++  const cast = STORY_VOICES[line.speaker];
++  // What the voice speaks can differ from the subtitle ("one-one" for "1-1").
++  const text = line.say ?? line.text;
++  jobs.push({
++    key,
++    file: path.join(storyOutputDir, `${key}.mp3`),
++    label: line.speaker,
++    text,
++    make: () => {
++      if (!cast) throw new Error(`no voice cast for speaker "${line.speaker}" (add it to STORY_VOICES)`);
++      return cast.engine === "openai"
++        ? generateGptLine(text, cast.instructions)
++        : generateElevenLabs(text, cast.id, STORY_MODEL_ID);
++    },
++  });
++}
+ 
+-for (const [key, { voice, text }] of Object.entries(CLIPS)) {
+-  const outputFilePath = path.join(outputDir, `${key}.mp3`);
+-  if (!force && fs.existsSync(outputFilePath)) {
+-    console.log(`skip  ${key} (already exists)`);
++const force = process.argv.includes("--force");
++const only = process.argv.find(arg => arg.startsWith("--only="))?.slice("--only=".length);
++fs.mkdirSync(storyOutputDir, { recursive: true });
++
++const failures = [];
++let generated = 0;
++for (const job of jobs) {
++  if (only && !job.key.startsWith(only)) continue;
++  if (!force && fs.existsSync(job.file)) {
++    console.log(`skip  ${job.key} (already exists)`);
+     continue;
+   }
+ 
+-  console.log(`gen   ${key} [${voice}] "${text}"`);
+-  const buffer = voice === "gci" ? await generateElevenLabs(text) : await generateGpt(text);
+-  fs.writeFileSync(outputFilePath, buffer);
++  console.log(`gen   ${job.key} [${job.label}] "${job.text}"`);
++  try {
++    fs.writeFileSync(job.file, await job.make());
++    generated++;
++  } catch (error) {
++    // Keep going: one bad voice ID or a rate limit should not cost the rest
++    // of the batch. What failed is summarised at the end.
++    const status = error?.statusCode ?? error?.status ?? "";
++    const detail = error?.body?.detail?.message ?? error?.message ?? String(error);
++    console.error(`FAIL  ${job.key} [${job.label}] ${status} ${detail}`);
++    failures.push({ key: job.key, label: job.label, reason: `${status} ${detail}`.trim() });
++  }
+ }
+ 
+-console.log("done.");
++console.log(`done. ${generated} generated, ${failures.length} failed.`);
++if (failures.length > 0) {
++  console.error("\nFailed clips (the game shows these as subtitles only):");
++  for (const f of failures) console.error(`  ${f.key} [${f.label}] — ${f.reason}`);
++  process.exitCode = 1;
++}
+diff --git a/tsconfig.json b/tsconfig.json
+index b16008d..32fbb01 100644
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -9,6 +9,7 @@
+     /* Bundler mode */
+     "moduleResolution": "bundler",
+     "allowImportingTsExtensions": true,
++    "resolveJsonModule": true,
+     "isolatedModules": true,
+     "moduleDetection": "force",
+     "noEmit": true,
