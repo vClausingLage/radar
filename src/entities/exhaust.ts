@@ -7,15 +7,18 @@ import Phaser from 'phaser';
 
 const EXHAUST_TEXTURE_KEY = 'exhaustParticle';
 
-// Local nozzle offsets from each texture's centre, in unscaled texture pixels.
-// Every sprite faces right (+x = nose), so exhaust exits toward -x (the rear).
-//   ship.png   69×68  nozzles (5,5) & (5,62)   → centre (34.5, 34)
-//   cargo.png 166×70  nozzles (15,17) & (15,55) → centre (83, 35)
-//   missile.png 30×14 nozzle  (2,7)            → centre (15, 7)
+// Nozzle positions in each texture's own pixel space (origin top-left,
+// unscaled) — the same frame the sprite outlines are traced in. Every sprite
+// faces right (+x = nose), so exhaust exits toward -x (the rear). The host's
+// origin is subtracted at runtime, so the plume stays on the nozzle whether
+// the sprite pivots on the texture centre or on its hull's centroid.
+//   ship.png    69×68
+//   cargo.png  166×70
+//   missile.png 30×14
 export const EXHAUST_NOZZLES: Record<string, { x: number; y: number }[]> = {
-  ship: [{ x: -29.5, y: -29 }, { x: -29.5, y: 28 }],
-  cargo: [{ x: -68, y: -18 }, { x: -68, y: 20 }],
-  missile: [{ x: -13, y: 0 }],
+  ship: [{ x: 5, y: 5 }, { x: 5, y: 62 }],
+  cargo: [{ x: 15, y: 17 }, { x: 15, y: 55 }],
+  missile: [{ x: 2, y: 7 }],
 };
 
 export type ExhaustStyle = {
@@ -126,9 +129,10 @@ export class Exhaust {
     for (let i = 0; i < this.emitters.length; i++) {
       const emitter = this.emitters[i];
       const nozzle = this.nozzles[i];
-      // Rotate the (scaled) local nozzle offset into world space.
-      const lx = nozzle.x * this.host.scaleX;
-      const ly = nozzle.y * this.host.scaleY;
+      // Offset from the host's pivot (its origin, in unscaled texture
+      // pixels), scaled and rotated into world space.
+      const lx = (nozzle.x - this.host.displayOriginX) * this.host.scaleX;
+      const ly = (nozzle.y - this.host.displayOriginY) * this.host.scaleY;
       emitter.setPosition(
         this.host.x + lx * cos - ly * sin,
         this.host.y + lx * sin + ly * cos,

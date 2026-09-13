@@ -7,6 +7,8 @@ import { createEntityId } from './entityId';
 import { Decoy } from "./decoy";
 import { decoySettings } from "../radar/data/radarGameSettings";
 import { Exhaust, EXHAUST_NOZZLES, SHIP_EXHAUST } from "./exhaust";
+import { fitBodyToOutline } from "../physics/bodyShape";
+import { SHIP_OUTLINES } from "./spriteOutlines";
 
 export abstract class Ship extends Phaser.Physics.Matter.Sprite {
     public readonly id: number;
@@ -39,6 +41,12 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
         if (!this.body) {
             throw new Error('Body of Ship is undefined');
         }
+        // The body is what the radar echoes off and what a missile or the
+        // ground actually meets, so give it the hull's silhouette rather
+        // than the texture's box. Must run before the friction and velocity
+        // below and before any subclass setScale: setBody resets the former
+        // and Phaser scales body and picture together from here on.
+        fitBodyToOutline(this, SHIP_OUTLINES[this.texture.key] ?? SHIP_OUTLINES.ship);
         // Remove air friction for space physics
         this.setFrictionAir(0);
         // Set velocity using Matter physics

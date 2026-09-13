@@ -97,3 +97,64 @@ export const DISH_RADAR_OUTLINE: Vector2[] = [
     { x: 177, y: 112 },
     { x: 239, y: 96 },
 ];
+
+// The ships. A hull's presented cross-section (signalPath) and the point a
+// missile or terrain actually meets are read off the body, so a box body
+// would echo and crash as a slab the size of the whole texture — the notch
+// between the engine pods and the taper of the nose would not exist to the
+// radar. Both sprites face +x (nose right); the pods at the left edge are
+// where the exhaust nozzles sit.
+//   node tools/traceOutline.js public/ship.png 4 0.5
+export const SHIP_OUTLINE: Vector2[] = [
+    { x: 5, y: 2 },
+    { x: 15, y: 8 },
+    { x: 43, y: 2 },
+    { x: 59, y: 12 },
+    { x: 66, y: 41 },
+    { x: 55, y: 59 },
+    { x: 43, y: 65 },
+    { x: 17, y: 59 },
+    { x: 2, y: 63 },
+    { x: 8, y: 52 },
+    { x: 2, y: 40 },
+    { x: 8, y: 16 },
+    { x: 1, y: 9 },
+    { x: 4, y: 3 },
+];
+
+//   node tools/traceOutline.js public/cargo.png 4 0.5
+export const CARGO_OUTLINE: Vector2[] = [
+    { x: 76, y: 1 },
+    { x: 101, y: 1 },
+    { x: 108, y: 12 },
+    { x: 114, y: 7 },
+    { x: 131, y: 9 },
+    { x: 149, y: 17 },
+    { x: 151, y: 27 },
+    { x: 158, y: 30 },
+    { x: 154, y: 37 },
+    { x: 163, y: 39 },
+    { x: 130, y: 60 },
+    { x: 108, y: 57 },
+    { x: 101, y: 68 },
+    { x: 69, y: 67 },
+    { x: 62, y: 57 },
+    { x: 39, y: 60 },
+    { x: 1, y: 52 },
+    { x: 34, y: 44 },
+    { x: 24, y: 38 },
+    { x: 24, y: 31 },
+    { x: 34, y: 25 },
+    { x: 30, y: 21 },
+    { x: 1, y: 17 },
+    { x: 40, y: 9 },
+    { x: 62, y: 12 },
+    { x: 67, y: 3 },
+    { x: 75, y: 2 },
+];
+
+// Hull outline by ship texture key, for Ship to fit its body from.
+export const SHIP_OUTLINES: Record<string, Vector2[]> = {
+    ship: SHIP_OUTLINE,
+    cargo: CARGO_OUTLINE,
+};
