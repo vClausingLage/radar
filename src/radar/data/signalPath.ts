@@ -2,7 +2,10 @@ import Phaser from 'phaser';
 import type { GasVolume } from './types';
 import {
     RADAR_MAX_CROSS_SECTION,
+    RADAR_MEASUREMENT_JITTER_MAX_PX,
+    RADAR_MEASUREMENT_JITTER_REF_PX,
     RADAR_ONE_WAY_RANGE_POWER,
+    RADAR_PFA,
     RADAR_REFERENCE_CROSS_SECTION_PX,
     RADAR_TWO_WAY_RANGE_POWER,
     RWR_NOISE_FLOOR,
@@ -81,18 +84,36 @@ export function emissionSignal(
 }
 
 // Chance a signal of this strength is actually made out against the noise.
-// Zero at the floor and asymptotic to certainty well above it, so detection
-// fades in over a band rather than switching on at a line — the reason a
-// contact at the edge of the picture blinks in and out for a few sweeps
-// before it settles.
+// Swerling I's closed form for a Neyman-Pearson threshold built around a
+// design false-alarm rate: Pd = Pfa ^ (1 / (1 + signal)). At signal = 0 this
+// is exactly Pfa — the same noise-alone false-alarm chance the threshold was
+// set for — and it climbs toward certainty as signal grows, fading in over a
+// band rather than switching on at a line. That fade is what makes a contact
+// at the edge of the picture blink in and out for a few sweeps before it
+// settles, and the nonzero floor is what makes a false alarm possible at all:
+// see the receiver's false-alarm spawn, which rolls the same curve against a
+// cell with nothing in it.
 export function detectionProbability(signal: number): number {
     if (!Number.isFinite(signal)) return 1;
-    return Math.max(0, 1 - 1 / signal);
+    if (signal < 0) return RADAR_PFA;
+    return Math.pow(RADAR_PFA, 1 / (1 + signal));
 }
 
 // Roll for one detection at this signal strength.
 export function isDetected(signal: number): boolean {
     return Math.random() < detectionProbability(signal);
+}
+
+// How far a detected return's reported position wanders from where it truly
+// is, as a 1-sigma jitter (px). Measurement accuracy improves with SNR —
+// resolution / sqrt(2 * signal) — so a strong, close return is nearly exact
+// and a faint one right at the floor wanders by the full reference amount.
+// Clamped so a return sitting right at the detection floor cannot roll a
+// jitter large enough to place it somewhere the geometry never supported.
+export function measurementJitterPx(signal: number): number {
+    if (!Number.isFinite(signal) || signal <= 0) return RADAR_MEASUREMENT_JITTER_MAX_PX;
+    const jitter = RADAR_MEASUREMENT_JITTER_REF_PX / Math.sqrt(2 * signal);
+    return Math.min(jitter, RADAR_MEASUREMENT_JITTER_MAX_PX);
 }
 
 // A hull's radar cross-section as seen from `from`, relative to the reference

@@ -92,6 +92,52 @@ export const RADAR_REFERENCE_CROSS_SECTION_PX = 28;
 // worth tracing halfway across the world.
 export const RADAR_MAX_CROSS_SECTION = 4;
 
+// Design false-alarm probability the detection threshold is built around.
+// `detectionProbability()` uses the Swerling I closed form
+// Pd = Pfa ^ (1 / (1 + signal)) — the same Neyman-Pearson threshold that sets
+// a chosen false-alarm rate also sets how fast Pd climbs with signal, so one
+// number does both jobs. A real set drives this down to 1e-6 or lower, spread
+// across thousands of range-Doppler-azimuth cells; this radar tests one ray
+// per frame instead, so a textbook Pfa would demand far more signal than the
+// rest of the budget ever produces before Pd left the floor at all. Kept
+// close to the placeholder curve's own knee instead (Pd = 0.5 a little past
+// signal = 1, the rated range for a reference hull), so the constants tuned
+// against that curve — RADAR_REFERENCE_CROSS_SECTION_PX, the gas attenuation —
+// keep meaning what they were built to mean.
+export const RADAR_PFA = 0.05;
+
+// Chance an empty cell the beam sweeps reports a contact anyway — receiver
+// noise alone crossing the threshold, at the same Pd(0) = RADAR_PFA the
+// detection curve above is built around applied to a *specific* cell rather
+// than to a real echo. Rolled once per ray, i.e. once per swept azimuth step,
+// not once per RADAR_PFA-eligible range bin the way a real set's many cells
+// would be — this radar does not bin range yet (see the realism roadmap's
+// sampling item), so this is deliberately a smaller, separately-tuned rate
+// rather than RADAR_PFA itself: at RADAR_PFA's own value a false contact would
+// flare on almost every sweep leg, which is not what "rare noise sparkle" is
+// supposed to look like with only one ray's worth of chances per frame.
+export const RADAR_FALSE_ALARM_RATE = 0.0006;
+
+// A false alarm's range is drawn uniformly along the ray's traced reach —
+// unlike a real echo, receiver noise does not fall off with distance, so a
+// phantom contact is exactly as likely to appear at the far edge of the beam
+// as close in. That is the tell: a genuine return thins out with range, a
+// noise spike does not.
+
+// 1-sigma position jitter (px) applied to a detected return, at the noise
+// floor (signal = 1). A real set's measurement accuracy improves with SNR as
+// resolution / sqrt(2 * SNR); lacking a wired range/angle resolution for ship
+// returns yet (see the roadmap's resolution item), this stands in as a flat
+// reference accuracy at the floor that the same sqrt(2 * SNR) law sharpens up
+// for a stronger return. Kept well under TRACK_CLUSTER_RADIUS_PX so a jittery
+// track still reads as the same contact, not a new one.
+export const RADAR_MEASUREMENT_JITTER_REF_PX = 14;
+
+// Ceiling on the jitter above, so a return sitting right at the detection
+// floor (signal barely above 0) cannot roll a jitter large enough to place it
+// implausibly far from the geometry that produced it.
+export const RADAR_MEASUREMENT_JITTER_MAX_PX = 55;
+
 // ── Antenna sweep (systems/modules/antenna.ts) ──────────────────────────────
 
 // Degrees the antenna sweep moves per update frame.

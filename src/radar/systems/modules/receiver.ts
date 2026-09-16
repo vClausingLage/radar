@@ -4,7 +4,7 @@ import { Vector2 } from '../../../types';
 import { decoySettings } from '../../data/radarGameSettings';
 import { JammerError } from './jammer';
 import { GasVolume } from '../../data/types';
-import { gasTransmission, isDetected, returnSignal } from '../../data/signalPath';
+import { gasTransmission, isDetected, measurementJitterPx, returnSignal } from '../../data/signalPath';
 
 export class Receiver {
   // A beam from `from` to `to` may be blocked by chaff: for each decoy cloud the
@@ -74,12 +74,46 @@ export class Receiver {
       const range = Math.sqrt(dx * dx + dy * dy);
       const angle = Phaser.Math.RadToDeg(Math.atan2(dy, dx));
 
-      if (!isDetected(returnSignal(range, ratedRange, hit.crossSection, hit.transmission))) continue;
+      const signal = returnSignal(range, ratedRange, hit.crossSection, hit.transmission);
+      if (!isDetected(signal)) continue;
 
-      returns.push({ point: hit.point, range, angle });
+      returns.push(this.jitteredReturn(ownerPos, range, angle, signal));
     }
 
     return returns;
+  }
+
+  // A detected return's true geometry, jittered by the measurement noise its
+  // own signal strength buys it (measurementJitterPx in data/signalPath.ts).
+  // Applied in range and bearing rather than in x/y directly — a real set's
+  // accuracy is a range error and an angular error, not an isotropic
+  // positional one — then converted back to a point so the tracking computer
+  // clusters and filters on it exactly as it does a noiseless hit.
+  private jitteredReturn(ownerPos: Vector2, range: number, angle: number, signal: number): RadarReturn {
+    const jitterPx = measurementJitterPx(signal);
+    const jitteredRange = Math.max(0, range + this.gaussian() * jitterPx);
+    // The same px wander subtends fewer degrees the further out it is.
+    const angleJitterDeg = Phaser.Math.RadToDeg(Math.atan2(this.gaussian() * jitterPx, Math.max(range, 1)));
+    const jitteredAngle = angle + angleJitterDeg;
+    const angleRad = Phaser.Math.DegToRad(jitteredAngle);
+
+    return {
+      point: new Phaser.Math.Vector2(
+        ownerPos.x + Math.cos(angleRad) * jitteredRange,
+        ownerPos.y + Math.sin(angleRad) * jitteredRange,
+      ),
+      range: jitteredRange,
+      angle: jitteredAngle,
+    };
+  }
+
+  // Standard-normal sample (Box-Muller). A receiver's measurement noise is
+  // Gaussian, not uniform — a return usually lands close to the truth and
+  // only occasionally wanders far — so every jitter axis above draws from it.
+  private gaussian(): number {
+    const u1 = Math.max(Number.EPSILON, Math.random());
+    const u2 = Math.random();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   }
 
   // Jamming variant of processHits: every real hit is displaced by the *same*

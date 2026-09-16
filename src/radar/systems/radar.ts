@@ -11,7 +11,7 @@ import { TerrainMapper } from "./modules/terrainMapper";
 
 import { FireControl } from "./fireControl";
 
-import { BeamHit } from "../data/radarReturn";
+import { BeamHit, RadarReturn } from "../data/radarReturn";
 import { crossSection, emissionSignal, gasTransmission, isDetected } from "../data/signalPath";
 import { Track } from "../data/track";
 import { Entity, GasVolume, Loadout, Mode, RadarHost } from "../data/types";
@@ -27,6 +27,7 @@ import {
     JAMMER_STT_DEGRADE_PROB,
     MAX_TWS_TRACKS,
     RADAR_DEFAULT_RANGE_PX,
+    RADAR_FALSE_ALARM_RATE,
     STT_ACQUISITION_BEAM_DEG,
     STT_ACQUISITION_FRAMES,
     STT_BEAM_DEG,
@@ -53,6 +54,12 @@ export class Radar {
 
     private trackingComputer: TrackingComputer = new TrackingComputer();
     private sweepBuffer: BeamHit[] = [];
+    // Thermal false alarms accumulated for the sweep in progress. Kept apart
+    // from sweepBuffer: these are already-decided detections (the false-alarm
+    // roll itself is the Pfa event), not hits still waiting on the energy
+    // budget, so they skip processHits' signal test rather than going through
+    // it a second time on made-up geometry.
+    private falseAlarmBuffer: RadarReturn[] = [];
 
     // STT state. The lock is held on a track id only: everything the radar
     // knows about the target while locked comes back through the beam.
@@ -143,6 +150,7 @@ export class Radar {
         }
         this.mode = 'rws';
         this.sweepBuffer = [];
+        this.falseAlarmBuffer = [];
     }
 
     enterTws(): void {
@@ -152,6 +160,7 @@ export class Radar {
         }
         this.mode = 'tws';
         this.sweepBuffer = [];
+        this.falseAlarmBuffer = [];
     }
 
     private clearSttState(): void {
@@ -173,6 +182,7 @@ export class Radar {
         this.mode = 'emcon';
         this.trackingComputer.setTracks([]);
         this.sweepBuffer = [];
+        this.falseAlarmBuffer = [];
     }
 
     // ── STT lock management ────────────────────────────────────────────────
@@ -200,6 +210,7 @@ export class Radar {
         // Discard all other tracks — STT focuses entirely on one target.
         this.trackingComputer.setTracks([best]);
         this.sweepBuffer = [];
+        this.falseAlarmBuffer = [];
 
         this.eventEmitter.emitLockEvent();
     }
@@ -210,6 +221,7 @@ export class Radar {
         // Clear the STT track; RWS will rebuild contacts from scratch.
         this.trackingComputer.setTracks([]);
         this.sweepBuffer = [];
+        this.falseAlarmBuffer = [];
     }
 
     getSttTrack(): Track | null {
@@ -455,16 +467,44 @@ export class Radar {
             });
         }
 
+        // Thermal false alarm: the receiver's own noise can cross the
+        // detection threshold with nothing in the cell at all (see
+        // detectionProbability in data/signalPath.ts — its floor is exactly
+        // this chance, RADAR_PFA). This roll *is* the Pfa event, so the
+        // fabricated point does not go through the signal budget a second
+        // time — it goes straight into falseAlarmBuffer rather than
+        // sweepBuffer. Its range is drawn uniformly along the full traced
+        // reach rather than weighted toward the near end the way a real echo
+        // is: that is the tell that separates a noise spike from a
+        // reflection, a genuine return thins out with distance and receiver
+        // noise does not.
+        if (Math.random() < RADAR_FALSE_ALARM_RATE) {
+            const phantomRange = Math.random() * this.emitter.getReach();
+            const phantomRad = Phaser.Math.DegToRad(pulseDirection);
+            this.falseAlarmBuffer.push({
+                point: new Phaser.Math.Vector2(
+                    ownerPos.x + Math.cos(phantomRad) * phantomRange,
+                    ownerPos.y + Math.sin(phantomRad) * phantomRange,
+                ),
+                range: phantomRange,
+                angle: pulseDirection,
+            });
+        }
+
         if (sweepComplete) {
             // A jammed sweep rewrites every buffered hit into one coherent false
             // track (replacing the real return); an un-jammed sweep is normal.
-            const returns = this.sweepJammerError
+            // False alarms are neither: they are noise, not an echo of anything
+            // the jammer could have displaced, so they are appended untouched.
+            const returns = (this.sweepJammerError
                 ? this.receiver.createFakeHits(this.sweepBuffer, ownerPos, this.range, this.sweepJammerError)
-                : this.receiver.processHits(this.sweepBuffer, ownerPos, this.range);
+                : this.receiver.processHits(this.sweepBuffer, ownerPos, this.range)
+            ).concat(this.falseAlarmBuffer);
             // TWS caps simultaneous tracks; RWS searches without a cap.
             const maxTracks = this.mode === 'tws' ? MAX_TWS_TRACKS : Infinity;
             this.trackingComputer.update(returns, ownerPos, { maxTracks });
             this.sweepBuffer = [];
+            this.falseAlarmBuffer = [];
             this.sweepJammerError = null;
         }
 

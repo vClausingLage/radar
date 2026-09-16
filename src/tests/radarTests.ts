@@ -40,18 +40,6 @@ const GAS_NEAR_RANGE_FACTOR = 0.29;
 // the spoof.
 const FAKE_TRACK_MIN_OFFSET_PX = 50;
 
-// Sample the player's track picture once per frame for `frames` frames, and
-// report how much of that time it held any track at all — the measure of
-// whether the radar can hold a contact, rather than whether it ever caught one.
-async function measureTrackPresence(ctx: TestContext, frames: number): Promise<number> {
-    let framesWithTrack = 0;
-    for (let i = 0; i < frames; i++) {
-        await ctx.frames(1);
-        if (ctx.player.radar.getTracks().length > 0) framesWithTrack++;
-    }
-    return framesWithTrack / frames;
-}
-
 // A track this close to a hull is that hull's: well inside the tracking
 // computer's own cluster radius, and far nearer than any other contact a test
 // places.
@@ -64,6 +52,28 @@ function nearestTrackOffset(ctx: TestContext, drone: Target): number {
         (best, track) => Math.min(best, Phaser.Math.Distance.Between(track.pos.x, track.pos.y, drone.x, drone.y)),
         Infinity,
     );
+}
+
+// Sample the player's track picture once per frame for `frames` frames.
+// `trackFraction` is how much of that time it held *any* track at all — a
+// coarse measure that also counts a stray thermal false alarm having nothing
+// to do with `drone` (see RADAR_FALSE_ALARM_RATE), so it is reported for
+// context rather than asserted on directly. `everOnDrone` is the real claim a
+// "no track formed on this drone" test wants: whether a track ever actually
+// sat close enough to be it, which a false alarm elsewhere does not affect.
+async function measureTrackPresence(
+    ctx: TestContext,
+    drone: Target,
+    frames: number,
+): Promise<{ trackFraction: number; everOnDrone: boolean }> {
+    let framesWithTrack = 0;
+    let everOnDrone = false;
+    for (let i = 0; i < frames; i++) {
+        await ctx.frames(1);
+        if (ctx.player.radar.getTracks().length > 0) framesWithTrack++;
+        if (nearestTrackOffset(ctx, drone) < TRACK_ON_TARGET_PX) everOnDrone = true;
+    }
+    return { trackFraction: framesWithTrack / frames, everOnDrone };
 }
 
 // (a) One-way beats two-way: an emission only has to reach the target, while a
@@ -84,11 +94,11 @@ const rwrWarnsOutsideRadarRange: GameTest = {
 
         let everWarned = false;
         const stopWatching = watchRwr(ctx, drone, () => { everWarned = true; });
-        const trackFraction = await measureTrackPresence(ctx, FRAMES_PER_SWEEP * 6);
+        const { trackFraction, everOnDrone } = await measureTrackPresence(ctx, drone, FRAMES_PER_SWEEP * 6);
         stopWatching();
 
-        ctx.check('player forms no track on it', trackFraction === 0,
-            `track held for ${(trackFraction * 100).toFixed(0)}% of the run`);
+        ctx.check('player forms no track on it', !everOnDrone,
+            `any-track held for ${(trackFraction * 100).toFixed(0)}% of the run`);
         ctx.check('drone RWR still hears the sweep', everWarned,
             `range ${Math.round(rangePx)}px, radar range ${RADAR_DEFAULT_RANGE_PX}px`);
     },
@@ -110,13 +120,13 @@ const rwrSilentFarOut: GameTest = {
 
         let everWarned = false;
         const stopWatching = watchRwr(ctx, drone, () => { everWarned = true; });
-        const trackFraction = await measureTrackPresence(ctx, FRAMES_PER_SWEEP * 4);
+        const { trackFraction, everOnDrone } = await measureTrackPresence(ctx, drone, FRAMES_PER_SWEEP * 4);
         stopWatching();
 
         ctx.check('drone RWR stays silent', !everWarned,
             `range ${Math.round(rangePx)}px, radar range ${RADAR_DEFAULT_RANGE_PX}px`);
-        ctx.check('player forms no track', trackFraction === 0,
-            `track held for ${(trackFraction * 100).toFixed(0)}% of the run`);
+        ctx.check('player forms no track', !everOnDrone,
+            `any-track held for ${(trackFraction * 100).toFixed(0)}% of the run`);
     },
 };
 

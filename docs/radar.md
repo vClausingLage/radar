@@ -67,18 +67,35 @@ rays at `STT_BEAM_RAY_SPACING_DEG` spanning the beam width instead. The emission
 is also what *other* ships' RWR can detect.
 
 ### `modules/receiver.ts` — `Receiver`
-Converts raw ray hit-points into `RadarReturn`s (point, range, angle) and
-applies a simplified **radar equation** as a probabilistic detection test:
+Converts raw ray hit-points into `RadarReturn`s (point, range, angle), each
+accepted or dropped on its own signal strength (`returnSignal` in
+`data/signalPath.ts`) against a Neyman-Pearson detection curve — Swerling I's
+closed form, `Pd = Pfa ^ (1 / (1 + signal))` (`detectionProbability`). `Pfa`
+(`RADAR_PFA`) is the one number that sets both how fast Pd climbs with signal
+*and* the chance a cell with nothing in it reports one anyway, which is what
+makes a **false alarm** possible: once per swept ray, `Radar.updateRws()` rolls
+that same floor probability against an empty cell and, if it hits, drops a
+phantom return at a random range along the beam's full reach — unlike a real
+echo, receiver noise does not thin out with distance, so a false alarm is
+exactly as likely at the far edge as close in. It is deliberately rolled at a
+lower, separately-tuned rate (`RADAR_FALSE_ALARM_RATE`) than `Pfa` itself: a
+real set spreads `Pfa` across thousands of range-Doppler-azimuth cells, this
+one ray per frame, so using `Pfa` directly would flare a phantom on almost
+every sweep leg. A false alarm's confidence and lifetime in the tracking
+computer are exactly a real return's — nothing marks it as fake — so it fades
+the same way a stray return would, off `TRACK_MAX_MISSED_SCANS` and decaying
+`confidence`, rather than being filtered out by anything that knows it was
+never real.
 
-```
-P_detect = 1 − (range / maxRange)^4
-```
+A detected return's reported position is also not exact: `measurementJitterPx`
+adds Gaussian range/bearing noise scaled by `resolution / sqrt(2 · signal)`, so
+a strong, close contact is nearly exact and a faint one at the edge of the
+picture visibly wanders scan to scan — the accuracy half of detection theory,
+distinct from the resolution question of whether two contacts can be told
+apart at all (still open — see the realism roadmap).
 
-Distant returns are dropped probabilistically, so contacts flicker more at the
-edge of range — as real returns do.
-
-It also owns the two ways a return can be lost on the path rather than at the
-target:
+The receiver also owns the two ways a return can be lost on the path rather
+than at the target:
 
 - `isBlockedByDecoy()` — a chaff cloud between antenna and target swallows the
   return with a fixed per-cloud probability.
