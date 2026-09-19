@@ -236,7 +236,7 @@
       <tr>
         <td>RCS (reflectivity)</td>
         <td>σ is not size but <em>how much you scatter back</em>. Shape, material, aspect, frequency. Flat plates glint, spheres are constant, stealth is shaping.</td>
-        <td class="have"><code>crossSection()</code> measures projected width only</td>
+        <td class="have">width (<code>crossSection()</code>) × facet glint (<code>specularFactor()</code>) × scan-to-scan scintillation (<code>Receiver.scintillation()</code>, Swerling III/IV)</td>
       </tr>
       <tr>
         <td>Noise, noise floor, SNR</td>
@@ -251,12 +251,12 @@
       <tr>
         <td>Pulse integration (coherent / non-coherent)</td>
         <td>N pulses on target → SNR gain of N (coherent) or about √N. Dwell time is why STT sees further than a sweep.</td>
-        <td class="have">implicit only: a big hull collects more ray hits per sweep</td>
+        <td class="have"><code>Receiver.integrationGroups()</code> sums a dwell's hits before one test — a first pass (gain ≈ N, real non-coherent gain is closer to √N)</td>
       </tr>
       <tr>
         <td>Resolution vs accuracy</td>
         <td>Resolution separates two targets (pulse length in range, beamwidth × R in angle). Accuracy locates one (improves with SNR). Different things.</td>
-        <td class="have">accuracy: <code>measurementJitterPx()</code> scales with 1/√(2·signal); resolution still isn't wired for ship contacts — <code>TRACK_CLUSTER_RADIUS_PX</code> stands in for it</td>
+        <td class="have">accuracy: <code>measurementJitterPx()</code>, 1/√(2·signal); resolution: <code>sameResolutionCell()</code> — fixed px in range, fixed <em>angle</em> in bearing, so cross-range resolution grows with range — applied in that order in <code>jitteredReturn()</code></td>
       </tr>
       <tr>
         <td>Ambiguities: unambiguous range, PRF, blind speeds</td>
@@ -284,7 +284,7 @@
       <tr>
         <td>Aperture, gain, beamwidth (θ ≈ λ/D), sidelobes</td>
         <td>A bigger dish means a narrower beam and more gain. Sidelobes leak energy everywhere.</td>
-        <td class="have">beam is a single ray; <code>STT_BEAM_DEG = 6</code>; no sidelobes</td>
+        <td class="have"><code>beamGain()</code> (1/beamwidth, STT ×10 over RWS); <code>ANTENNA_SIDELOBE_LEVEL</code> leaks a flat, one-lobe approximation off the main beam</td>
       </tr>
       <tr>
         <td>Mechanical scan: gimbals, slew rate, scan pattern</td>
@@ -294,7 +294,7 @@
       <tr>
         <td>Phased array / AESA</td>
         <td>Steer by phase, not motion: instant pointing, several beams, interleaved modes. Cost: gain falls as cos θ off boresight, the beam broadens.</td>
-        <td class="none">the antenna model is mechanical</td>
+        <td class="have"><code>PhasedArrayAntenna</code>: no slew lag, <code>scanLossFactor()</code> costs gain off boresight — not yet assigned to a hull; interleaved search-while-track still isn't modelled</td>
       </tr>
       <tr>
         <td>Monopulse angle tracking</td>
@@ -317,17 +317,17 @@
       <tr>
         <td>Clutter: ground / sea / volume, clutter-to-noise</td>
         <td>Unwanted echoes that raise the floor <em>locally</em>.</td>
-        <td class="none">roadmap item in <code>TO_DO.md</code></td>
+        <td class="have"><code>CfarDetector</code> logs terrain and gas returns into a world-space clutter grid</td>
       </tr>
       <tr>
         <td>MTI / Doppler filtering</td>
         <td>Reject zero-Doppler clutter; the notch; beaming a radar to hide in it.</td>
-        <td class="none">the beaming TODO is about RCS aspect, not Doppler</td>
+        <td class="none">rejects by <em>amplitude</em> (CFAR) not <em>radial velocity</em> — this engine has no carrier phase/frequency anywhere to build a real Doppler gate from</td>
       </tr>
       <tr>
         <td>CFAR (CA, GO, SO, OS)</td>
         <td>Adaptive threshold from neighbouring cells so P<sub>fa</sub> stays constant in clutter. Failure modes: target masking, clutter edges.</td>
-        <td class="none">fixed threshold</td>
+        <td class="have">cell-averaging (CA-CFAR): <code>CfarDetector.noiseFloorMultiplier()</code>, guard cell excluded, verified 2.5× at a clutter patch's centre</td>
       </tr>
       <tr>
         <td>Track initiation (M-of-N), association, gating</td>

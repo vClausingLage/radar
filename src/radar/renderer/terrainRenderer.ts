@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { TerrainSample } from '../systems/modules/terrainMapper';
 import {
-  TERRAIN_BEAM_WIDTH_DEG,
+  RADAR_BEAM_WIDTH_DEG,
   TERRAIN_SAMPLE_TTL_MS,
   TERRAIN_SHADOW_ALPHA,
   TERRAIN_SHADOW_BIN_DEG,
@@ -10,7 +10,7 @@ import {
 const SHADOW_BINS = Math.ceil(360 / TERRAIN_SHADOW_BIN_DEG);
 // A return casts shadow across the whole beamwidth it was heard through, so
 // it darkens the bins on either side of its own as well.
-const SHADOW_SPREAD_BINS = Math.floor(TERRAIN_BEAM_WIDTH_DEG / 2 / TERRAIN_SHADOW_BIN_DEG);
+const SHADOW_SPREAD_BINS = Math.floor(RADAR_BEAM_WIDTH_DEG / 2 / TERRAIN_SHADOW_BIN_DEG);
 
 // Draws the ground-mapping picture: each terrain return is a speckled
 // resolution cell (grainy dashes lying across the beam, so neighbouring sweep

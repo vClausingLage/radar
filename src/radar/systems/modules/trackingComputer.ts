@@ -2,9 +2,9 @@ import Phaser from 'phaser';
 import { RadarReturn } from '../../data/radarReturn';
 import { Track } from '../../data/track';
 import { Vector2 } from '../../../types';
+import { sameResolutionCell } from '../../data/signalPath';
 import {
   RADAR_TRACK_HISTORY_LENGTH,
-  TRACK_CLUSTER_RADIUS_PX,
   TRACK_COURSE_RANGE_EXPONENT,
   TRACK_COURSE_RANGE_REF_PX,
   TRACK_COURSE_WINDOW_SCANS,
@@ -117,7 +117,14 @@ export class TrackingComputer {
     return this.states.map(s => s.track);
   }
 
-  // Chain single-linkage clustering with angular α-trimmed centroid.
+  // Chain single-linkage clustering with angular α-trimmed centroid. Two
+  // returns join the same group when they fall in the same resolution cell
+  // (sameResolutionCell in data/signalPath.ts) rather than within a flat px
+  // radius: range resolution stays a fixed width at any range, cross-range
+  // resolution is a fixed angle and so grows in px with range, exactly like
+  // the ground map's own resolution cell — two ships close together at short
+  // range read as two contacts and merge into one as the range that
+  // separates them opens up, the same way a real beam would blur them.
   private cluster(returns: RadarReturn[]): RadarReturn[] {
     if (returns.length === 0) return [];
 
@@ -135,7 +142,7 @@ export class TrackingComputer {
         const pivot = group[frontier++];
         for (let j = 0; j < returns.length; j++) {
           if (used[j]) continue;
-          if (Phaser.Math.Distance.BetweenPoints(pivot.point, returns[j].point) < TRACK_CLUSTER_RADIUS_PX) {
+          if (sameResolutionCell(pivot, returns[j])) {
             group.push(returns[j]);
             used[j] = true;
           }

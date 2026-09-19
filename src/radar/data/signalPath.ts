@@ -1,12 +1,16 @@
 import Phaser from 'phaser';
 import type { GasVolume } from './types';
 import {
+    ANTENNA_REFERENCE_BEAM_WIDTH_DEG,
+    RADAR_BEAM_WIDTH_DEG,
     RADAR_MAX_CROSS_SECTION,
     RADAR_MEASUREMENT_JITTER_MAX_PX,
     RADAR_MEASUREMENT_JITTER_REF_PX,
     RADAR_ONE_WAY_RANGE_POWER,
     RADAR_PFA,
+    RADAR_PULSE_LENGTH_PX,
     RADAR_REFERENCE_CROSS_SECTION_PX,
+    RADAR_SPECULAR_EXPONENT,
     RADAR_TWO_WAY_RANGE_POWER,
     RWR_NOISE_FLOOR,
     gasCloudSettings,
@@ -50,20 +54,59 @@ export function illuminationRangePx(ratedRangePx: number): number {
     return ratedRangePx * SIGNAL_HORIZON_FACTOR;
 }
 
+// Antenna gain relative to the reference beam (RWS's, ANTENNA_REFERENCE_
+// BEAM_WIDTH_DEG), for a beam of this width. The same energy spread over a
+// narrower beam packs more of it onto anything inside — a 2-D far-field
+// approximation, gain inversely proportional to beamwidth — normalised to 1
+// at the reference width so the rest of the tuned budget keeps meaning what
+// it was built to mean. STT's 6-degree beam comes out to a gain of 10: it
+// locks targets a search sweep could never hold, which is the point of
+// staring instead of scanning. Applied once for a one-way emission (only the
+// transmit side matters to a listener) and squared for a two-way return (both
+// legs cross the same aperture).
+//
+// Clamped at 1 for anything wider than the reference (the 360-degree dome):
+// the illuminating pencil beam is the same hardware in every search mode, so a
+// wider search sector does not weaken each pulse — it just revisits any given
+// bearing less often. A per-look gain below the reference would model that
+// slower revisit as a fainter echo, which it is not; the dome sees each
+// contact exactly as brightly as RWS does per look, only less frequently. Only
+// a genuinely narrower dwell (STT, TWS) concentrates more energy per look.
+export function beamGain(beamWidthDeg: number): number {
+    if (beamWidthDeg <= 0) return 1;
+    return Math.max(1, ANTENNA_REFERENCE_BEAM_WIDTH_DEG / beamWidthDeg);
+}
+
+// The classic AESA cosine scan loss: a fixed phased array's effective
+// aperture foreshortens as the beam steers away from the face's own
+// boresight, so both the gain and the beamwidth it buys fall off with the
+// cosine of the scan angle. Applied on top of beamGain — same treatment,
+// squared for a two-way return, once for a one-way emission — which is why a
+// phased-array lock held at the edge of its gimbal is measurably weaker than
+// one held dead ahead, where a mechanical dish (Antenna.scanAngleDeg always
+// 0) pays nothing here at any pointing angle within its mechanical limits.
+export function scanLossFactor(scanAngleDeg: number): number {
+    return Math.max(0, Math.cos(Phaser.Math.DegToRad(scanAngleDeg)));
+}
+
 // Signal a returning echo carries, relative to the receiver's noise floor.
 // Out and back, so the range falls in twice over; the target's cross-section
 // sets how much of what arrives is thrown back; `transmission` is the fraction
 // of energy that survives one crossing of whatever medium is in the way, and
-// it too counts twice because the echo comes back through it.
+// it too counts twice because the echo comes back through it. `gain` is the
+// beam's antenna gain relative to the reference beam (see beamGain) and also
+// counts twice, once on transmit and once on receive.
 export function returnSignal(
     rangePx: number,
     ratedRangePx: number,
     crossSection: number,
     transmission: number,
+    gain: number = 1,
 ): number {
     if (rangePx <= 0) return Infinity;
     return crossSection
         * transmission * transmission
+        * gain * gain
         * Math.pow(ratedRangePx / rangePx, RADAR_TWO_WAY_RANGE_POWER);
 }
 
@@ -71,14 +114,18 @@ export function returnSignal(
 // to a warning receiver's noise floor. One way only — no reflection, no return
 // leg — which is why this stays above the floor long after a return from the
 // same range has fallen below it. This is the whole asymmetry: being swept is
-// detectable further out than being seen.
+// detectable further out than being seen. `gain` (see beamGain) counts once,
+// not twice — only the transmit side is this radar's; the listener's own
+// front end is a separate budget, already folded into RWR_NOISE_FLOOR.
 export function emissionSignal(
     rangePx: number,
     ratedRangePx: number,
     transmission: number,
+    gain: number = 1,
 ): number {
     if (rangePx <= 0) return Infinity;
     return transmission
+        * gain
         * Math.pow(ratedRangePx / rangePx, RADAR_ONE_WAY_RANGE_POWER)
         / RWR_NOISE_FLOOR;
 }
@@ -114,6 +161,26 @@ export function measurementJitterPx(signal: number): number {
     if (!Number.isFinite(signal) || signal <= 0) return RADAR_MEASUREMENT_JITTER_MAX_PX;
     const jitter = RADAR_MEASUREMENT_JITTER_REF_PX / Math.sqrt(2 * signal);
     return Math.min(jitter, RADAR_MEASUREMENT_JITTER_MAX_PX);
+}
+
+// Whether two returns fall in the same resolution cell — the radar's own
+// answer to "is this one contact or two", distinct from measurementJitterPx's
+// question of how well *one* contact's position is known. Anisotropic, like
+// a real beam: range resolution (RADAR_PULSE_LENGTH_PX) is a fixed px width,
+// the same close in or far out, because it comes from the pulse's length in
+// time, not its geometry. Cross-range resolution (RADAR_BEAM_WIDTH_DEG) is a
+// fixed *angle*, so the px gap it takes to resolve two contacts grows with
+// range — the same beam that separates two ships in formation at 600 px
+// merges them into one contact at 1500 px, and splits them again as they
+// close. Ship and terrain returns are quoted against the same two constants,
+// so this is one answer for both, not a tracking-only approximation next to
+// a differently-tuned ground map.
+export function sameResolutionCell(
+    a: { range: number; angle: number },
+    b: { range: number; angle: number },
+): boolean {
+    if (Math.abs(a.range - b.range) >= RADAR_PULSE_LENGTH_PX) return false;
+    return Math.abs(Phaser.Math.Angle.WrapDegrees(a.angle - b.angle)) < RADAR_BEAM_WIDTH_DEG;
 }
 
 // A hull's radar cross-section as seen from `from`, relative to the reference
@@ -157,6 +224,31 @@ export function crossSection(polygon: Phaser.Geom.Polygon, from: { x: number; y:
         0,
         RADAR_MAX_CROSS_SECTION,
     );
+}
+
+// How directly the specific facet a ray struck faces back at the antenna —
+// 1 dead-on, fading toward 0 at a grazing limb — the same incidence measure
+// the ground map already shades by (TerrainMapper.resolveCell). `crossSection`
+// above is a silhouette measurement: it says how much of the hull is turned
+// broadside, but not whether the plating at the exact point struck is flat
+// and facing the beam or curved away from it. Real RCS is the second thing as
+// much as the first — a flat facet at normal incidence glints far harder than
+// its share of the silhouette alone would suggest, which is what actually
+// makes beaming and stealth shaping work: not merely "less hull", but "less
+// hull turned square-on". Raised to RADAR_SPECULAR_EXPONENT rather than used
+// as a plain cosine, so the glint is a highlight (a narrow bright lobe near
+// normal incidence) and not a smooth Lambertian shade — closer to how a flat
+// plate's RCS actually behaves.
+//
+// `surfaceNormal`'s orientation is not guaranteed (see Ray.surfaceNormalAt),
+// so `beamDir` (unit vector, antenna to hit point) is compared against it
+// either way round, exactly as the ground map already does.
+export function specularFactor(
+    beamDir: { x: number; y: number },
+    surfaceNormal: { x: number; y: number },
+): number {
+    const incidence = Math.abs(beamDir.x * surfaceNormal.x + beamDir.y * surfaceNormal.y);
+    return Math.pow(incidence, RADAR_SPECULAR_EXPONENT);
 }
 
 // Fraction of a pulse's energy that survives a single trip from `from` to `to`

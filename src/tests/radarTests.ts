@@ -21,8 +21,22 @@ const FRAMES_PER_SWEEP = 60;
 // Ranges as a multiple of the radar's rated range (RADAR_DEFAULT_RANGE_PX).
 // Past the rated range a reference hull has no chance of a return, but the
 // emission is still out there: an RWR only has to hear the pulse, not send an
-// echo back.
-const OUTSIDE_RADAR_RANGE = 1.15;
+// echo back. Comfortably past 1.0x rather than just past it: detectionProbability
+// never reaches exactly zero (its floor is RADAR_PFA, however faint the
+// signal), so a range right on the knee is tested — once per sweep leg, over
+// several legs — often enough that an occasional floor-crossing is expected
+// rather than a sign the physics broke. Shared with the boosted-cross-section
+// broadside case below, which needs the opposite margin (reliably detected,
+// not reliably missed), so it cannot be pushed arbitrarily far out — a test
+// with no such counterpart (RWR_ONLY_OUTSIDE_RANGE) can afford to.
+const OUTSIDE_RADAR_RANGE = 1.3;
+// A range with no "must still be detected" case sharing it, so it can sit far
+// enough past the knee that the floor's residual chance is comfortably small
+// over several sweep legs — while staying well under the one-way horizon
+// (~1.69x, where emissionSignal itself reaches the noise floor: see
+// RWR_HORIZON_FACTOR in data/signalPath.ts), so the RWR side of the same test
+// stays a near-certainty rather than trading one flaky assertion for another.
+const RWR_ONLY_OUTSIDE_RANGE = 1.6;
 // Far enough out that even one-way there is nothing left to receive.
 const BEYOND_RWR_RANGE = 2.0;
 // Close enough that returns come back reliably, so a missing/displaced track
@@ -83,10 +97,10 @@ async function measureTrackPresence(
 // protection from knowing it is looking.
 const rwrWarnsOutsideRadarRange: GameTest = {
     name: "RWR warns outside the radar's own range",
-    description: `A drone at ${OUTSIDE_RADAR_RANGE}x the player's radar range is too far out for the player `
+    description: `A drone at ${RWR_ONLY_OUTSIDE_RANGE}x the player's radar range is too far out for the player `
         + 'to form any track on it, but its RWR still hears the sweep.',
     async run(ctx) {
-        const rangePx = RADAR_DEFAULT_RANGE_PX * OUTSIDE_RADAR_RANGE;
+        const rangePx = RADAR_DEFAULT_RANGE_PX * RWR_ONLY_OUTSIDE_RANGE;
         const drone = ctx.scene.spawnDrone({
             bearingDeg: ctx.player.getDirection(),
             rangePx,
