@@ -25,5 +25,16 @@ export default [
   {
     files: ["tools/**/*.js"],
     languageOptions: { globals: { ...globals.node } },
-  }
+  },
+
+  // A parameter an override needs but a base/default implementation does not
+  // (PhasedArrayAntenna.scanAngleDeg reads shipDirection, Antenna's own
+  // implementation does not, but both must share the signature) is not dead
+  // code — it is still part of the interface. Leading underscore marks that
+  // intentionally, same convention as elsewhere in the TS ecosystem.
+  {
+    rules: {
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+    },
+  },
 ];

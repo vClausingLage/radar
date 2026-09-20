@@ -6,13 +6,26 @@ import {
     ANTENNA_SWEEP_STEP_DEG,
 } from "../../data/radarGameSettings";
 
+// Mechanically scanned beam: a single reflector that physically points
+// wherever it is looking. Each frame it advances the beam one step across
+// the azimuth and reports { direction, sweepComplete }; while tracking (STT)
+// it drives toward a commanded bearing at a finite servo slew rate, lagging
+// a target whose bearing rate beats it — that lag is what lets a target
+// out-turn a lock. A gimbal lets it point anywhere inside its mechanical
+// limits at full gain, which is the property PhasedArrayAntenna below does
+// not share.
 export class Antenna {
     private angleOffset: number = 0;
     private step: number = ANTENNA_SWEEP_STEP_DEG;
     private sweepDirection: 1 | -1 = 1;
     // Where the dish is actually pointing while tracking (STT), as an absolute
     // bearing. Null until the antenna is designated onto a track.
-    private trackDirection: number | null = null;
+    protected trackDirection: number | null = null;
+    // Last direction this antenna actually reported, from either update() or
+    // trackTo(). Kept so scanAngleDeg() — meaningless for a mechanical dish,
+    // always 0 — has something to measure against for the antenna that
+    // actually answers it, without every caller having to track it itself.
+    protected lastDirection: number = 0;
 
     update(mode: Mode, shipDirection: number): { direction: number; sweepComplete: boolean } {
         // Dome: a fixed dish spinning continuously through a full circle, rather
@@ -25,7 +38,8 @@ export class Antenna {
                 this.angleOffset -= 360;
                 sweepComplete = true;
             }
-            return { direction: shipDirection + this.angleOffset, sweepComplete };
+            this.lastDirection = shipDirection + this.angleOffset;
+            return { direction: this.lastDirection, sweepComplete };
         }
 
         let sweepComplete = false;
@@ -48,7 +62,8 @@ export class Antenna {
             sweepComplete = true;
         }
 
-        return { direction: shipDirection + this.angleOffset, sweepComplete };
+        this.lastDirection = shipDirection + this.angleOffset;
+        return { direction: this.lastDirection, sweepComplete };
     }
 
     // STT: drive the dish toward a commanded bearing at the servo's maximum
@@ -63,6 +78,7 @@ export class Antenna {
     trackTo(commandedDirection: number, deltaMs: number): number {
         if (this.trackDirection === null) {
             this.trackDirection = commandedDirection;
+            this.lastDirection = this.trackDirection;
             return this.trackDirection;
         }
 
@@ -71,6 +87,7 @@ export class Antenna {
         const step = Phaser.Math.Clamp(error, -maxStep, maxStep);
 
         this.trackDirection = Phaser.Math.Angle.WrapDegrees(this.trackDirection + step);
+        this.lastDirection = this.trackDirection;
         return this.trackDirection;
     }
 
@@ -81,5 +98,42 @@ export class Antenna {
 
     public getAzimuth(mode: Mode): number {
         return ANTENNA_AZIMUTH_DEG_BY_MODE[mode];
+    }
+
+    // How far the beam is currently steered off this antenna's own boresight
+    // (the ship's nose) — the scan angle a phased array's gain and beamwidth
+    // degrade with (scanLossFactor in data/signalPath.ts). A mechanical dish
+    // physically points wherever it is tracking and pays nothing for this, so
+    // the base class always reports 0; see PhasedArrayAntenna for the antenna
+    // that actually answers it.
+    scanAngleDeg(_shipDirection: number): number {
+        return 0;
+    }
+}
+
+// A fixed electronically-scanned array: no reflector to move, so no servo lag
+// at all — trackTo snaps to the commanded bearing every single frame, which
+// is the real reason a lock on this antenna cannot be out-turned the way a
+// mechanical dish's can be (Radar's antenna field takes either behind the
+// same interface; nothing in the current scenarios constructs this one yet —
+// it is infrastructure for a future hull, per the realism roadmap's phased
+// array item).
+//
+// The trade is on the other side: beam energy is steered by phase across a
+// flat face, not by physically pointing the face at the target, so gain and
+// beamwidth degrade the further the beam scans from the array's own
+// boresight. A lock held at the edge of the gimbal is measurably weaker on
+// this antenna — beaten by closing range, not by turning — where the same
+// lock on a mechanical dish is exactly as strong at the edge as at the
+// centre.
+export class PhasedArrayAntenna extends Antenna {
+    trackTo(commandedDirection: number, _deltaMs: number): number {
+        this.trackDirection = Phaser.Math.Angle.WrapDegrees(commandedDirection);
+        this.lastDirection = this.trackDirection;
+        return this.trackDirection;
+    }
+
+    scanAngleDeg(shipDirection: number): number {
+        return Math.abs(Phaser.Math.Angle.WrapDegrees(this.lastDirection - shipDirection));
     }
 }

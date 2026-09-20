@@ -1,11 +1,11 @@
 import Phaser from 'phaser';
 import { TerrainRenderer } from '../../renderer/terrainRenderer';
 import {
-  TERRAIN_BEAM_WIDTH_DEG,
+  RADAR_BEAM_WIDTH_DEG,
+  RADAR_PULSE_LENGTH_PX,
   TERRAIN_BLOOM_DEPTH_PX,
   TERRAIN_BLOOM_ROUGHNESS,
   TERRAIN_MAX_SAMPLES,
-  TERRAIN_PULSE_LENGTH_PX,
   TERRAIN_SAMPLE_TTL_MS,
   TERRAIN_SPECKLES_PER_PULSE_LENGTH,
   TERRAIN_SPECKLE_DROPOUT_PROB,
@@ -64,11 +64,11 @@ export class TerrainMapper {
     if (this.samples.length > TERRAIN_MAX_SAMPLES) this.samples.shift();
   }
 
-  // The echo is not a point. The beam is TERRAIN_BEAM_WIDTH_DEG wide, so the
+  // The echo is not a point. The beam is RADAR_BEAM_WIDTH_DEG wide, so the
   // radar cannot tell where across it the energy came back from — the return
   // spreads over the whole beamwidth at that range. And it has depth: the
   // pulse's tail is still arriving after the leading edge struck
-  // (TERRAIN_PULSE_LENGTH_PX), and a surface facing the antenna square-on
+  // (RADAR_PULSE_LENGTH_PX), and a surface facing the antenna square-on
   // echoes so hard that the receiver saturates and the paint blooms further
   // still, while a limb caught at a grazing angle barely registers. Inside
   // that cell a rough surface returns speckle — scatterers of random
@@ -87,7 +87,7 @@ export class TerrainMapper {
     const ux = dx / dist;
     const uy = dy / dist;
     const tangent = { x: -uy, y: ux };
-    const halfWidth = dist * Math.tan(Phaser.Math.DegToRad(TERRAIN_BEAM_WIDTH_DEG / 2));
+    const halfWidth = dist * Math.tan(Phaser.Math.DegToRad(RADAR_BEAM_WIDTH_DEG / 2));
 
     // Cosine of the incidence angle: 1 face-on, 0 at a grazing limb. The
     // normal's orientation is not guaranteed, so take it either way round.
@@ -96,10 +96,10 @@ export class TerrainMapper {
       this.bloomLump + (Math.random() - 0.5) * TERRAIN_BLOOM_ROUGHNESS, 0.25, 1);
     // Echo power goes with the square of the facing cosine, and so does the
     // bloom that power drives.
-    const depth = TERRAIN_PULSE_LENGTH_PX + TERRAIN_BLOOM_DEPTH_PX * facing * facing * this.bloomLump;
+    const depth = RADAR_PULSE_LENGTH_PX + TERRAIN_BLOOM_DEPTH_PX * facing * facing * this.bloomLump;
 
     const speckles: TerrainSpeckle[] = [];
-    const count = Math.round(TERRAIN_SPECKLES_PER_PULSE_LENGTH * depth / TERRAIN_PULSE_LENGTH_PX);
+    const count = Math.round(TERRAIN_SPECKLES_PER_PULSE_LENGTH * depth / RADAR_PULSE_LENGTH_PX);
     for (let i = 0; i < count; i++) {
       if (Math.random() < TERRAIN_SPECKLE_DROPOUT_PROB) continue;
       const across = (Math.random() * 2 - 1) * halfWidth;

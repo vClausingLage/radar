@@ -21,8 +21,22 @@ const FRAMES_PER_SWEEP = 60;
 // Ranges as a multiple of the radar's rated range (RADAR_DEFAULT_RANGE_PX).
 // Past the rated range a reference hull has no chance of a return, but the
 // emission is still out there: an RWR only has to hear the pulse, not send an
-// echo back.
-const OUTSIDE_RADAR_RANGE = 1.15;
+// echo back. Comfortably past 1.0x rather than just past it: detectionProbability
+// never reaches exactly zero (its floor is RADAR_PFA, however faint the
+// signal), so a range right on the knee is tested — once per sweep leg, over
+// several legs — often enough that an occasional floor-crossing is expected
+// rather than a sign the physics broke. Shared with the boosted-cross-section
+// broadside case below, which needs the opposite margin (reliably detected,
+// not reliably missed), so it cannot be pushed arbitrarily far out — a test
+// with no such counterpart (RWR_ONLY_OUTSIDE_RANGE) can afford to.
+const OUTSIDE_RADAR_RANGE = 1.3;
+// A range with no "must still be detected" case sharing it, so it can sit far
+// enough past the knee that the floor's residual chance is comfortably small
+// over several sweep legs — while staying well under the one-way horizon
+// (~1.69x, where emissionSignal itself reaches the noise floor: see
+// RWR_HORIZON_FACTOR in data/signalPath.ts), so the RWR side of the same test
+// stays a near-certainty rather than trading one flaky assertion for another.
+const RWR_ONLY_OUTSIDE_RANGE = 1.6;
 // Far enough out that even one-way there is nothing left to receive.
 const BEYOND_RWR_RANGE = 2.0;
 // Close enough that returns come back reliably, so a missing/displaced track
@@ -40,18 +54,6 @@ const GAS_NEAR_RANGE_FACTOR = 0.29;
 // the spoof.
 const FAKE_TRACK_MIN_OFFSET_PX = 50;
 
-// Sample the player's track picture once per frame for `frames` frames, and
-// report how much of that time it held any track at all — the measure of
-// whether the radar can hold a contact, rather than whether it ever caught one.
-async function measureTrackPresence(ctx: TestContext, frames: number): Promise<number> {
-    let framesWithTrack = 0;
-    for (let i = 0; i < frames; i++) {
-        await ctx.frames(1);
-        if (ctx.player.radar.getTracks().length > 0) framesWithTrack++;
-    }
-    return framesWithTrack / frames;
-}
-
 // A track this close to a hull is that hull's: well inside the tracking
 // computer's own cluster radius, and far nearer than any other contact a test
 // places.
@@ -66,6 +68,28 @@ function nearestTrackOffset(ctx: TestContext, drone: Target): number {
     );
 }
 
+// Sample the player's track picture once per frame for `frames` frames.
+// `trackFraction` is how much of that time it held *any* track at all — a
+// coarse measure that also counts a stray thermal false alarm having nothing
+// to do with `drone` (see RADAR_FALSE_ALARM_RATE), so it is reported for
+// context rather than asserted on directly. `everOnDrone` is the real claim a
+// "no track formed on this drone" test wants: whether a track ever actually
+// sat close enough to be it, which a false alarm elsewhere does not affect.
+async function measureTrackPresence(
+    ctx: TestContext,
+    drone: Target,
+    frames: number,
+): Promise<{ trackFraction: number; everOnDrone: boolean }> {
+    let framesWithTrack = 0;
+    let everOnDrone = false;
+    for (let i = 0; i < frames; i++) {
+        await ctx.frames(1);
+        if (ctx.player.radar.getTracks().length > 0) framesWithTrack++;
+        if (nearestTrackOffset(ctx, drone) < TRACK_ON_TARGET_PX) everOnDrone = true;
+    }
+    return { trackFraction: framesWithTrack / frames, everOnDrone };
+}
+
 // (a) One-way beats two-way: an emission only has to reach the target, while a
 // return has to survive the trip out *and* back. So the range at which a ship
 // can be warned that it is being swept is longer than the range at which the
@@ -73,10 +97,10 @@ function nearestTrackOffset(ctx: TestContext, drone: Target): number {
 // protection from knowing it is looking.
 const rwrWarnsOutsideRadarRange: GameTest = {
     name: "RWR warns outside the radar's own range",
-    description: `A drone at ${OUTSIDE_RADAR_RANGE}x the player's radar range is too far out for the player `
+    description: `A drone at ${RWR_ONLY_OUTSIDE_RANGE}x the player's radar range is too far out for the player `
         + 'to form any track on it, but its RWR still hears the sweep.',
     async run(ctx) {
-        const rangePx = RADAR_DEFAULT_RANGE_PX * OUTSIDE_RADAR_RANGE;
+        const rangePx = RADAR_DEFAULT_RANGE_PX * RWR_ONLY_OUTSIDE_RANGE;
         const drone = ctx.scene.spawnDrone({
             bearingDeg: ctx.player.getDirection(),
             rangePx,
@@ -84,11 +108,11 @@ const rwrWarnsOutsideRadarRange: GameTest = {
 
         let everWarned = false;
         const stopWatching = watchRwr(ctx, drone, () => { everWarned = true; });
-        const trackFraction = await measureTrackPresence(ctx, FRAMES_PER_SWEEP * 6);
+        const { trackFraction, everOnDrone } = await measureTrackPresence(ctx, drone, FRAMES_PER_SWEEP * 6);
         stopWatching();
 
-        ctx.check('player forms no track on it', trackFraction === 0,
-            `track held for ${(trackFraction * 100).toFixed(0)}% of the run`);
+        ctx.check('player forms no track on it', !everOnDrone,
+            `any-track held for ${(trackFraction * 100).toFixed(0)}% of the run`);
         ctx.check('drone RWR still hears the sweep', everWarned,
             `range ${Math.round(rangePx)}px, radar range ${RADAR_DEFAULT_RANGE_PX}px`);
     },
@@ -110,13 +134,13 @@ const rwrSilentFarOut: GameTest = {
 
         let everWarned = false;
         const stopWatching = watchRwr(ctx, drone, () => { everWarned = true; });
-        const trackFraction = await measureTrackPresence(ctx, FRAMES_PER_SWEEP * 4);
+        const { trackFraction, everOnDrone } = await measureTrackPresence(ctx, drone, FRAMES_PER_SWEEP * 4);
         stopWatching();
 
         ctx.check('drone RWR stays silent', !everWarned,
             `range ${Math.round(rangePx)}px, radar range ${RADAR_DEFAULT_RANGE_PX}px`);
-        ctx.check('player forms no track', trackFraction === 0,
-            `track held for ${(trackFraction * 100).toFixed(0)}% of the run`);
+        ctx.check('player forms no track', !everOnDrone,
+            `any-track held for ${(trackFraction * 100).toFixed(0)}% of the run`);
     },
 };
 

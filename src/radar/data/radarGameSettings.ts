@@ -92,6 +92,81 @@ export const RADAR_REFERENCE_CROSS_SECTION_PX = 28;
 // worth tracing halfway across the world.
 export const RADAR_MAX_CROSS_SECTION = 4;
 
+// How sharply specularFactor's incidence cosine falls off away from normal —
+// 1 would be a plain (Lambertian) shade, matched to the exponent
+// TerrainMapper.resolveCell already uses for its incidence-weighted bloom.
+// Kept modest rather than a true mirror-like plate's much higher exponent: a
+// value that crushed every non-broadside facet toward zero would double up
+// with crossSection's own aspect dependence hard enough to make most hulls
+// nearly invisible off dead-broadside, which is a different, stronger claim
+// than "glints matter" — the constant exists precisely so that balance can
+// be retuned without touching the formula.
+export const RADAR_SPECULAR_EXPONENT = 2;
+
+// Design false-alarm probability the detection threshold is built around.
+// `detectionProbability()` uses the Swerling I closed form
+// Pd = Pfa ^ (1 / (1 + signal)) — the same Neyman-Pearson threshold that sets
+// a chosen false-alarm rate also sets how fast Pd climbs with signal, so one
+// number does both jobs. A real set drives this down to 1e-6 or lower, spread
+// across thousands of range-Doppler-azimuth cells; this radar tests one
+// integrated dwell per sweep leg instead (Receiver.processHits groups a
+// leg's ray hits and tests the group once — see its comment for why that
+// grouping matters here specifically).
+//
+// Pfa is not just a rare-event knob here, it is a hard floor: Pd is
+// monotonically increasing in signal, so no real return, however distant,
+// can ever score below Pfa itself — only approach it in the limit. A value
+// picked to match the placeholder curve's old knee (0.05) turned out too high
+// for that floor to stay unnoticed: watched for long enough (several sweep
+// legs), even a target with essentially nothing left of it would eventually
+// clear a 5%-per-look floor. Lower, so "essentially never, across a
+// realistic watch" holds — while a target with real signal to spare still
+// climbs to a confident Pd well above the floor, and the integration above
+// is what keeps that side of the curve honest at this lower setting.
+export const RADAR_PFA = 0.008;
+
+// Radius (px) Receiver.processHits groups raw ray hits within before testing
+// detection: the handful of hits one dwell leaves on one hull sit far closer
+// together (successive one-degree steps across the same few dozen px of
+// target) than two genuinely distinct contacts would, so a tight radius here
+// does not risk merging different ships the way the tracking computer's
+// resolution cell (RADAR_BEAM_WIDTH_DEG, RADAR_PULSE_LENGTH_PX above) — wider
+// at any real range, for the picture the player sees — reasonably can.
+export const RECEIVER_INTEGRATION_RADIUS_PX = 40;
+
+// Chance an empty cell the beam sweeps reports a contact anyway — receiver
+// noise alone crossing the threshold, at the same Pd(0) = RADAR_PFA the
+// detection curve above is built around applied to a *specific* cell rather
+// than to a real echo. Rolled once per ray, i.e. once per swept azimuth step,
+// deliberately its own tunable rate rather than RADAR_PFA reused directly:
+// this radar has one ray's worth of cell to offer per frame, not the many a
+// real set's Pfa is spread across (see the realism roadmap's sampling item),
+// so the two numbers are free to answer different questions — how readily a
+// real, if faint, echo is believed, versus how often the picture sparkles
+// with nothing there at all.
+export const RADAR_FALSE_ALARM_RATE = 0.0006;
+
+// A false alarm's range is drawn uniformly along the ray's traced reach —
+// unlike a real echo, receiver noise does not fall off with distance, so a
+// phantom contact is exactly as likely to appear at the far edge of the beam
+// as close in. That is the tell: a genuine return thins out with range, a
+// noise spike does not.
+
+// 1-sigma position jitter (px) applied to a detected return, at the noise
+// floor (signal = 1). A real set's measurement accuracy improves with SNR as
+// resolution / sqrt(2 * SNR) — accuracy, not resolution itself; the
+// resolution cell it is quoted against RADAR_PULSE_LENGTH_PX/RADAR_BEAM_WIDTH_DEG
+// share is a separate question (can two contacts be told apart at all), this
+// is how well one contact's own position is known. Kept well under a
+// resolution cell's own extent so a jittery track still reads as the same
+// contact, not a new one.
+export const RADAR_MEASUREMENT_JITTER_REF_PX = 14;
+
+// Ceiling on the jitter above, so a return sitting right at the detection
+// floor (signal barely above 0) cannot roll a jitter large enough to place it
+// implausibly far from the geometry that produced it.
+export const RADAR_MEASUREMENT_JITTER_MAX_PX = 55;
+
 // ── Antenna sweep (systems/modules/antenna.ts) ──────────────────────────────
 
 // Degrees the antenna sweep moves per update frame.
@@ -118,10 +193,37 @@ export const ANTENNA_AZIMUTH_DEG_BY_MODE = {
   emcon: 0,
 } as const;
 
-// ── Tracking computer (systems/modules/trackingComputer.ts) ────────────────
+// Beam width the rest of the energy budget is quoted for — RWS, this radar's
+// primary search mode, so `RADAR_REFERENCE_CROSS_SECTION_PX` and every other
+// constant tuned against the rated range keep meaning what they were tuned
+// for (see `beamGain` in data/signalPath.ts).
+export const ANTENNA_REFERENCE_BEAM_WIDTH_DEG: number = ANTENNA_AZIMUTH_DEG_BY_MODE.rws;
 
-// Returns within this distance (px) of each other belong to the same contact.
-export const TRACK_CLUSTER_RADIUS_PX = 80;
+// Fraction of the main lobe's gain that still radiates everywhere else — a
+// real antenna's sidelobes, collapsed to one flat leak rather than a modelled
+// pattern. What this buys: a ship just off the beam's exact instantaneous
+// bearing is not perfectly deaf to it, so `illuminateRwr` also tests targets
+// outside the main beam at this fraction of its gain rather than only the
+// ones the pulse ray happens to intersect this frame. -20 dB-ish, picked
+// generously for a coarse one-lobe model — real sidelobes run lower still,
+// but a receiver here only gets one ray's worth of main-beam illumination a
+// frame to lean on, the same reasoning RADAR_FALSE_ALARM_RATE is tuned
+// against.
+export const ANTENNA_SIDELOBE_LEVEL = 0.02;
+
+// The physical beam's own width and pulse length — hardware properties of
+// this one radar, so the ground map (TerrainMapper) and the tracking
+// computer's resolution cell (below) are quoted against the same numbers
+// rather than each inventing its own. Previously terrain-only constants,
+// moved here once the tracking computer needed them too: `RADAR_BEAM_WIDTH_DEG`
+// is the instantaneous pencil beam's width (not ANTENNA_REFERENCE_BEAM_WIDTH_DEG,
+// which is the *sector* a search mode sweeps that beam across), and
+// `RADAR_PULSE_LENGTH_PX` is how far a return smears in range after the pulse's
+// leading edge lands.
+export const RADAR_BEAM_WIDTH_DEG = 3;
+export const RADAR_PULSE_LENGTH_PX = 10;
+
+// ── Tracking computer (systems/modules/trackingComputer.ts) ────────────────
 
 // Gate radius (px) around the predicted track position for association.
 export const TRACK_GATE_RADIUS_PX = 200;
@@ -313,17 +415,14 @@ export const TERRAIN_SAMPLE_TTL_MS = 5000;
 // Cap on stored terrain returns (oldest dropped first).
 export const TERRAIN_MAX_SAMPLES = 600;
 
-// Azimuth resolution of the mapping picture: the beam is this wide, so one
-// echo smears across this much bearing (wider in px the further out it is)
-// and the shadow behind a return is at least this wide. With the antenna
-// stepping ANTENNA_SWEEP_STEP_DEG per frame, neighbouring returns overlap
-// into a continuous band instead of a chain of dots.
-export const TERRAIN_BEAM_WIDTH_DEG = 3;
-
-// Range resolution: a pulse of finite length keeps echoing after its leading
-// edge has hit, so every return is drawn stretched at least this far behind
-// the surface.
-export const TERRAIN_PULSE_LENGTH_PX = 10;
+// Azimuth and range resolution of the mapping picture (RADAR_BEAM_WIDTH_DEG,
+// RADAR_PULSE_LENGTH_PX, in the Antenna section above — shared with the
+// tracking computer's resolution cell, it is the same beam and the same
+// pulse): one echo smears across this much bearing (wider in px the further
+// out it is) and is drawn stretched at least this far behind the surface in
+// range. With the antenna stepping ANTENNA_SWEEP_STEP_DEG per frame,
+// neighbouring returns overlap into a continuous band instead of a chain of
+// dots.
 
 // Bloom: a surface facing the antenna square-on echoes far harder than one
 // caught at a grazing angle, and a strong echo saturates the receiver so the
@@ -352,6 +451,52 @@ export const TERRAIN_SPECKLE_DROPOUT_PROB = 0.25;
 // display range, so the shadow is one flat tone whatever the distance.
 export const TERRAIN_SHADOW_BIN_DEG = 1;
 export const TERRAIN_SHADOW_ALPHA = 0.45;
+
+// ── Clutter / CFAR (systems/modules/cfarDetector.ts) ────────────────────────
+// Ground and volume clutter as a locally raised noise floor, and the
+// cell-averaging CFAR detector that measures it. Scoped to the search
+// picture (RWS/TWS) — STT already runs on a boosted, narrow-beam signal and
+// stares rather than building up a picture of the ground around it, so
+// wiring clutter into it would mean solving lock-maintenance interactions
+// this pass was not about.
+
+// World-space cell size (px) clutter is logged and averaged at. Deliberately
+// not the anisotropic resolution cell ship returns use
+// (RADAR_BEAM_WIDTH_DEG/RADAR_PULSE_LENGTH_PX, sameResolutionCell in
+// data/signalPath.ts): clutter belongs to a place, not to how far away the
+// antenna's momentary view of that place can resolve it, so a flat px grid
+// is the honest simplification here.
+export const CLUTTER_CELL_PX = 40;
+
+// How long a logged clutter cell survives without being refreshed. Terrain
+// is swept again every leg (a few seconds), gas drifts on its own clock —
+// long enough that a cell does not flicker in and out between sweeps, short
+// enough that clutter follows a drifting gas cloud rather than marking where
+// it used to be.
+export const CLUTTER_SAMPLE_TTL_MS = 8000;
+
+// Clutter density a single terrain hit deposits at its cell — ground clutter
+// off a solid body, strong and reliable, so a contact right against a rock
+// is genuinely hard to pull out rather than merely inconvenient.
+export const CLUTTER_TERRAIN_DENSITY = 1.5;
+
+// Clutter density a sample along a gas volume's spine deposits — volume
+// clutter, real but more diffuse than a hard surface's, so gas raises the
+// floor without making a contact inside it nearly as hopeless as one sitting
+// on a rock.
+export const CLUTTER_GAS_DENSITY = 0.6;
+
+// Side length (in cells) of the CFAR reference window averaged around a
+// tested point — must be odd, so the tested cell sits at its exact centre
+// and is excluded as the guard cell (CfarDetector.localDensity).
+export const CFAR_REFERENCE_CELLS = 5;
+
+// How strongly the averaged local clutter density raises the noise floor —
+// the CFAR threshold's "α". A density of 1 (a single terrain-strength cell,
+// unaveraged) at this factor roughly doubles the signal a return needs to
+// clear the floor; the reference-cell average in practice dilutes that
+// unless clutter genuinely surrounds the point, not just brushes past it.
+export const CFAR_THRESHOLD_FACTOR = 1.0;
 
 // ── Support dish radar (entities/dishRadarStation.ts) ──────────────────────
 // A stationary early-warning dish on an asteroid: it drives the standard Radar

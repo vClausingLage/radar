@@ -14,14 +14,19 @@ flanking beaming etc RIGHT? -> test!
 # To Dos
 
 - ADD Clutter -> https://de.wikipedia.org/wiki/Clutter_%28Radar%29
-  Not started. The energy budget it needs is now in place (`signalPath.ts` works
-  in signal-to-noise ratios against a noise floor), so clutter is the next term
-  in it: sea/ground clutter returns from the terrain and volume clutter from the
-  gas, raising the floor in the cells they occupy instead of blocking them. That
-  makes a contact against a rock or inside a cloud harder to pull out than one
-  against empty space, and it is what an MTI/Doppler gate would then exist to
-  reject. Wants its own pass — it touches the tracking computer and the display,
-  not just the receiver.
+  (done: `systems/modules/cfarDetector.ts`. Ground clutter off terrain and
+  volume clutter off gas raise the noise floor in the world-space cells they
+  occupy instead of blocking anything, and `Receiver.processHits` folds that
+  into the signal budget as a real cell-averaging CFAR test — a contact
+  against a rock is genuinely harder to pull out than one against empty
+  space, verified directly: 2.5x the signal needed at a rock's centre, 1.875x
+  at its edge, no effect somewhere clean. Scoped to RWS/TWS, not STT.
+  Still open: an MTI/Doppler gate to reject clutter by radial velocity rather
+  than amplitude — CFAR only changes the threshold a return is judged by, and
+  Doppler is a genuinely different physical quantity (a carrier phase/
+  frequency shift) that nothing in this raycasting engine represents anywhere;
+  see the realism roadmap's CFAR item for why that is its own undertaking,
+  not a small extension of this one.)
 - move visibility material etc and other atributes to group instead of the objects themselves
 - gas clouds that reduce radar effectiveness   (done: `entities/gasCloud.ts`.
   Absorption is now a cost in the energy budget rather than a coin flip

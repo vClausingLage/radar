@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radar Learning Path</title>
+<style>
+  :root {
+    --bg: #0b1014;
+    --panel: #111a20;
+    --panel-2: #0e161b;
+    --line: #1f2d35;
+    --text: #d5e3ea;
+    --muted: #8aa0ab;
+    --accent: #38e0a0;
+    --accent-dim: #1f8f66;
+    --warn: #f0b35a;
+    --code-bg: #0a1216;
+    --code: #9fe2c6;
+    --tier0: #6c8fd8;
+    --tier1: #38e0a0;
+    --tier2: #f0b35a;
+    --tier3: #e97a6c;
+    --tier4: #c684e6;
+    --tier5: #58c9e0;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f4f7f8;
+      --panel: #ffffff;
+      --panel-2: #f7fafb;
+      --line: #d9e2e7;
+      --text: #1a262d;
+      --muted: #5c717c;
+      --accent: #0f9a6a;
+      --accent-dim: #0f9a6a;
+      --code-bg: #eef3f5;
+      --code: #0b6b4a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.55 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    padding: 0 16px 64px;
+  }
+  main { max-width: 1080px; margin: 0 auto; }
+
+  header {
+    padding: 40px 0 24px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 28px;
+  }
+  header h1 {
+    margin: 0 0 6px;
+    font-size: 28px;
+    letter-spacing: 0.02em;
+  }
+  header h1 span { color: var(--accent); }
+  header p { margin: 0; color: var(--muted); max-width: 70ch; }
+
+  nav {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0;
+  }
+  nav a {
+    color: var(--text); text-decoration: none; font-size: 13px;
+    padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--panel);
+  }
+  nav a:hover { border-color: var(--accent-dim); }
+
+  section { margin-bottom: 40px; }
+  section h2 {
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    font-size: 19px; margin: 0 0 6px;
+  }
+  .tier {
+    font-family: Consolas, "SF Mono", Menlo, monospace;
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 4px; color: var(--bg);
+    background: var(--tier-color, var(--accent));
+  }
+  section > p.lead { margin: 0 0 14px; color: var(--muted); max-width: 80ch; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+  table { width: 100%; border-collapse: collapse; min-width: 640px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  th {
+    font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+    background: var(--panel-2); font-weight: 600;
+  }
+  tr:last-child td { border-bottom: none; }
+  td:first-child { font-weight: 600; width: 26%; }
+  td:nth-child(2) { width: 40%; }
+  td:nth-child(3) { color: var(--muted); }
+  code {
+    font-family: Consolas, "SF Mono", Menlo, monospace; font-size: 12.5px;
+    background: var(--code-bg); color: var(--code); padding: 1px 5px; border-radius: 3px;
+  }
+  .none { color: var(--warn); font-style: italic; }
+  .none::before { content: "○ "; }
+  .have::before { content: "● "; color: var(--accent); }
+
+  .card {
+    border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+    padding: 16px 18px; margin-top: 14px;
+  }
+  .card h3 { margin: 0 0 8px; font-size: 15px; }
+  .card ul { margin: 0; padding-left: 20px; }
+  .card li { margin: 4px 0; }
+  .card p { margin: 0 0 8px; }
+
+  .legend { display: flex; gap: 18px; font-size: 13px; color: var(--muted); margin: 10px 0 0; flex-wrap: wrap; }
+
+  footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Radar <span>Learning Path</span></h1>
+  <p>From sine and cosine to CFAR, ordered so each block only needs the ones above it.
+     The third column points at where the concept already lives in this repo, so the code
+     doubles as a worked example. Companion to <code>docs/realism-roadmap.md</code>.</p>
+  <nav>
+    <a href="#t0">0 · Maths</a>
+    <a href="#t1">1 · Waves &amp; signals</a>
+    <a href="#t2">2 · The radar</a>
+    <a href="#t3">3 · Antennas</a>
+    <a href="#t4">4 · Processing</a>
+    <a href="#t5">5 · EW &amp; the loop</a>
+    <a href="#how">How to study</a>
+  </nav>
+  <div class="legend">
+    <span class="have">already in the code</span>
+    <span class="none">not modelled yet</span>
+  </div>
+</header>
+
+<!-- ───────────────────────── Tier 0 ───────────────────────── -->
+<section id="t0" style="--tier-color: var(--tier0)">
+  <h2><span class="tier">Tier 0</span> Maths you need before any radar makes sense</h2>
+  <p class="lead">None of this is radar. All of it is what radar is written in.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Topic</th><th>Why radar needs it</th><th>In this repo</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Sine, cosine, unit circle, radians vs degrees</td>
+        <td>A radar signal <em>is</em> a cosine. Bearings, beams, phase — all of it is angles.</td>
+        <td class="have"><code>Phaser.Math.DegToRad</code>, <code>Angle.WrapDegrees</code>, every <code>Math.cos/sin</code> in <code>antenna.ts</code> and <code>emitter.ts</code></td>
+      </tr>
+      <tr>
+        <td>Vectors, dot product, projection</td>
+        <td>Line of sight, "how much hull faces me", closing velocity.</td>
+        <td class="have"><code>crossSection()</code> in <code>signalPath.ts</code> projects the hull across the line of sight</td>
+      </tr>
+      <tr>
+        <td>Exponents, logarithms, decibels</td>
+        <td>Radar spans twelve or more orders of magnitude; everything is quoted in dB. The R⁴ law, the −3 dB beamwidth, 13 dB SNR.</td>
+        <td class="have"><code>RADAR_TWO_WAY_RANGE_POWER = 4</code>, Beer–Lambert <code>Math.exp(-opticalDepth)</code></td>
+      </tr>
+      <tr>
+        <td>Complex numbers, Euler's formula e<sup>jθ</sup> = cos θ + j sin θ</td>
+        <td>I/Q data, phase, Doppler and phased-array steering are all complex arithmetic.</td>
+        <td class="none">the gap between the game and a real signal chain</td>
+      </tr>
+      <tr>
+        <td>Probability: random variables, PDFs, Gaussian, Rayleigh / exponential</td>
+        <td>Noise is random; detection is a probability; RCS fluctuates.</td>
+        <td class="have"><code>detectionProbability()</code>, <code>isDetected()</code>, <code>decoySettings.BLOCK_PROBABILITY</code></td>
+      </tr>
+      <tr>
+        <td>Statistics: mean, variance, least squares</td>
+        <td>Thresholds, filters, course fitting.</td>
+        <td class="have"><code>reportCourse()</code> is a least-squares slope; <code>trimmedCentroid()</code> is a robust mean</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ───────────────────────── Tier 1 ───────────────────────── -->
+<section id="t1" style="--tier-color: var(--tier1)">
+  <h2><span class="tier">Tier 1</span> Waves and signals</h2>
+  <p class="lead">What a pulse is, what happens to it in flight, and how fast you have to look at it.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Topic</th><th>Key idea</th><th>In this repo</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Wavelength, frequency, speed of light; c·τ/2</td>
+        <td>Range = time of flight × c / 2. Pulse length sets range resolution.</td>
+        <td class="have"><code>TERRAIN_PULSE_LENGTH_PX</code> — the only place range resolution exists</td>
+      </tr>
+      <tr>
+        <td>Superposition, interference, phase</td>
+        <td>Two waves add, constructively or destructively. This is the whole trick behind phased arrays and why RCS is lobed.</td>
+        <td class="none">not yet</td>
+      </tr>
+      <tr>
+        <td>Fourier transform (a signal is a sum of sines)</td>
+        <td>Frequency content, Doppler, the matched filter, why bandwidth equals resolution.</td>
+        <td class="none">not yet</td>
+      </tr>
+      <tr>
+        <td>Sampling theorem (Nyquist), aliasing</td>
+        <td>How fast you must sample. PRF is the Doppler sample rate; the sweep period is the <em>track</em> sample rate.</td>
+        <td class="have">Sweep = 60 frames = 1 s; <code>TRACK_GATE_RADIUS_PX</code> is really an anti-aliasing guard on target motion</td>
+      </tr>
+      <tr>
+        <td>Doppler effect</td>
+        <td>Frequency shift ∝ radial velocity. Lets the radar <em>see</em> motion and reject stationary clutter.</td>
+        <td class="none">tracks get velocity only by differencing positions</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ───────────────────────── Tier 2 ───────────────────────── -->
+<section id="t2" style="--tier-color: var(--tier2)">
+  <h2><span class="tier">Tier 2</span> The radar itself</h2>
+  <p class="lead">The radar equation and everything it implies: how far, how sure, how fine.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Topic</th><th>Key idea</th><th>In this repo</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>The radar equation</td>
+        <td>P<sub>r</sub> = P<sub>t</sub>·G²·λ²·σ / ((4π)³·R⁴). Every term is a lever.</td>
+        <td class="have"><code>returnSignal()</code> — folded into a normalised (R₀/R)⁴ · σ · T²</td>
+      </tr>
+      <tr>
+        <td>RCS (reflectivity)</td>
+        <td>σ is not size but <em>how much you scatter back</em>. Shape, material, aspect, frequency. Flat plates glint, spheres are constant, stealth is shaping.</td>
+        <td class="have">width (<code>crossSection()</code>) × facet glint (<code>specularFactor()</code>) × scan-to-scan scintillation (<code>Receiver.scintillation()</code>, Swerling III/IV)</td>
+      </tr>
+      <tr>
+        <td>Noise, noise floor, SNR</td>
+        <td>kTBF. Thermal noise sets what you can hear; everything is relative to it.</td>
+        <td class="have"><code>RWR_NOISE_FLOOR</code>; a signal ratio of 1 is the floor</td>
+      </tr>
+      <tr>
+        <td>Detection theory: threshold, P<sub>d</sub>, P<sub>fa</sub>, Neyman–Pearson</td>
+        <td>You choose P<sub>fa</sub>, the threshold follows, P<sub>d</sub> is what your SNR buys. Marcum / Swerling curves.</td>
+        <td class="have">Swerling I: <code>detectionProbability = Pfa^(1/(1+signal))</code>, <code>RADAR_PFA</code></td>
+      </tr>
+      <tr>
+        <td>Pulse integration (coherent / non-coherent)</td>
+        <td>N pulses on target → SNR gain of N (coherent) or about √N. Dwell time is why STT sees further than a sweep.</td>
+        <td class="have"><code>Receiver.integrationGroups()</code> sums a dwell's hits before one test — a first pass (gain ≈ N, real non-coherent gain is closer to √N)</td>
+      </tr>
+      <tr>
+        <td>Resolution vs accuracy</td>
+        <td>Resolution separates two targets (pulse length in range, beamwidth × R in angle). Accuracy locates one (improves with SNR). Different things.</td>
+        <td class="have">accuracy: <code>measurementJitterPx()</code>, 1/√(2·signal); resolution: <code>sameResolutionCell()</code> — fixed px in range, fixed <em>angle</em> in bearing, so cross-range resolution grows with range — applied in that order in <code>jitteredReturn()</code></td>
+      </tr>
+      <tr>
+        <td>Ambiguities: unambiguous range, PRF, blind speeds</td>
+        <td>High PRF gives clean Doppler but ambiguous range; low PRF the reverse; medium PRF juggles.</td>
+        <td class="none">not yet</td>
+      </tr>
+      <tr>
+        <td>Pulse compression / matched filter / chirp</td>
+        <td>A long pulse for energy and a wide bandwidth for resolution — have both.</td>
+        <td class="none">not yet</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ───────────────────────── Tier 3 ───────────────────────── -->
+<section id="t3" style="--tier-color: var(--tier3)">
+  <h2><span class="tier">Tier 3</span> Antennas</h2>
+  <p class="lead">Where the beam comes from, how wide it is, and how it gets pointed.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Topic</th><th>Key idea</th><th>In this repo</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Aperture, gain, beamwidth (θ ≈ λ/D), sidelobes</td>
+        <td>A bigger dish means a narrower beam and more gain. Sidelobes leak energy everywhere.</td>
+        <td class="have"><code>beamGain()</code> (1/beamwidth, STT ×10 over RWS); <code>ANTENNA_SIDELOBE_LEVEL</code> leaks a flat, one-lobe approximation off the main beam</td>
+      </tr>
+      <tr>
+        <td>Mechanical scan: gimbals, slew rate, scan pattern</td>
+        <td>The dish must physically move, so it lags.</td>
+        <td class="have"><code>Antenna.trackTo()</code>, <code>ANTENNA_SLEW_RATE_DEG_PER_SEC</code> — well modelled</td>
+      </tr>
+      <tr>
+        <td>Phased array / AESA</td>
+        <td>Steer by phase, not motion: instant pointing, several beams, interleaved modes. Cost: gain falls as cos θ off boresight, the beam broadens.</td>
+        <td class="have"><code>PhasedArrayAntenna</code>: no slew lag, <code>scanLossFactor()</code> costs gain off boresight — not yet assigned to a hull; interleaved search-while-track still isn't modelled</td>
+      </tr>
+      <tr>
+        <td>Monopulse angle tracking</td>
+        <td>How STT measures angle finer than the beamwidth from a single pulse.</td>
+        <td class="have">the STT ray fan + trimmed centroid is a crude monopulse</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ───────────────────────── Tier 4 ───────────────────────── -->
+<section id="t4" style="--tier-color: var(--tier4)">
+  <h2><span class="tier">Tier 4</span> Signal and data processing</h2>
+  <p class="lead">Turning echoes into detections, and detections into tracks.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Topic</th><th>Key idea</th><th>In this repo</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Clutter: ground / sea / volume, clutter-to-noise</td>
+        <td>Unwanted echoes that raise the floor <em>locally</em>.</td>
+        <td class="have"><code>CfarDetector</code> logs terrain and gas returns into a world-space clutter grid</td>
+      </tr>
+      <tr>
+        <td>MTI / Doppler filtering</td>
+        <td>Reject zero-Doppler clutter; the notch; beaming a radar to hide in it.</td>
+        <td class="none">rejects by <em>amplitude</em> (CFAR) not <em>radial velocity</em> — this engine has no carrier phase/frequency anywhere to build a real Doppler gate from</td>
+      </tr>
+      <tr>
+        <td>CFAR (CA, GO, SO, OS)</td>
+        <td>Adaptive threshold from neighbouring cells so P<sub>fa</sub> stays constant in clutter. Failure modes: target masking, clutter edges.</td>
+        <td class="have">cell-averaging (CA-CFAR): <code>CfarDetector.noiseFloorMultiplier()</code>, guard cell excluded, verified 2.5× at a clutter patch's centre</td>
+      </tr>
+      <tr>
+        <td>Track initiation (M-of-N), association, gating</td>
+        <td>When is a blip a track? Which blip belongs to which track?</td>
+        <td class="have"><code>TrackingComputer.update()</code> — gate on predicted position, <code>confidence</code></td>
+      </tr>
+      <tr>
+        <td>α-β and Kalman filters</td>
+        <td>Smooth position, estimate velocity, predict.</td>
+        <td class="have"><code>TRACK_FILTER_ALPHA / BETA</code> — a real α-β filter</td>
+      </tr>
+      <tr>
+        <td>RWS, TWS, STT</td>
+        <td>Sweep and track many coarsely, or stare at one finely.</td>
+        <td class="have"><code>updateRws()</code>, <code>updateStt()</code></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ───────────────────────── Tier 5 ───────────────────────── -->
+<section id="t5" style="--tier-color: var(--tier5)">
+  <h2><span class="tier">Tier 5</span> Electronic warfare and the rest of the loop</h2>
+  <p class="lead">Most of this the game already has as gameplay. The learning here is understanding <em>why</em> each one works.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Topic</th><th>Key idea</th><th>In this repo</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>RWR / ESM</td>
+        <td>One-way propagation: being swept is detectable far beyond being seen. Sidelobes make it worse for the emitter.</td>
+        <td class="have"><code>emissionSignal()</code>, <code>rwr.ts</code>, <code>illuminateRwr()</code></td>
+      </tr>
+      <tr>
+        <td>Noise vs deceptive jamming (RGPO / VGPO)</td>
+        <td>Drown the receiver, or feed it a plausible lie that walks away from the truth.</td>
+        <td class="have"><code>jammer.ts</code> does a range-and-angle pull-off; <code>Receiver.createFakeHits()</code></td>
+      </tr>
+      <tr>
+        <td>Chaff and decoys</td>
+        <td>A cloud of reflectors that hides the target behind returns of its own.</td>
+        <td class="have"><code>Receiver.isBlockedByDecoy()</code>, <code>decoySettings</code></td>
+      </tr>
+      <tr>
+        <td>EMCON</td>
+        <td>The cheapest countermeasure is not transmitting.</td>
+        <td class="have"><code>'emcon'</code> mode</td>
+      </tr>
+      <tr>
+        <td>SARH / ARH seekers, datalinks</td>
+        <td>Who illuminates the target, and what the missile is told on the way.</td>
+        <td class="have"><code>fireControl.ts</code>, <code>missileRadar.ts</code>, <code>missileGuidance.ts</code>, the VIM-220 waypoint link</td>
+      </tr>
+      <tr>
+        <td>Propagation losses</td>
+        <td>Atmosphere, rain, and here: gas. Beer–Lambert attenuation along the path.</td>
+        <td class="have"><code>gasTransmission()</code></td>
+      </tr>
+      <tr>
+        <td>IRST and passive sensors</td>
+        <td>Sensing without emitting.</td>
+        <td class="none">roadmap item in <code>TO_DO.md</code></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ───────────────────────── How to study ───────────────────────── -->
+<section id="how">
+  <h2>How to study it</h2>
+  <div class="card">
+    <h3>Sources, in the order they pay off</h3>
+    <ul>
+      <li><strong>Marshall Bruner (YouTube, @MarshallBrunerRF)</strong> — the on-ramp for Tiers 1–4. Watch in this order: Radar Equation → Reflectivity → Signal-to-Noise Ratio → Sampling → Resolution → Phased Array → CFAR. Each one maps to a section of <code>docs/realism-roadmap.md</code>.</li>
+      <li><strong>Christian Wolff, radartutorial.eu</strong> — free and encyclopaedic, one concept per page. Use it as the reference you open when a video term is unfamiliar.</li>
+      <li><strong>MATLAB "Understanding Radar Principles" / "Radar Signal Processing" playlists</strong> — the maths with pictures, once the intuition is there.</li>
+      <li><strong>One book, if you want one:</strong> Richards, Scheer &amp; Holm, <em>Principles of Modern Radar: Basic Principles</em> — Tiers 2–4 in order, with the derivations.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Working method</h3>
+    <p>For every concept, find the row's code pointer and read that function with the concept in mind. Where the third column says <span class="none">not modelled yet</span>, the corresponding roadmap section says what the code would have to grow — implementing it is the exam.</p>
+    <p>Keep a ratio in mind: the repo already quotes everything as a <em>signal ratio against the noise floor</em>. Decibels are just 10·log₁₀ of that ratio, so once dB feel natural, every constant in <code>radarGameSettings.ts</code> reads as a real radar parameter.</p>
+  </div>
+</section>
+
+<footer>
+  Radar game · docs/learning-path.html · companion to docs/realism-roadmap.md
+</footer>
+</main>
+</body>
+</html>

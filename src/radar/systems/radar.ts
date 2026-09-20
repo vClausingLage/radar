@@ -8,11 +8,20 @@ import { TrackingComputer } from "./modules/trackingComputer";
 import { RwrReceiver } from "./modules/rwr";
 import { Jammer, JammerError, JammerHudStatus } from "./modules/jammer";
 import { TerrainMapper } from "./modules/terrainMapper";
+import { CfarDetector } from "./modules/cfarDetector";
 
 import { FireControl } from "./fireControl";
 
-import { BeamHit } from "../data/radarReturn";
-import { crossSection, emissionSignal, gasTransmission, isDetected } from "../data/signalPath";
+import { BeamHit, RadarReturn } from "../data/radarReturn";
+import {
+    beamGain,
+    crossSection,
+    emissionSignal,
+    gasTransmission,
+    isDetected,
+    scanLossFactor,
+    specularFactor,
+} from "../data/signalPath";
 import { Track } from "../data/track";
 import { Entity, GasVolume, Loadout, Mode, RadarHost } from "../data/types";
 
@@ -24,9 +33,13 @@ import { Ray } from "../../physics/ray";
 import { RadarEventEmitter } from "./game/radarEventEmitter";
 
 import {
+    ANTENNA_SIDELOBE_LEVEL,
+    CLUTTER_GAS_DENSITY,
+    CLUTTER_TERRAIN_DENSITY,
     JAMMER_STT_DEGRADE_PROB,
     MAX_TWS_TRACKS,
     RADAR_DEFAULT_RANGE_PX,
+    RADAR_FALSE_ALARM_RATE,
     STT_ACQUISITION_BEAM_DEG,
     STT_ACQUISITION_FRAMES,
     STT_BEAM_DEG,
@@ -44,7 +57,10 @@ export class Radar {
     // budget is quoted at. The pulse itself goes further (see Emitter and
     // data/signalPath.ts) - this is not a wall.
     private range: number;
-    private antenna = new Antenna();
+    // Mechanical by default; a caller can inject a PhasedArrayAntenna
+    // instead (see systems/modules/antenna.ts) without this class knowing or
+    // caring which it got — everything here talks to the shared interface.
+    private antenna: Antenna;
     private emitter: Emitter;
     private receiver: Receiver = new Receiver();
     // Bearing (deg) of the most recent pulse, exposed so a mount can align to the
@@ -53,6 +69,12 @@ export class Radar {
 
     private trackingComputer: TrackingComputer = new TrackingComputer();
     private sweepBuffer: BeamHit[] = [];
+    // Thermal false alarms accumulated for the sweep in progress. Kept apart
+    // from sweepBuffer: these are already-decided detections (the false-alarm
+    // roll itself is the Pfa event), not hits still waiting on the energy
+    // budget, so they skip processHits' signal test rather than going through
+    // it a second time on made-up geometry.
+    private falseAlarmBuffer: RadarReturn[] = [];
 
     // STT state. The lock is held on a track id only: everything the radar
     // knows about the target while locked comes back through the beam.
@@ -73,6 +95,12 @@ export class Radar {
     // pipeline entirely and are painted like a mapping radar's display.
     private terrainMapper = new TerrainMapper();
 
+    // Ground/volume clutter map and the CFAR threshold it drives — logs
+    // terrain and gas returns as they are swept, and raises the noise floor a
+    // ship return near them is judged against (see updateRws and
+    // Receiver.processHits' localNoiseFloor).
+    private cfarDetector = new CfarDetector();
+
     // Error captured if an enemy jammer spoofed this radar during the current
     // RWS sweep; applied to the buffered hits at sweepComplete, then cleared.
     private sweepJammerError: JammerError | null = null;
@@ -87,9 +115,10 @@ export class Radar {
 
     private scene: Phaser.Scene;
 
-    constructor(params: { scene: Phaser.Scene; range?: number }) {
+    constructor(params: { scene: Phaser.Scene; range?: number; antenna?: Antenna }) {
         this.scene = params.scene;
         this.range = params.range ?? RADAR_DEFAULT_RANGE_PX;
+        this.antenna = params.antenna ?? new Antenna();
         this.emitter = new Emitter(this.range);
         this.fireControl = new FireControl(this.scene);
     }
@@ -143,6 +172,7 @@ export class Radar {
         }
         this.mode = 'rws';
         this.sweepBuffer = [];
+        this.falseAlarmBuffer = [];
     }
 
     enterTws(): void {
@@ -152,6 +182,7 @@ export class Radar {
         }
         this.mode = 'tws';
         this.sweepBuffer = [];
+        this.falseAlarmBuffer = [];
     }
 
     private clearSttState(): void {
@@ -173,6 +204,7 @@ export class Radar {
         this.mode = 'emcon';
         this.trackingComputer.setTracks([]);
         this.sweepBuffer = [];
+        this.falseAlarmBuffer = [];
     }
 
     // ── STT lock management ────────────────────────────────────────────────
@@ -200,6 +232,7 @@ export class Radar {
         // Discard all other tracks — STT focuses entirely on one target.
         this.trackingComputer.setTracks([best]);
         this.sweepBuffer = [];
+        this.falseAlarmBuffer = [];
 
         this.eventEmitter.emitLockEvent();
     }
@@ -210,6 +243,7 @@ export class Radar {
         // Clear the STT track; RWS will rebuild contacts from scratch.
         this.trackingComputer.setTracks([]);
         this.sweepBuffer = [];
+        this.falseAlarmBuffer = [];
     }
 
     getSttTrack(): Track | null {
@@ -347,6 +381,8 @@ export class Radar {
         this.rwrReceiver.tick(this.scene.time.now);
         // Advance jammer active/cooldown state before any isActive() check.
         this.jammer.tick(this.scene.time.now);
+        // Drop clutter whose source has moved on.
+        this.cfarDetector.tick(this.scene.time.now);
 
         // Update the weapons system every frame regardless of radar mode. The
         // radar supplies the track picture and live entities; FireControl runs
@@ -400,6 +436,10 @@ export class Radar {
         const { direction: pulseDirection, sweepComplete } = this.antenna.update(this.mode, shipDirection);
         this.lastBeamDirection = pulseDirection;
         const pulse = this.emitter.sendPulse(ownerPos, pulseDirection, scanWidth);
+        // A phased array's gain falls off the further the beam scans from its
+        // own boresight; a mechanical dish's scanAngleDeg is always 0, so this
+        // is a no-op (factor 1) for the antenna every current scenario uses.
+        const scanGain = beamGain(scanWidth) * scanLossFactor(this.antenna.scanAngleDeg(shipDirection));
 
         this.radarRenderer?.update(
             graphics, ownerPos, this.range,
@@ -418,7 +458,9 @@ export class Radar {
 
         // Search illumination: any ship the beam touches detects the emission as
         // a (non-locked) RWR contact — shown as a green diamond on its RWR.
-        this.illuminateRwr(targets, [pulse.line], ownerPos, false, gasVolumes);
+        // The off-beam sidelobe test only runs on sweepComplete (see
+        // illuminateRwr) — once per leg, not once per frame.
+        this.illuminateRwr(targets, [pulse.line], ownerPos, false, gasVolumes, scanGain, sweepComplete);
 
         // If an enemy jammer paints us this frame, remember its spoof error for
         // the rest of the sweep — the buffered hits are rewritten at sweepComplete.
@@ -441,6 +483,9 @@ export class Radar {
             if (this.withinDisplayRange(ownerPos, terrainHit.point)
                 && !this.receiver.isAbsorbedByGas(ownerPos, terrainHit.point, gasVolumes)) {
                 this.terrainMapper.addSample(terrainHit.point, terrainHit.normal, ownerPos, this.scene.time.now);
+                // Ground clutter: whatever the ground map is painting here is
+                // also raising the floor a ship return here must clear.
+                this.cfarDetector.addClutter(terrainHit.point, CLUTTER_TERRAIN_DENSITY, this.scene.time.now);
             }
         } else if (shipHit
             && !this.receiver.isBlockedByDecoy(ownerPos, shipHit.point, decoyCircles)) {
@@ -455,16 +500,65 @@ export class Radar {
             });
         }
 
+        // Volume clutter: gas returns a diffuse floor across the cells it
+        // occupies, logged along its spine rather than gated by this frame's
+        // beam direction — a simplification (a real set only logs clutter
+        // where it has actually looked), reasonable for a medium diffuse
+        // enough that a single ray's worth of sampling would not represent it
+        // fairly either way.
+        for (const gas of gasVolumes) {
+            const density = CLUTTER_GAS_DENSITY * gas.density;
+            this.cfarDetector.addClutter({ x: gas.line.x1, y: gas.line.y1 }, density, this.scene.time.now);
+            this.cfarDetector.addClutter({ x: gas.line.x2, y: gas.line.y2 }, density, this.scene.time.now);
+            this.cfarDetector.addClutter(
+                { x: (gas.line.x1 + gas.line.x2) / 2, y: (gas.line.y1 + gas.line.y2) / 2 },
+                density,
+                this.scene.time.now,
+            );
+        }
+
+        // Thermal false alarm: the receiver's own noise can cross the
+        // detection threshold with nothing in the cell at all (see
+        // detectionProbability in data/signalPath.ts — its floor is exactly
+        // this chance, RADAR_PFA). This roll *is* the Pfa event, so the
+        // fabricated point does not go through the signal budget a second
+        // time — it goes straight into falseAlarmBuffer rather than
+        // sweepBuffer. Its range is drawn uniformly along the full traced
+        // reach rather than weighted toward the near end the way a real echo
+        // is: that is the tell that separates a noise spike from a
+        // reflection, a genuine return thins out with distance and receiver
+        // noise does not.
+        if (Math.random() < RADAR_FALSE_ALARM_RATE) {
+            const phantomRange = Math.random() * this.emitter.getReach();
+            const phantomRad = Phaser.Math.DegToRad(pulseDirection);
+            this.falseAlarmBuffer.push({
+                point: new Phaser.Math.Vector2(
+                    ownerPos.x + Math.cos(phantomRad) * phantomRange,
+                    ownerPos.y + Math.sin(phantomRad) * phantomRange,
+                ),
+                range: phantomRange,
+                angle: pulseDirection,
+            });
+        }
+
         if (sweepComplete) {
             // A jammed sweep rewrites every buffered hit into one coherent false
             // track (replacing the real return); an un-jammed sweep is normal.
-            const returns = this.sweepJammerError
-                ? this.receiver.createFakeHits(this.sweepBuffer, ownerPos, this.range, this.sweepJammerError)
-                : this.receiver.processHits(this.sweepBuffer, ownerPos, this.range);
+            // False alarms are neither: they are noise, not an echo of anything
+            // the jammer could have displaced, so they are appended untouched.
+            const now = this.scene.time.now;
+            const returns = (this.sweepJammerError
+                ? this.receiver.createFakeHits(this.sweepBuffer, ownerPos, this.range, this.sweepJammerError, scanGain)
+                : this.receiver.processHits(
+                    this.sweepBuffer, ownerPos, this.range, scanGain,
+                    point => this.cfarDetector.noiseFloorMultiplier(point, now),
+                )
+            ).concat(this.falseAlarmBuffer);
             // TWS caps simultaneous tracks; RWS searches without a cap.
             const maxTracks = this.mode === 'tws' ? MAX_TWS_TRACKS : Infinity;
             this.trackingComputer.update(returns, ownerPos, { maxTracks });
             this.sweepBuffer = [];
+            this.falseAlarmBuffer = [];
             this.sweepJammerError = null;
         }
 
@@ -528,6 +622,9 @@ export class Radar {
         // Wide while acquiring, narrow once the track is its own.
         const beamWidth = this.sttAcquireFrames > 0 ? STT_ACQUISITION_BEAM_DEG : STT_BEAM_DEG;
         if (this.sttAcquireFrames > 0) this.sttAcquireFrames--;
+        // See updateRws's scanGain: a no-op (factor 1) for the mechanical
+        // dish every current scenario locks with.
+        const sttGain = beamGain(beamWidth) * scanLossFactor(this.antenna.scanAngleDeg(shipDirection));
 
         const pulse = this.emitter.sendPulse(ownerPos, lockDir, beamWidth);
         // The beam has width: sample it with a fan of rays spanning that width
@@ -587,10 +684,18 @@ export class Radar {
         const hits = jammed && Math.random() < JAMMER_STT_DEGRADE_PROB ? [] : rawHits;
 
         // Lock illumination: any ship in the beam detects a locked (red) RWR
-        // contact and fires its lock-warning event.
-        this.illuminateRwr(targets, beamLines, ownerPos, true, gasVolumes);
+        // contact and fires its lock-warning event. STT stares rather than
+        // sweeps, so it has no natural once-per-leg cadence to gate a sidelobe
+        // roll on — left off here rather than rolled every frame (see
+        // illuminateRwr); a ship not the lock's target still gets the plain
+        // main-beam test whenever the beam happens to cross it.
+        this.illuminateRwr(targets, beamLines, ownerPos, true, gasVolumes, sttGain, false);
 
-        const returns = this.receiver.processHits(hits, ownerPos, this.range);
+        // The narrow STT beam concentrates the same energy onto a smaller
+        // patch of sky — see beamGain in data/signalPath.ts — which is why a
+        // lock holds through conditions a search sweep would have lost the
+        // contact in.
+        const returns = this.receiver.processHits(hits, ownerPos, this.range, sttGain);
         // STT updates every frame, so every timescale differs from search. A high
         // maxMissedScans keeps the lock alive through brief dropouts without
         // conflicting with the sweep timescale, and the course is fitted over
@@ -691,31 +796,58 @@ export class Radar {
     // it - sitting outside the rated range protects nobody from knowing they
     // are being looked at. Gas on the path costs the pulse energy once here,
     // not twice: nothing is coming back through it.
+    //
+    // A ship in the main beam (the pulse ray(s) actually cross its hull) hears
+    // it at the beam's full gain; everyone else still hears the sidelobes —
+    // real antennas leak in every direction, just far more weakly, so being
+    // off the exact instantaneous bearing is not the same as being deaf to it
+    // (ANTENNA_SIDELOBE_LEVEL in data/radarGameSettings.ts).
+    //
+    // `testSidelobes` gates that second, off-beam test to once per sweep leg
+    // (the caller passes it true only on sweepComplete) rather than every
+    // frame. It has to be rate-limited somehow: detectionProbability's floor
+    // is RADAR_PFA, never truly zero, so a channel re-rolled every single
+    // frame for hundreds of frames running will eventually cross it no matter
+    // how weak the real signal is — exactly the false-alarm mechanic working
+    // as intended, just aimed at one specific ship every frame instead of at
+    // a random cell a few times a sweep. Once per sweep leg keeps the
+    // sidelobe roll at the same cadence a real search radar would actually
+    // offer a listener, in main beam or not.
     private illuminateRwr(
         targets: Entity[],
         lines: Phaser.Geom.Line[],
         ownerPos: { x: number; y: number },
         isLocked: boolean,
         gasVolumes: GasVolume[],
+        mainGain: number,
+        testSidelobes: boolean,
     ): void {
         const now = this.scene.time.now;
         for (const entity of targets) {
             if (!('radar' in entity)) continue;
             const polygon = this.raycaster.getBodyPolygons(entity);
-            if (!lines.some(line => Phaser.Geom.Intersects.GetLineToPolygon(line, polygon))) continue;
+            const inMainBeam = lines.some(line => Phaser.Geom.Intersects.GetLineToPolygon(line, polygon));
+            if (!inMainBeam && !testSidelobes) continue;
+            const gain = inMainBeam ? mainGain : mainGain * ANTENNA_SIDELOBE_LEVEL;
 
             const tgt = entity as PlayerShip | Target;
             const epos = tgt.getPosition();
             const range = Phaser.Math.Distance.Between(ownerPos.x, ownerPos.y, epos.x, epos.y);
-            if (!isDetected(emissionSignal(range, this.range, gasTransmission(ownerPos, epos, gasVolumes)))) {
+            const transmission = gasTransmission(ownerPos, epos, gasVolumes);
+            if (!isDetected(emissionSignal(range, this.range, transmission, gain))) {
                 continue;
             }
 
             const bearingDeg = Phaser.Math.RadToDeg(
                 Math.atan2(ownerPos.y - epos.y, ownerPos.x - epos.x),
             );
-            tgt.radar.rwrReceiver.receive(String(this.owner?.id ?? 'unknown'), bearingDeg, isLocked, now);
-            if (isLocked) tgt.radar.eventEmitter.onRwrLock();
+            // A sidelobe leak reads as an ordinary (green) search contact even
+            // during STT — it is catching leakage off a beam not aimed at it,
+            // not the beam itself, so it does not earn the lock warning or the
+            // event. Only a ship the main beam is actually resting on gets that.
+            const locked = isLocked && inMainBeam;
+            tgt.radar.rwrReceiver.receive(String(this.owner?.id ?? 'unknown'), bearingDeg, locked, now);
+            if (locked) tgt.radar.eventEmitter.onRwrLock();
         }
     }
 
@@ -767,13 +899,22 @@ export class Radar {
             const dSq = Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, hit.point.x, hit.point.y);
             if (dSq < nearestDistSq) {
                 nearestDistSq = dSq;
+                // Surface orientation at the hit, for the ground map's
+                // incidence-dependent return strength and, below, the ship
+                // return's specular glint.
+                const normal = this.raycaster.surfaceNormalAt(hit.part, hit.point);
+                const beamDirX = (hit.point.x - ownerPos.x) / Math.sqrt(dSq || 1);
+                const beamDirY = (hit.point.y - ownerPos.y) / Math.sqrt(dSq || 1);
                 nearest = {
                     point: hit.point,
-                    // The whole hull is what the beam sees presented to it.
-                    crossSection: crossSection(this.raycaster.getBodyPolygons(target), ownerPos),
-                    // Surface orientation at the hit, for the ground map's
-                    // incidence-dependent return strength.
-                    normal: this.raycaster.surfaceNormalAt(hit.part, hit.point),
+                    // The hull's silhouette (how much of it is turned
+                    // broadside) weighted by how square-on the specific facet
+                    // struck actually faces the beam — the same width can be
+                    // a flat glint or a curved graze depending on which part
+                    // of the hull the ray happened to land on.
+                    crossSection: crossSection(this.raycaster.getBodyPolygons(target), ownerPos)
+                        * specularFactor({ x: beamDirX, y: beamDirY }, normal),
+                    normal,
                 };
             }
         }
