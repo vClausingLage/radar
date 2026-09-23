@@ -23,7 +23,7 @@ import {
     specularFactor,
 } from "../data/signalPath";
 import { Track } from "../data/track";
-import { Entity, GasVolume, Loadout, Mode, RadarHost } from "../data/types";
+import { Entity, GasVolume, Loadout, Mode, RadarHost, Terrain } from "../data/types";
 
 import { InterfaceRenderer } from "../renderer/interfaceRenderer";
 import { RadarRenderer } from "../renderer/radarRenderer";
@@ -369,7 +369,7 @@ export class Radar {
         entities: Entity[],
         graphics: Phaser.GameObjects.Graphics,
         decoyCircles: Phaser.Geom.Circle[] = [],
-        terrain: Entity[] = [],
+        terrain: Terrain[] = [],
         gasVolumes: GasVolume[] = [],
     ): void {
         if (!this.owner) return;
@@ -403,6 +403,7 @@ export class Radar {
             targets: targetShips,
             decoyCircles,
             gasVolumes,
+            terrain,
             now: this.scene.time.now,
         }, graphics);
 
@@ -426,7 +427,7 @@ export class Radar {
         entities: Entity[],
         graphics: Phaser.GameObjects.Graphics,
         decoyCircles: Phaser.Geom.Circle[],
-        terrain: Entity[],
+        terrain: Terrain[],
         gasVolumes: GasVolume[],
     ): void {
         const scanWidth = this.antenna.getAzimuth(this.mode);
@@ -587,7 +588,7 @@ export class Radar {
         entities: Entity[],
         graphics: Phaser.GameObjects.Graphics,
         decoyCircles: Phaser.Geom.Circle[],
-        terrain: Entity[],
+        terrain: Terrain[],
         gasVolumes: GasVolume[],
     ): void {
         const rwsHalfAz = this.antenna.getAzimuth('rws') / 2;

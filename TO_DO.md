@@ -60,9 +60,12 @@ guided onto — for the AI as much as for the player.
                         width, against `RADAR_REFERENCE_CROSS_SECTION_PX`)
 - cross section -> side / front     (done: the same measurement is taken across
                         the line of sight, so aspect falls straight out of it)
-- still open: a missile seeker has no hull geometry to measure, so it treats
-  every target as the reference size (`MissileRadar`) — a cargo hauler is no
-  easier for a seeker to find than a cruiser.
+- seeker on the shared signal path   (done, see the realism roadmap's §8:
+                        `MissileRadar` now detects on the same energy budget as
+                        the ship radar — aspect, specular glint, gas, and
+                        terrain shadowing all reach the seeker; its detection
+                        is a hard SNR gate at the noise floor rather than a
+                        probabilistic roll, because it re-tests every frame)
 
 # Testing
 

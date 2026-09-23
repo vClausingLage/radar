@@ -54,6 +54,17 @@ export function illuminationRangePx(ratedRangePx: number): number {
     return ratedRangePx * SIGNAL_HORIZON_FACTOR;
 }
 
+// Two-way horizon for a radar of this rated range: past it even the largest
+// hull the game allows throws back less than the receiver's noise floor, so
+// there is no return left to find anywhere further out. Where the one-way
+// SIGNAL_HORIZON_FACTOR above bounds how far a pulse is worth tracing for
+// anyone still listening, this bounds where an *echo* can still exist — the
+// pre-gate a returning sensor applies before spending an energy test on a
+// candidate.
+export function echoHorizonPx(ratedRangePx: number): number {
+    return ratedRangePx * ECHO_HORIZON_FACTOR;
+}
+
 // Antenna gain relative to the reference beam (RWS's, ANTENNA_REFERENCE_
 // BEAM_WIDTH_DEG), for a beam of this width. The same energy spread over a
 // narrower beam packs more of it onto anything inside — a 2-D far-field

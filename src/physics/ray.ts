@@ -1,8 +1,20 @@
 import Phaser from "phaser";
-import { Ship, PlayerShip } from "../entities/ship";
-import { Terrain } from "../radar/data/types";
+import type { Ship, PlayerShip } from "../entities/ship";
+import type { Terrain } from "../radar/data/types";
 
 type Entity = Ship | PlayerShip | Terrain;
+
+// Anything with a Matter body can be raycast against. Structural on purpose:
+// the missile seeker (systems/modules/missileRadar.ts) measures hulls and
+// tests terrain shadows through this same raycaster, but its targets reach it
+// as the lightweight GuidanceTarget rather than as the ship classes — the
+// body is the geometry, and the body is all the raycaster asks for. The body
+// type is the union Phaser declares on physics-enabled sprites; at runtime
+// every Matter sprite here carries a MatterJS body, which the methods cast
+// for before reading parts/vertices.
+type RayTarget = {
+  body?: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | MatterJS.BodyType | null;
+};
 
 type RayHit = {
   entity: Entity;
@@ -15,7 +27,7 @@ export class Ray {
   // this is only the convex hull (Matter keeps the true shape in its parts) —
   // right for the presented cross-section, wrong for where a ray actually
   // lands: use nearestPartHit() for that.
-  getBodyPolygons(target: Entity): Phaser.Geom.Polygon {
+  getBodyPolygons(target: RayTarget): Phaser.Geom.Polygon {
     const body = target.body as MatterJS.BodyType | null;
     const points = body?.vertices?.map((v) => ({ x: v.x, y: v.y })) ?? [];
     return new Phaser.Geom.Polygon(points);
@@ -25,7 +37,7 @@ export class Ray {
   // parts[0] is the whole (hull vertices only) and the remaining parts are the
   // pieces; a plain body — a traced outline included, see bodyShape.ts — is
   // its own single part.
-  getBodyParts(target: Entity): Phaser.Geom.Polygon[] {
+  getBodyParts(target: RayTarget): Phaser.Geom.Polygon[] {
     const body = target.body as MatterJS.BodyType | null;
     if (!body) return [];
     const parts = body.parts.length > 1 ? body.parts.slice(1) : [body];
@@ -37,7 +49,7 @@ export class Ray {
   // reflector shadows and echoes exactly as drawn.
   nearestPartHit(
     line: Phaser.Geom.Line,
-    target: Entity,
+    target: RayTarget,
   ): { point: Phaser.Math.Vector2; part: Phaser.Geom.Polygon } | null {
     let nearest: { point: Phaser.Math.Vector2; part: Phaser.Geom.Polygon } | null = null;
     let nearestDistSq = Infinity;
@@ -54,7 +66,7 @@ export class Ray {
   }
 
   // Whether a point lies inside a body's actual shape (any of its parts).
-  contains(target: Entity, point: { x: number; y: number }): boolean {
+  contains(target: RayTarget, point: { x: number; y: number }): boolean {
     return this.getBodyParts(target).some(part => Phaser.Geom.Polygon.Contains(part, point.x, point.y));
   }
 

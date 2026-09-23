@@ -300,6 +300,22 @@ export const MISSILE_RADAR_MAX_MISSED_LOCK_FRAMES = 30;
 // still a real gate the target can fall out of.
 export const MISSILE_SEEKER_BEAM_DEG = 10;
 
+// Signal ratio — relative to the noise floor every receiver is normalised
+// against (data/signalPath.ts) — a return must carry for the seeker to act on
+// it. Unlike the ship radar there is no probabilistic fade-in at the edge: the
+// seeker re-tests every frame it is live, and detectionProbability's floor
+// (RADAR_PFA) never reaches zero, so rolling it per frame for the length of a
+// flight would eventually lock a hull with nothing left of it — the
+// Monte-Carlo artefact Receiver.processHits exists to avoid. A set that dwells
+// continuously is honestly modelled as the hard SNR gate it is: the seeker's
+// own receiver either has the energy or it does not, and transients ride out
+// on MISSILE_RADAR_MAX_MISSED_LOCK_FRAMES. 1 is the floor itself, and the
+// seeker's rated range (entitySettings' ACTIVE_RADAR_RANGE) is quoted at *its
+// own* beam width — no beamGain term, which would define the envelope against
+// the ship radar's much wider reference beam and double-count a concentration
+// the seeker's short rated range already embodies.
+export const MISSILE_SEEKER_MIN_SIGNAL = 1;
+
 // Maximum rate (deg/s) the seeker gimbal can slew while tracking. Much faster
 // than the ship antenna, but finite: a hard cross-turn at short range can
 // still drive the target off the seeker's beam.

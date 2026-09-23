@@ -277,13 +277,24 @@ steers each one per its type. Guidance phases:
      the WP1→WP2 leg.
   2. **Mid-course** — pure pursuit toward its assigned TWS track position
      (pursuit, not lead, because track speed is in scan units).
-  3. **Terminal** — once `missileAge ≥ ACTIVE_RADAR_ACTIVATION_TIME` the onboard
-     seeker activates, searches its forward cone (range + azimuth basket) and
-     locks the nearest unmasked contact it finds. From then on it holds track by
-     *geometry*, not identity: it points its gimbal where it estimates the
-     target to be and re-detects whatever is inside `MISSILE_SEEKER_BEAM_DEG`
-     that frame — so a target that out-turns the gimbal falls out of the beam,
-     and another ship that wanders into it gets locked instead.
+3. **Terminal** — once `missileAge ≥ ACTIVE_RADAR_ACTIVATION_TIME` the onboard
+      seeker activates, searches its forward cone and locks the nearest
+      *detectable* contact. The seeker runs the same energy budget as the ship
+      radar (see `data/signalPath.ts`): a candidate must return at least the
+      noise floor (`MISSILE_SEEKER_MIN_SIGNAL`) — out and back at the fourth
+      power of range, scaled by the hull's presented cross-section weighted by
+      the specular glint of the facet struck, taxed by gas, and shadowed by
+      terrain standing between the seeker and the hull (same occlusion rules as
+      the ship radar's beam). Unlike the ship radar there is no probabilistic
+      fade-in at the edge: the seeker re-tests every frame, and a per-frame roll
+      of a never-zero `Pfa` would eventually lock anything, so a
+      continuously-dwelling set is modelled as the hard SNR gate it is. The
+      seeker's rated range is quoted at its own beam width — no `beamGain`
+      term. From then on it holds track by *geometry*, not identity: it points
+      its gimbal where it estimates the target to be and re-detects whatever is
+      inside `MISSILE_SEEKER_BEAM_DEG` that frame — so a target that out-turns
+      the gimbal falls out of the beam, and another ship that wanders into it
+      gets locked instead.
 
 `interceptVector()` solves the quadratic time-of-flight; `pursue()` is the
 fallback that simply points at the target's current position.

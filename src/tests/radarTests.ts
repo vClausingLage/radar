@@ -341,6 +341,100 @@ const rwrWarnsOfMissileSeeker: GameTest = {
     },
 };
 
+// (h) Terrain shadows the seeker the same way it shadows the ship radar. A
+// VIM-220 flown on a waypoint route — a blind shot needs no track — at a drone
+// parked behind a rock: the drone hears the seeker (hearing is one-way and the
+// rock stops nothing on that side), but the echo cannot come back through it,
+// so no lock ever forms and the missile dies against the rock it was flown
+// into. The same blind shot with the rock out of the way locks the same kind
+// of hull, so the difference is the terrain, not the missile.
+const seekerBlindedByTerrain: GameTest = {
+    name: 'Terrain shadows the missile seeker',
+    description: 'A waypoint-routed VIM-220 flown at a drone behind a rock: the drone hears the '
+        + 'seeker but is never locked by it. The same shot with no rock in the way locks.',
+    async run(ctx) {
+        const radar = ctx.player.radar;
+        const boresight = ctx.player.getDirection();
+
+        const along = (bearingDeg: number, rangePx: number): { x: number; y: number } => {
+            const rad = Phaser.Math.DegToRad(bearingDeg);
+            return {
+                x: ctx.player.x + Math.cos(rad) * rangePx,
+                y: ctx.player.y + Math.sin(rad) * rangePx,
+            };
+        };
+        // A full two-point route launches the VIM-220 with no track at all:
+        // it flies to WP1, goes active there, and searches down the WP1→WP2
+        // leg — which runs straight at the drone.
+        const launchBlindRoute = (bearingDeg: number, droneRangePx: number): void => {
+            radar.clearVim220Waypoints();
+            radar.addVim220Waypoint(along(bearingDeg, 150));
+            radar.addVim220Waypoint(along(bearingDeg, droneRangePx + 300));
+        };
+        const everLocked = async (drone: Target, frames: number): Promise<boolean> => {
+            for (let i = 0; i < frames; i++) {
+                await ctx.frames(1);
+                if (drone.radar.rwrReceiver.getRwrSignals().some(s => s.isLocked)) return true;
+            }
+            return false;
+        };
+
+        // ── A: the rock stands between the seeker and its target ──
+        ctx.scene.spawnAsteroid({ bearingDeg: boresight, rangePx: 350, radiusPx: 60 });
+        const occluded = ctx.scene.spawnDrone({ bearingDeg: boresight, rangePx: 560 });
+
+        radar.enterTws();
+        radar.selectWeapon('VIM-220');
+        const loadBefore = radar.getWeaponLoad('VIM-220');
+        launchBlindRoute(boresight, 560);
+        radar.shoot();
+        ctx.check('missile left the rail', radar.getWeaponLoad('VIM-220') === loadBefore - 1,
+            `load ${loadBefore} -> ${radar.getWeaponLoad('VIM-220')}`);
+
+        // The seeker announces itself once it goes active at the first waypoint.
+        // Hearing is one-way and stops for nothing, so the rock hides nothing
+        // on this side: the warning arrives as an ordinary (green) contact.
+        const heard = await ctx.waitUntil(
+            () => droneSeesMissileSeeker(occluded),
+            FRAMES_PER_SWEEP * 12,
+        );
+        ctx.check('the drone behind the rock hears the seeker', heard,
+            `sources: ${occluded.radar.rwrReceiver.getRwrSources().join(', ') || 'none'}`);
+
+        // The echo is another matter: it has to come back through the rock,
+        // and the missile finishes against the rock long before the geometry
+        // between it and the hull could ever clear. A seeker blind to terrain
+        // locks the drone from the far side of the rock in exactly this window.
+        const lockedThroughRock = await everLocked(occluded, FRAMES_PER_SWEEP * 10);
+        ctx.check('the seeker never locks the hull behind the rock', !lockedThroughRock);
+
+        // ── B: the same blind shot with nothing in the way ──
+        // Closer than the occluded hull: at 350px the seeker already has real
+        // signal margin (2.4x the floor for a reference hull at WP1) the moment
+        // it goes active, so the flight time between activation and lock does
+        // not depend on how small the cruiser's bow-on figure is.
+        const clear = ctx.scene.spawnDrone({ bearingDeg: boresight + 90, rangePx: 350 });
+        const loadB = radar.getWeaponLoad('VIM-220');
+        launchBlindRoute(boresight + 90, 350);
+        radar.shoot();
+        const loadAfterB = radar.getWeaponLoad('VIM-220');
+        let clearHeard = false;
+        const locked = await ctx.waitUntil(
+            () => {
+                if (droneSeesMissileSeeker(clear)) clearHeard = true;
+                return clear.radar.rwrReceiver.getRwrSignals().some(s => s.isLocked);
+            },
+            FRAMES_PER_SWEEP * 15,
+        );
+        ctx.check('the second shot left the rail', loadAfterB === loadB - 1,
+            `load ${loadB} -> ${loadAfterB}`);
+        ctx.check('the seeker was heard at all', clearHeard,
+            `sources: ${clear.radar.rwrReceiver.getRwrSources().join(', ') || 'none'}`);
+        ctx.check('without the rock the seeker locks the same kind of hull', locked,
+            `sources: ${clear.radar.rwrReceiver.getRwrSources().join(', ') || 'none'}`);
+    },
+};
+
 function formatOffset(offset: number): string {
     return Number.isFinite(offset) ? `${Math.round(offset)}px` : 'n/a';
 }
@@ -369,4 +463,5 @@ export const radarTests: GameTest[] = [
     gasCostsRangeNotSight,
     jammingShipShowsAsFalseTrack,
     rwrWarnsOfMissileSeeker,
+    seekerBlindedByTerrain,
 ];

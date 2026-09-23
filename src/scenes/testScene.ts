@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import Game from './game';
 import { GasCloud } from '../entities/gasCloud';
+import { Asteroid } from '../entities/asteroid';
 import { PlayerShip, Target } from '../entities/ship';
 
 // The scene the in-game radar tests run in.
@@ -72,6 +73,33 @@ export class TestScene extends Game {
 
         this.targets.push(drone);
         return drone;
+    }
+
+    // Place a solid rock at a bearing/range from the player, sized to the
+    // radius a test wants. Registered as terrain, so it shadows every radar
+    // in the scene — the ship radar's beam, the ground map and the missile
+    // seekers' returns alike.
+    spawnAsteroid(opts: {
+        bearingDeg: number;
+        rangePx: number;
+        radiusPx: number;
+    }): Asteroid {
+        const player = this.player;
+        if (!player) throw new Error('TestScene: no player to place a rock from');
+
+        const rad = Phaser.Math.DegToRad(opts.bearingDeg);
+        return this.registerTerrain(this.add.asteroid({
+            position: {
+                x: player.x + Math.cos(rad) * opts.rangePx,
+                y: player.y + Math.sin(rad) * opts.rangePx,
+            },
+            direction: 0,
+            speed: 0,
+            bodyRadius: opts.radiusPx,
+            // A test's rock holds still and holds its shape: no drift, no spin.
+            spin: false,
+            angle: 0,
+        }));
     }
 
     // Lay a band of absorbing gas across the world, given as a bearing/range

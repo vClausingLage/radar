@@ -57,10 +57,9 @@ Deterministic, linear in width, smooth in aspect.
   that actually uses a different value to be worth adding — infrastructure
   for a stealth hull that does not exist yet, rather than a realism gap in
   what is already in the game.
-- Still tracked in `TO_DO.md`: the missile seeker (`MissileRadar`) does not
-  use `returnSignal` at all — its own detection is deterministic range/cone
-  gating, not a signal-path test — so it has no hull geometry to measure and
-  treats every target as the reference hull regardless of aspect or material.
+- Still tracked in `TO_DO.md`: ~~the missile seeker (`MissileRadar`) does not
+  use `returnSignal` at all~~ — **done, see §8**: the seeker now runs the same
+  energy budget and measures the hull it is looking at.
 
 ## 2. Radar equation — `signalPath.ts returnSignal()/emissionSignal()`
 
@@ -113,10 +112,11 @@ gap rather than a new one:
   integration has a gain closer to √N than N, and a resolution-cell grid
   (roadmap item 4/5) is the honest way to decide which hits belong to the same
   dwell, rather than a fixed pixel radius.
-- **Missile seeker and dish aperture** were explicitly left out of the gain
-  wiring — `MissileRadar`'s own detection is deterministic (range/cone gating,
-  no signal-path test at all; see item 1's still-open note), so there was no
-  `returnSignal` call to give it a gain term without a larger rewrite.
+- ~~**Missile seeker and dish aperture** were explicitly left out of the gain
+  wiring~~ — the seeker is now on the signal path (§8), with its rated range
+  quoted at its own beam width, so it needs no `beamGain` term; the dish
+  aperture question does not arise for a fixed 60° search sweep whose rated
+  range already embodies that width.
 
 ## 3. Signal-to-noise ratio — `signalPath.ts detectionProbability()`, `receiver.ts`
 
@@ -298,6 +298,62 @@ Giving returns a radial-velocity component and a filter that rejects
 near-zero-Doppler ones is a real, separate piece of work, not a small
 extension of the clutter map above — it is closer in size to another item on
 this list than a sub-bullet of this one.
+
+---
+
+## 8. The seeker on the shared signal path — `systems/modules/missileRadar.ts`
+
+**Was.** `MissileRadar` detected by geometry alone: a hard range gate at its
+rated range plus a forward cone, with two coin flips layered on (chaff
+blocking, gas absorption). No hull geometry, no aspect, no terrain — a cargo
+hauler was exactly as easy for a VIM-220 to find as a cruiser, and a target
+hiding behind a rock was lockable by a seeker that could not see it from the
+ship radar.
+
+**Done.**
+
+- **Energy test.** `returnStrength()` measures the hull through the same
+  raycaster the ship radar uses (`Ray` widened to take anything with a Matter
+  body, so the seeker needs no entity imports): cross-section by aspect
+  (`crossSection(polygon, seekerPos)`) weighted by the specular glint of the
+  facet the measuring ray actually lands on, fed to `returnSignal` against the
+  seeker's rated range, taxed by gas (`gasTransmission`, counted twice for the
+  round trip — the old per-frame absorption coin flip is gone). Candidates are
+  pre-gated at the echo horizon (`echoHorizonPx`, newly exported from
+  `signalPath.ts`) — past it no hull can return even the floor.
+- **Terrain occlusion.** `isShadowed()` casts the seeker-to-hull ray against
+  every registered terrain body and zeroes the return when a nearer hit hides
+  it — the same rules `Radar.nearestHit` runs: a body the seeker stands inside
+  cannot shadow, only a hit *nearer than the return* does.
+- **Hard SNR gate, not a detection roll.** The seeker re-tests every frame it
+  is live, and `detectionProbability`'s floor (`RADAR_PFA`) never reaches zero
+  — a per-frame roll would eventually lock a hull with nothing left of it, the
+  exact Monte-Carlo artefact `Receiver.processHits` exists to avoid for the
+  sweep pipeline. A set that dwells continuously is honestly modelled as the
+  hard gate it is: `MISSILE_SEEKER_MIN_SIGNAL` = 1, the noise floor everything
+  is normalised against. Transients ride out on
+  `MISSILE_RADAR_MAX_MISSED_LOCK_FRAMES` as before.
+- **No `beamGain`.** The seeker's rated range (`ACTIVE_RADAR_RANGE`, 250) is
+  quoted at its own beam width, so its envelope means what it always meant and
+  no beam-gain term double-counts a concentration that short range already
+  embodies.
+
+**Deliberately left out.** No sweep buffer, clustering, CFAR or false alarms —
+the seeker has no picture to defend, only a gate. Chaff stays a coin flip (its
+elevation is the chaff-as-reflector item, a separate decision). RWR hearing
+stays un-occluded by terrain, exactly as the ship radar's `illuminateRwr`
+treats terrain — hearing is one-way and both receivers share the rule. No beam
+shaping (§6's open beam-pattern item covers the ship radar first).
+
+**Verified.** New suite entry *Terrain shadows the missile seeker*: a
+waypoint-routed VIM-220 — a blind shot needs no track — flown at a drone
+behind a rock. The drone hears the seeker (one-way hearing stops for nothing)
+but is never locked by it, and the missile dies against the rock it was flown
+into; the same blind shot with no rock in the way locks the same kind of hull.
+The suite's other seeker test (`RWR warns of an inbound missile seeker`)
+passes unchanged — the seeker's lock now lands somewhat closer to the target
+than the old hard 250px gate allowed, which is the point: the energy budget,
+not an envelope, decides.
 
 ---
 
