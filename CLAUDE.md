@@ -46,8 +46,12 @@ src/scenes/game.ts       Base scene: world, factories, player, camera, colliders
                          per-frame radar update loop, cold-start procedure. Levels
                          SUBCLASS it and override buildTerrain() / buildScenario() /
                          briefingMessage() / requiresColdStart()
-src/scenes/level1.ts     Campaign Level 1: cold start (surface/launchpad) then
-                         friendly dish radar + datalink, C = bearing call
+src/scenes/campaignLevel.ts  Campaign base: the shared theatre (surface/pad, dish
+                         "Disco" + datalink, gas band, pickets), cold start, VID,
+                         RadioNet story traffic, verdicts, ENTER next/retry
+src/scenes/level1..3.ts  Mule Train (VID traffic) / Shepherd (tow a derelict,
+                         raider) / Backdoor (raid through the gas). Story lines
+                         live in src/audio/radioScript.json
 src/scenes/startMenu.ts  Menu, ScenarioKey ('duel' | 'occluded' | 'skirmish')
 src/controller/          playerController.ts (key bindings), aiUnitController.ts (intent)
 src/entities/            Ship/PlayerShip/Target, missiles, asteroid, decoy, exhaust,
@@ -72,7 +76,8 @@ src/physics/                      ray.ts (raycast against Matter vertices), body
                                   slow + tail-first on ground = landed, else crash), collisionRegistrar
 src/math/, src/types/             Maths helpers, shared Vector2
 src/settings.ts                   Non-radar gameplay constants (world, ship, camera, loadouts)
-src/audio/                        audioPlayer, radarVoice (BRA callouts), startup, supportRadarComms
+src/audio/                        audioPlayer, radarVoice (BRA callouts), startup, supportRadarComms,
+                                  radioNet + radioScript.json (campaign story traffic, subtitled)
 public/                           Sprites; audio in public/audio
 docs/                             radar.md, player.md, GCI.md, gci-comms.md
 TO_DO.md, decision_tree.md, cowork.md   Roadmap, AI behaviour spec, design intent
@@ -152,7 +157,7 @@ display-and-weapons concern.
   `physics/landing.ts` from `landingSettings` in `settings.ts`: fast = crash
   on anything; slow on an obstacle = stop; slow **and tail-first** on ground =
   landed (`Game.onPlayerLanded()`), else crash. Only the player lands by hand —
-  AI cargo sets down by `Level1.landTraffic()`. A sprite-shaped body comes
+  AI cargo sets down by `CampaignLevel.landShip()`. A sprite-shaped body comes
   from `tools/traceOutline.js` → `spriteOutlines.ts` → `fitBodyToOutline()`.
 - **Constants**: radar/weapon/simulation values go in
   `src/radar/data/radarGameSettings.ts`, grouped under a `// ── section ──`
@@ -203,6 +208,6 @@ directly rather than through the `typescript-eslint` wrapper.
 For behavioural changes, drive the running game rather than asking the user to
 click: the preview server is pinned to port **5199** in `.claude/launch.json`
 (the user runs their own on 5173). See
-[references/dev-automation.md](references/dev-automation.md) for the
+[references/dev-automation.md](.claude/skills/radar-game-typescript/references/dev-automation.md) for the
 `window.game` stepping recipes — the preview tab is backgrounded, so the clock
 must be advanced manually and verification is by state, not screenshot.
