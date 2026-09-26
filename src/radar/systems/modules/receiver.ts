@@ -2,38 +2,21 @@ import Phaser from 'phaser';
 import { BeamHit, RadarReturn } from '../../data/radarReturn';
 import { Vector2 } from '../../../types';
 import {
-  decoySettings,
   RADAR_BEAM_WIDTH_DEG,
+  RADAR_INTEGRATION_GAIN_EXPONENT,
   RADAR_PULSE_LENGTH_PX,
-  RECEIVER_INTEGRATION_RADIUS_PX,
 } from '../../data/radarGameSettings';
 import { JammerError } from './jammer';
 import { GasVolume } from '../../data/types';
-import { gasTransmission, isDetected, measurementJitterPx, returnSignal } from '../../data/signalPath';
+import {
+  gasTransmission,
+  isDetected,
+  measurementJitterPx,
+  returnSignal,
+  sameResolutionCell,
+} from '../../data/signalPath';
 
 export class Receiver {
-  // A beam from `from` to `to` may be blocked by chaff: for each decoy cloud the
-  // beam passes through, there is a chance the return is lost. Multiple clouds in
-  // the path stack the odds. Unlike gas, this is not an energy loss the pulse can
-  // out-shout at short range — a chaff cloud is a swarm of reflectors that hides
-  // the target behind returns of its own — so it stays a flat coin flip, and it
-  // is the randomness that lets a player break a lock by manoeuvring decoys
-  // between their ship and a threat radar.
-  isBlockedByDecoy(
-    from: { x: number; y: number },
-    to: { x: number; y: number },
-    decoyCircles: Phaser.Geom.Circle[],
-  ): boolean {
-    if (decoyCircles.length === 0) return false;
-    const line = new Phaser.Geom.Line(from.x, from.y, to.x, to.y);
-    for (const circle of decoyCircles) {
-      if (Phaser.Geom.Intersects.LineToCircle(line, circle) && Math.random() < decoySettings.BLOCK_PROBABILITY) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   // Fraction of the pulse's energy that survives the round trip through any gas
   // on this path — out and back, so the one-way transmission counts twice.
   // Handed to processHits as part of the hit, where it goes into the same energy
@@ -60,6 +43,34 @@ export class Receiver {
     return Math.random() > this.gasRoundTrip(from, to, gasVolumes);
   }
 
+  // The signal strength a dwell's worth of hits represents for the J/S
+  // contest with a jammer: the *strongest single integration group's*
+  // effective signal — the same grouping, per-hit sum and √N law processHits
+  // tests (scintillation and CFAR aside) — because the jammer competes
+  // against the one contact the receiver is trying to pull out, not against
+  // the sum of every hit on the picture. A whole-buffer sum would let several
+  // distinct contacts (or several chaff clouds) gang up and burn through a
+  // jammer that genuinely out-powers each of them alone.
+  dwellSignal(
+    hits: BeamHit[],
+    ownerPos: Vector2,
+    ratedRange: number,
+    gain: number = 1,
+  ): number {
+    let best = 0;
+    for (const group of this.integrationGroups(hits, ownerPos)) {
+      let total = 0;
+      for (const hit of group) {
+        const dx = hit.point.x - ownerPos.x;
+        const dy = hit.point.y - ownerPos.y;
+        total += returnSignal(Math.hypot(dx, dy), ratedRange, hit.crossSection, hit.transmission, gain);
+      }
+      const effective = total / Math.pow(group.length, RADAR_INTEGRATION_GAIN_EXPONENT);
+      if (effective > best) best = effective;
+    }
+    return best;
+  }
+
   // Turn the reflections the beam found into the returns the radar actually
   // received. `ratedRange` is the range the energy budget is quoted at, not a
   // cutoff: a big contact just past it can still be seen, and a small one
@@ -78,11 +89,16 @@ export class Receiver {
   // succeeds no matter how faint it is, which is a Monte Carlo artefact, not
   // a radar seeing further. A real set does not do this either: it integrates
   // a dwell's worth of pulses before its detector declares anything.
-  // integrationGroups groups the hits a single dwell produced, their signal
-  // is summed (non-coherent integration — a simplification of the true
-  // integration-loss curve, but the right *shape*: more looks raise the
-  // combined signal, not the number of independent chances at the floor),
-  // and the whole group is accepted or rejected once.
+  //
+  // integrationGroups decides which hits are one dwell using the radar's own
+  // resolution cell (sameResolutionCell in data/signalPath.ts) — the same
+  // anisotropic cell the tracking computer clusters returns by, so "which
+  // hits are one look" and "can two contacts be told apart" share one
+  // physical answer. Within a group the hits' signals sum (they are looks at
+  // the same contact), and the sum is then divided by N to the integration
+  // exponent (RADAR_INTEGRATION_GAIN_EXPONENT, ~0.5): real non-coherent
+  // integration buys roughly √N in effective SNR, not N — each extra look is
+  // worth part of a hit, and the whole group is accepted or rejected once.
   // `localNoiseFloor(point)` is the CFAR half of the budget — a caller (in
   // practice `CfarDetector`, systems/modules/cfarDetector.ts) reporting how
   // cluttered the ground picture is right there: 1 with nothing nearby,
@@ -101,53 +117,103 @@ export class Receiver {
   ): RadarReturn[] {
     const returns: RadarReturn[] = [];
 
-    for (const group of this.integrationGroups(hits)) {
+    // Scintillation: a real hull's presented RCS is not the fixed number
+    // crossSection() measures, it fluctuates dwell to dwell (see
+    // scintillation() below for the model). One draw per dwell — per
+    // processHits call, i.e. per scan — shared by every resolution cell the
+    // dwell lit up, not one draw per cell: the fluctuation is a property of
+    // the target's aspect toward this scan, not of the receiver's cell grid,
+    // and letting each cell roll its own would make the *composition* of
+    // detected cells wander scan to scan (a cell here, a cell there), which
+    // reads to the tracker as centroid motion a stationary hull never made.
+    // This is what makes a marginal contact fade in bursts across several
+    // sweeps rather than flickering independently frame to frame, and gives
+    // the tracking computer's confidence decay and α-β filter something real
+    // to smooth over.
+    const scintillation = this.scintillation();
+
+    for (const group of this.integrationGroups(hits, ownerPos)) {
+      // Per-hit signal and the amplitude-weighted centroid. Weighting by
+      // each hit's own signal — not averaging positions flat — is a poor
+      // man's monopulse: the looks nearest the beam's boresight came back
+      // with more of the beam pattern (beamPattern in data/signalPath.ts) and
+      // they steer the contact, while a grazing edge-of-hull look barely
+      // moves it. What the old α-trimmed centroid did discretely (cut the
+      // outer fraction of each cluster by angle) falls out continuously from
+      // the amplitudes.
       let totalSignal = 0;
-      let sumX = 0;
-      let sumY = 0;
+      let weightedX = 0;
+      let weightedY = 0;
+      let weightedRange = 0;
+      let weightedAngle = 0;
       for (const hit of group) {
         const dx = hit.point.x - ownerPos.x;
         const dy = hit.point.y - ownerPos.y;
-        const range = Math.sqrt(dx * dx + dy * dy);
-        totalSignal += returnSignal(range, ratedRange, hit.crossSection, hit.transmission, gain);
-        sumX += hit.point.x;
-        sumY += hit.point.y;
+        const range = Math.hypot(dx, dy);
+        const signal = returnSignal(range, ratedRange, hit.crossSection, hit.transmission, gain);
+        totalSignal += signal;
+        weightedX += hit.point.x * signal;
+        weightedY += hit.point.y * signal;
+        weightedRange += range * signal;
+        weightedAngle += Phaser.Math.RadToDeg(Math.atan2(dy, dx)) * signal;
       }
-      const cx = sumX / group.length;
-      const cy = sumY / group.length;
+      // Non-coherent integration: the group's combined signal buys ~√N, not
+      // N — see RADAR_INTEGRATION_GAIN_EXPONENT in radarGameSettings.ts.
+      const effectiveSignal = totalSignal / Math.pow(group.length, RADAR_INTEGRATION_GAIN_EXPONENT);
 
-      // Scintillation: a real hull's presented RCS is not the fixed number
-      // crossSection() measures, it fluctuates dwell to dwell (see
-      // scintillation() below for the model). Applied once per dwell (this
-      // whole group), not once per hit within it — a slow fluctuation shares
-      // one state across one encounter. This is what makes a marginal
-      // contact fade in bursts across several sweeps rather than flickering
-      // independently frame to frame, and gives the tracking computer's
-      // confidence decay and α-β filter something real to smooth over.
-      totalSignal *= this.scintillation();
       // CFAR: a target sitting against a rock or inside a gas cloud is judged
       // against a locally raised floor, not the flat one everywhere else.
-      totalSignal /= localNoiseFloor({ x: cx, y: cy });
-      if (!isDetected(totalSignal)) continue;
+      const judgedSignal = effectiveSignal * scintillation
+        / localNoiseFloor(this.groupCentre(group));
+      if (!isDetected(judgedSignal)) continue;
 
-      const dx = cx - ownerPos.x;
-      const dy = cy - ownerPos.y;
-      const range = Math.sqrt(dx * dx + dy * dy);
-      const angle = Phaser.Math.RadToDeg(Math.atan2(dy, dx));
-
-      returns.push(this.jitteredReturn(ownerPos, range, angle, totalSignal));
+      returns.push(this.jitteredReturn(
+        ownerPos,
+        weightedRange / totalSignal,
+        weightedAngle / totalSignal,
+        weightedX / totalSignal,
+        weightedY / totalSignal,
+        judgedSignal,
+      ));
     }
 
     return returns;
   }
 
-  // Chain single-linkage clustering on raw hit points, tighter than the
-  // tracking computer's own resolution cell: this is grouping the handful of
-  // ray hits one dwell left on one hull (they sit close together — successive
-  // one-degree steps across the same target), not deciding whether two nearby
-  // *returns* are one contact or two — that is TrackingComputer.cluster()'s
-  // job, on the already-integrated returns this produces.
-  private integrationGroups(hits: BeamHit[]): BeamHit[][] {
+  // Plain centroid of a group's hit points — the point the CFAR floor is
+  // sampled at (clutter is a property of the place, not of how loudly each
+  // look came back).
+  private groupCentre(group: BeamHit[]): Vector2 {
+    let x = 0;
+    let y = 0;
+    for (const hit of group) {
+      x += hit.point.x;
+      y += hit.point.y;
+    }
+    return { x: x / group.length, y: y / group.length };
+  }
+
+  // Chain single-linkage clustering on raw hit points, by the radar's own
+  // resolution cell (sameResolutionCell in data/signalPath.ts — anisotropic:
+  // a fixed px width in range, a fixed angle across it): this is deciding
+  // which of the hits one dwell left belong to one look at one contact, and
+  // the honest boundary for that is the cell the radar cannot see inside —
+  // not a separate tracking-side radius. Two hits on the same hull a
+  // degree of bearing apart integrate together; two hits a hull's depth
+  // apart in range (a bow-on hull spans several range bins) integrate
+  // separately, and the tracking computer's cluster() merges the resulting
+  // returns exactly as it would two contacts it cannot resolve.
+  private integrationGroups(hits: BeamHit[], ownerPos: Vector2): BeamHit[][] {
+    const cells = hits.map(hit => {
+      const dx = hit.point.x - ownerPos.x;
+      const dy = hit.point.y - ownerPos.y;
+      return {
+        hit,
+        range: Math.hypot(dx, dy),
+        angle: Phaser.Math.RadToDeg(Math.atan2(dy, dx)),
+      };
+    });
+
     const used = new Array(hits.length).fill(false);
     const groups: BeamHit[][] = [];
 
@@ -157,14 +223,18 @@ export class Receiver {
       const group: BeamHit[] = [hits[i]];
       used[i] = true;
 
-      let frontier = 0;
-      while (frontier < group.length) {
-        const pivot = group[frontier++];
+      // BFS frontier over cell indices, so the chain test runs from every
+      // member and not just the seed.
+      const frontierCells: { range: number; angle: number }[] = [cells[i]];
+      let f = 0;
+      while (f < frontierCells.length) {
+        const pivot = frontierCells[f++];
         for (let j = 0; j < hits.length; j++) {
           if (used[j]) continue;
-          if (Phaser.Math.Distance.BetweenPoints(pivot.point, hits[j].point) < RECEIVER_INTEGRATION_RADIUS_PX) {
+          if (sameResolutionCell(pivot, cells[j])) {
             group.push(hits[j]);
             used[j] = true;
+            frontierCells.push(cells[j]);
           }
         }
       }
@@ -183,8 +253,17 @@ export class Receiver {
   // reported value only ever carries as much precision as this radar could
   // really claim. Both are applied in range and bearing rather than in x/y
   // directly — a real set's accuracy and resolution are a range figure and an
-  // angular figure, not isotropic ones — then converted back to a point.
-  private jitteredReturn(ownerPos: Vector2, range: number, angle: number, signal: number): RadarReturn {
+  // angular figure, not isotropic ones — then converted back to a point. The
+  // amplitude the detection was made on rides along: it is what the tracking
+  // computer's monopulse-style centroid is weighted by.
+  private jitteredReturn(
+    _ownerPos: Vector2,
+    range: number,
+    angle: number,
+    x: number,
+    y: number,
+    signal: number,
+  ): RadarReturn {
     const jitterPx = measurementJitterPx(signal);
     const jitteredRange = Math.max(0, range + this.gaussian() * jitterPx);
     // The same px wander subtends fewer degrees the further out it is.
@@ -193,15 +272,17 @@ export class Receiver {
 
     const binnedRange = Math.round(jitteredRange / RADAR_PULSE_LENGTH_PX) * RADAR_PULSE_LENGTH_PX;
     const binnedAngle = Math.round(jitteredAngle / RADAR_BEAM_WIDTH_DEG) * RADAR_BEAM_WIDTH_DEG;
-    const angleRad = Phaser.Math.DegToRad(binnedAngle);
 
     return {
-      point: new Phaser.Math.Vector2(
-        ownerPos.x + Math.cos(angleRad) * binnedRange,
-        ownerPos.y + Math.sin(angleRad) * binnedRange,
-      ),
+      // The weighted centroid as measured, not rebuilt from the binned
+      // range/bearing: the bins are the receiver's reporting resolution, the
+      // centroid is the monopulse estimate the beam pattern formed, and the
+      // tracking computer is better served by the estimate than by its
+      // re-projection through the bin grid.
+      point: new Phaser.Math.Vector2(x, y),
       range: binnedRange,
       angle: binnedAngle,
+      signal,
     };
   }
 
@@ -240,24 +321,46 @@ export class Receiver {
   // cross-section and the gas it was seen through carry over unchanged, and the
   // detection test then runs at the range the return *appears* to come from —
   // the radar has no way to judge it by anything else.
+  //
+  // `jammerPower` is the burst's delivered signal at the victim (the J that
+  // won the energy contest in systems/radar.ts). The ghost rides it: a
+  // deception jammer does not merely bend the hull's echo, it *transmits a
+  // false echo of its own* — its apparent strength is the jammer's, not the
+  // hull's, so the spoofed look is priced as a reflector of whatever size
+  // makes its return read at the burst's power at the spoofed range. A
+  // jammer that wins the contest paints a ghost the victim can actually see;
+  // pricing the ghost off the hull instead would make it fainter than the
+  // real contact it replaced, which is not what deception jamming does.
   createFakeHits(
     hits: BeamHit[],
     ownerPos: Vector2,
     ratedRange: number,
     error: JammerError,
     gain: number = 1,
+    jammerPower: number = 0,
   ): RadarReturn[] {
     const spoofed = hits.map((hit) => {
       const dx = hit.point.x - ownerPos.x;
       const dy = hit.point.y - ownerPos.y;
       const range = Math.max(0, Math.sqrt(dx * dx + dy * dy) + error.distance);
       const angleRad = Math.atan2(dy, dx) + Phaser.Math.DegToRad(error.angle);
+      const point = new Phaser.Math.Vector2(
+        ownerPos.x + Math.cos(angleRad) * range,
+        ownerPos.y + Math.sin(angleRad) * range,
+      );
+      // The false echo's effective cross-section: whatever reflector makes
+      // its return at the spoofed range carry the jammer's power, given the
+      // same path (gas) and receive gain the real echo had. The hull's own
+      // figure stands when the burst's power would make the ghost weaker
+      // than the hull it is imitating — a jammer does not paint ghosts
+      // fainter than the ship it is hiding.
+      const ghostRcs = jammerPower > 0
+        ? jammerPower * Math.pow(range / ratedRange, 4) / (hit.transmission * hit.transmission * gain * gain)
+        : 0;
       return {
         ...hit,
-        point: new Phaser.Math.Vector2(
-          ownerPos.x + Math.cos(angleRad) * range,
-          ownerPos.y + Math.sin(angleRad) * range,
-        ),
+        point,
+        crossSection: Math.max(hit.crossSection, ghostRcs),
       };
     });
 

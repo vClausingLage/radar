@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import type { GasVolume } from './types';
 import {
     ANTENNA_REFERENCE_BEAM_WIDTH_DEG,
+    ANTENNA_SIDELOBE_LEVEL,
+    JAMMER_POWER,
     RADAR_BEAM_WIDTH_DEG,
     RADAR_MAX_CROSS_SECTION,
     RADAR_MEASUREMENT_JITTER_MAX_PX,
@@ -100,6 +102,33 @@ export function scanLossFactor(scanAngleDeg: number): number {
     return Math.max(0, Math.cos(Phaser.Math.DegToRad(scanAngleDeg)));
 }
 
+// The antenna's amplitude pattern: the fraction of full beam gain a target
+// at `offAxisDeg` from the beam centre receives. A Gaussian main lobe — the
+// smooth stand-in for a real aperture's sinc-shaped pattern, chosen because
+// it never goes negative and falls off honestly — normalised to 1 on
+// boresight and −3 dB (0.5) at half the beamwidth, so `beamWidthDeg` means
+// the same thing here it means everywhere else (the resolution cell). This
+// replaces the flat in-beam/sidelobe split: a hit at the edge of a beam
+// returns measurably less than one at the centre, which is what makes an
+// amplitude-weighted centroid a bearing measurement (poor man's monopulse —
+// the weighted mean angle of the cluster *is* the estimate a monopulse
+// comparator forms) instead of a geometric average that then has to be
+// trimmed of its edge hits.
+//
+// A pure Gaussian has no sidelobes at all, and real antennas do leak in
+// every direction, so the pattern is floored at ANTENNA_SIDELOBE_LEVEL —
+// one flat leak standing in for the whole lobe structure outside the main
+// lobe, the same simplification illuminateRwr has always made, now as the
+// pattern's floor rather than a separate binary branch.
+export function beamPattern(offAxisDeg: number, beamWidthDeg: number): number {
+    if (beamWidthDeg <= 0) return 1;
+    // σ from the −3 dB full width: the half-power point sits at half the
+    // quoted beamwidth, so σ = width / (2·√(2·ln 2)).
+    const sigma = beamWidthDeg / (2 * Math.sqrt(2 * Math.LN2));
+    const mainLobe = Math.exp(-(offAxisDeg * offAxisDeg) / (2 * sigma * sigma));
+    return Math.max(mainLobe, ANTENNA_SIDELOBE_LEVEL);
+}
+
 // Signal a returning echo carries, relative to the receiver's noise floor.
 // Out and back, so the range falls in twice over; the target's cross-section
 // sets how much of what arrives is thrown back; `transmission` is the fraction
@@ -157,6 +186,21 @@ export function detectionProbability(signal: number): number {
     return Math.pow(RADAR_PFA, 1 / (1 + signal));
 }
 
+// Signal a jamming burst delivers at a victim `rangePx` away, quoted on the
+// victim's own scale: its rated range is the reference, the victim's noise
+// floor is 1, and JAMMER_POWER is the figure of merit — the ratio the burst
+// achieves against a *reference hull's echo at that range* (where the echo is
+// exactly 1). One-way, so it falls with the square of range. The contest
+// against any real echo is then jammerSignal / returnSignal, and the
+// fourth-power range law does the rest: a jammer that comfortably out-shouts
+// an echo out at the ring loses outright — burn-through — to the same contact
+// once it closes in or turns broadside, because the echo grows as the fourth
+// power while the noise only strengthens as the square.
+export function jammerSignal(rangePx: number, ratedRangePx: number): number {
+    if (rangePx <= 0) return Infinity;
+    return JAMMER_POWER * Math.pow(ratedRangePx / rangePx, RADAR_ONE_WAY_RANGE_POWER);
+}
+
 // Roll for one detection at this signal strength.
 export function isDetected(signal: number): boolean {
     return Math.random() < detectionProbability(signal);
@@ -186,12 +230,20 @@ export function measurementJitterPx(signal: number): number {
 // close. Ship and terrain returns are quoted against the same two constants,
 // so this is one answer for both, not a tracking-only approximation next to
 // a differently-tuned ground map.
+//
+// The comparison is inclusive on both axes, which is the plot-extraction
+// rule: returns quantised into *adjacent* bins differ by exactly one
+// resolution element — and the binning is the receiver's own reporting
+// grid, not a property of the targets, so its boundary must not split what
+// one hull produced. A real set's plot extractor groups detected cells that
+// touch into one plot the same way; two genuinely distinct contacts land
+// more than one element apart and stay separate.
 export function sameResolutionCell(
     a: { range: number; angle: number },
     b: { range: number; angle: number },
 ): boolean {
-    if (Math.abs(a.range - b.range) >= RADAR_PULSE_LENGTH_PX) return false;
-    return Math.abs(Phaser.Math.Angle.WrapDegrees(a.angle - b.angle)) < RADAR_BEAM_WIDTH_DEG;
+    if (Math.abs(a.range - b.range) > RADAR_PULSE_LENGTH_PX) return false;
+    return Math.abs(Phaser.Math.Angle.WrapDegrees(a.angle - b.angle)) <= RADAR_BEAM_WIDTH_DEG;
 }
 
 // A hull's radar cross-section as seen from `from`, relative to the reference

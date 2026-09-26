@@ -125,14 +125,20 @@ export const RADAR_SPECULAR_EXPONENT = 2;
 // is what keeps that side of the curve honest at this lower setting.
 export const RADAR_PFA = 0.008;
 
-// Radius (px) Receiver.processHits groups raw ray hits within before testing
-// detection: the handful of hits one dwell leaves on one hull sit far closer
-// together (successive one-degree steps across the same few dozen px of
-// target) than two genuinely distinct contacts would, so a tight radius here
-// does not risk merging different ships the way the tracking computer's
-// resolution cell (RADAR_BEAM_WIDTH_DEG, RADAR_PULSE_LENGTH_PX above) — wider
-// at any real range, for the picture the player sees — reasonably can.
-export const RECEIVER_INTEGRATION_RADIUS_PX = 40;
+// Non-coherent integration law: how the signal of a dwell's worth of hits
+// combines before the detection test. A group of N hits sums to at most N
+// times one hit's signal, but a real detector integrating non-coherently
+// (no phase alignment between looks) buys roughly the *square root* of N in
+// effective SNR, not N — so the summed group is divided by N to this
+// exponent. 1.0 would be the naive sum-then-threshold this replaces (each
+// extra look worth a full hit's signal, detection too cheap); 0.5 is the
+// textbook ~√N curve for a square-law detector. The grouping of which hits
+// belong to one dwell is the resolution cell itself (sameResolutionCell in
+// data/signalPath.ts) — the same anisotropic cell the tracking computer
+// clusters returns by, so "which hits are one look at one contact" and "can
+// two contacts be told apart" are one answer, not a tracking rule next to a
+// differently-shaped receiver rule.
+export const RADAR_INTEGRATION_GAIN_EXPONENT = 0.5;
 
 // Chance an empty cell the beam sweeps reports a contact anyway — receiver
 // noise alone crossing the threshold, at the same Pd(0) = RADAR_PFA the
@@ -199,16 +205,14 @@ export const ANTENNA_AZIMUTH_DEG_BY_MODE = {
 // for (see `beamGain` in data/signalPath.ts).
 export const ANTENNA_REFERENCE_BEAM_WIDTH_DEG: number = ANTENNA_AZIMUTH_DEG_BY_MODE.rws;
 
-// Fraction of the main lobe's gain that still radiates everywhere else — a
-// real antenna's sidelobes, collapsed to one flat leak rather than a modelled
-// pattern. What this buys: a ship just off the beam's exact instantaneous
-// bearing is not perfectly deaf to it, so `illuminateRwr` also tests targets
-// outside the main beam at this fraction of its gain rather than only the
-// ones the pulse ray happens to intersect this frame. -20 dB-ish, picked
-// generously for a coarse one-lobe model — real sidelobes run lower still,
-// but a receiver here only gets one ray's worth of main-beam illumination a
-// frame to lean on, the same reasoning RADAR_FALSE_ALARM_RATE is tuned
-// against.
+// Fraction of the main lobe's gain that still radiates everywhere else —
+// the flat floor `beamPattern` (data/signalPath.ts) sits on outside its
+// Gaussian main lobe. What this buys: a ship just off the beam's exact
+// instantaneous bearing is not perfectly deaf to it — real antennas leak in
+// every direction, just far more weakly. -20 dB-ish, picked generously for a
+// one-floor model — real sidelobes run lower still, but a receiver here only
+// gets one ray's worth of main-beam illumination a frame to lean on, the
+// same reasoning RADAR_FALSE_ALARM_RATE is tuned against.
 export const ANTENNA_SIDELOBE_LEVEL = 0.02;
 
 // The physical beam's own width and pulse length — hardware properties of
@@ -230,10 +234,6 @@ export const TRACK_GATE_RADIUS_PX = 200;
 
 // Drop a track after this many consecutive scans with no return.
 export const TRACK_MAX_MISSED_SCANS = 4;
-
-// Alpha-trimmed mean: discard this fraction of cluster points from each angular
-// end before computing the centroid. Removes unstable polygon-edge hits.
-export const TRACK_TRIM_FRACTION = 0.15;
 
 // Alpha-beta filter gains. Alpha smooths position, beta smooths velocity.
 // Lower alpha means smoother track with higher lag.
@@ -351,6 +351,16 @@ export const JAMMER_COOLDOWN_MS = 20000;
 // must sit inside this cone and within radar range for returns to be spoofed.
 export const JAMMER_CONE_DEG = 20;
 
+// How loud a jamming burst is: the signal ratio it delivers at a victim at
+// the *rated range* away, where a reference hull's echo is exactly 1 — in
+// other words, J/S against a reference echo at that range (see jammerSignal
+// in data/signalPath.ts). The contest itself needs no more constants: the
+// echo's energy grows as the fourth power of closing range while the jammer's
+// noise only falls off as its square, so any jammer sized like this one
+// rewrites a sweep out at the ring and loses outright — burn-through — to a
+// close or large contact.
+export const JAMMER_POWER = 12;
+
 // Magnitude of the random bearing/range offset applied to a spoofed return.
 // The same offset is reused for every hit in a sweep so the fake returns
 // cluster into one coherent false track, and it is re-rolled on each activation.
@@ -360,8 +370,12 @@ export const JAMMER_DISTANCE_ERROR_MIN_PX = 60;
 export const JAMMER_DISTANCE_ERROR_MAX_PX = 180;
 
 // STT concentrates far more energy than the jammer can overcome, so it is not
-// spoofed. Instead each jammed frame has this chance to swallow the return,
-// feeding the existing missed-frame lock-break counter (STT_LOCK_BREAK_FRAMES).
+// spoofed. Instead each jammed frame may have its return swallowed, feeding
+// the existing missed-frame lock-break counter (STT_LOCK_BREAK_FRAMES) — and
+// *may* is the operative word: this is the ceiling, reached only when the
+// jammer actually out-powers the lock's echo (J ≥ S, see the contest in
+// radar.ts). A close or large target's concentrated echo burns through and
+// the chance scales toward zero with the J/S ratio.
 export const JAMMER_STT_DEGRADE_PROB = 0.5;
 
 // ── Radar world renderer (renderer/radarRenderer.ts) ───────────────────────
@@ -514,6 +528,46 @@ export const CFAR_REFERENCE_CELLS = 5;
 // unless clutter genuinely surrounds the point, not just brushes past it.
 export const CFAR_THRESHOLD_FACTOR = 1.0;
 
+// ── MTI / radial velocity (systems/modules/trackingComputer.ts) ─────────────
+// There is no carrier and no phase anywhere in this raycasting engine, so
+// per-pulse Doppler does not exist and cannot be bolted on: nothing here can
+// measure a frequency shift. What the engine *can* measure honestly is the
+// scan-to-scan stand-in — classical area MTI. The tracking computer already
+// fits every track's course and speed across scans, so the radial rate a
+// contact shows (its fitted velocity projected on the line of sight) is real
+// measured information, and clutter is the one thing that has none of it. The
+// gate is scoped to the search picture (RWS/TWS) exactly like CFAR: STT
+// stares with a boosted narrow beam and maintains a lock, it does not build a
+// picture, so there is nothing for an MTI notch to protect.
+//
+// What it buys, on top of CFAR's amplitude threshold: a contact parked in
+// significant clutter is rejected as clutter itself — no radial rate, no
+// acceptance, and it never holds a stable track — while the same hull under
+// way lifts out of the same clutter, because its echo carries the radial rate
+// the static clutter lacks. A contact crossing tangentially sits in the
+// notch too: that is a real MTI's blind speed, not a bug, and it is the
+// radar-relative geometry the gate is honestly allowed to know.
+
+// Mean clutter density (the units CfarDetector deposits and averages) a
+// contact must sit in before its motion is judged at all — below it there is
+// no clutter worth rejecting, so the notch is silent and every contact is
+// accepted on the amplitude test alone. The figure is calibrated to what the
+// map actually holds beside a rock: a convex body echoes from its near rim
+// only, so its silhouette deposits across just a few cells and a hull one to
+// two cells away reads ~0.1-0.2 mean density — well below CLUTTER_TERRAIN_
+// DENSITY's raw 1.5 at the rock's own surface, and far above what diffuse gas
+// spine samples accumulate (~0.06), so ground clutter notches a parked hull
+// while volume clutter never masks a stationary contact the way ground
+// clutter legitimately does.
+export const MTI_ACTIVATION_DENSITY = 0.1;
+
+// The notch's centre is the clutter's own radial rate — zero: static terrain
+// moves not at all, so the blind speed is the minimum radial rate a contact
+// can show and still be believed. That is the same number as the reported
+// course's minimum detectable velocity (TRACK_MIN_COURSE_SPEED_PX, scaled by
+// range the way reportCourse scales it) — one threshold doing both jobs, the
+// way a real set's MDS serves both the display and the MTI filter.
+
 // ── Support dish radar (entities/dishRadarStation.ts) ──────────────────────
 // A stationary early-warning dish on an asteroid: it drives the standard Radar
 // in 'dome' mode (full 360° cover) at long range, and datalinks its tracks to
@@ -531,7 +585,15 @@ export const decoySettings = {
     COUNT: 5,                 // how many the player carries
     RADIUS: 50,               // px — size of the chaff cloud
     LIFETIME_MS: 8000,        // how long a cloud lingers before dissipating
-    BLOCK_PROBABILITY: 0.7,   // chance a beam passing through is blocked
+    // Radar cross-section of a fully-formed cloud, as a fraction of
+    // RADAR_REFERENCE_CROSS_SECTION_PX. A chaff cloud is a swarm of dipoles —
+    // a reflector in its own right, not a mask: it returns energy the way a
+    // hull does (the same energy budget, so it paints a contact and forms a
+    // track), and being nearer along the beam than the target it was thrown
+    // in front of, its echo is what the radar sees — the same nearest-wins
+    // rule terrain competes under. Sized against the biggest hulls so fresh
+    // chaff out-reflects most ships, which is the point of throwing it.
+    CROSS_SECTION: 3.5,
 }
 
 // ── Gas clouds (entities/gasCloud.ts, data/signalPath.ts) ────────────────────

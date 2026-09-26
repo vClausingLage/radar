@@ -538,6 +538,20 @@ export class InterfaceRenderer {
                 continue;
             }
 
+            // A jammer strobe: the emitter is painting us with noise. Filled
+            // and yellow, so it reads as louder than a search contact and
+            // distinct from both the green sweep symbol and the red flare.
+            if (contact.isJammer) {
+                this.rwrDirectionGraphics.fillStyle(0xffff00, 1);
+                this.rwrDirectionGraphics.fillPoints([
+                    new Phaser.Math.Vector2(markerX, markerY - diamondSize),
+                    new Phaser.Math.Vector2(markerX + diamondSize, markerY),
+                    new Phaser.Math.Vector2(markerX, markerY + diamondSize),
+                    new Phaser.Math.Vector2(markerX - diamondSize, markerY),
+                ], true);
+                continue;
+            }
+
             this.rwrDirectionGraphics.lineStyle(2, 0x00ff00, 1);
             this.rwrDirectionGraphics.beginPath();
             this.rwrDirectionGraphics.moveTo(markerX, markerY - diamondSize);

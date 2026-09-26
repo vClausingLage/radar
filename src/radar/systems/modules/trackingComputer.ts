@@ -4,6 +4,7 @@ import { Track } from '../../data/track';
 import { Vector2 } from '../../../types';
 import { sameResolutionCell } from '../../data/signalPath';
 import {
+  MTI_ACTIVATION_DENSITY,
   RADAR_TRACK_HISTORY_LENGTH,
   TRACK_COURSE_RANGE_EXPONENT,
   TRACK_COURSE_RANGE_REF_PX,
@@ -13,7 +14,6 @@ import {
   TRACK_GATE_RADIUS_PX,
   TRACK_MAX_MISSED_SCANS,
   TRACK_MIN_COURSE_SPEED_PX,
-  TRACK_TRIM_FRACTION,
 } from '../../data/radarGameSettings';
 
 type TrackState = {
@@ -52,6 +52,14 @@ type TrackingOptions = {
   // fit reads that drift as motion; there the centroid, scattered but unbiased
   // about the truth, is the only source a longer baseline can average down.
   courseFromMeasurements?: boolean;
+  // Mean clutter density around a contact's position, reported by the
+  // CfarDetector (search modes only). Given, a contact sitting in
+  // significant clutter whose fitted radial rate is below the blind speed
+  // is rejected as clutter itself (MTI): the measurement still updates the
+  // filter — the set keeps watching — but the echo is not accepted as
+  // target evidence, so the track's confidence decays and, if the contact
+  // never shows radial motion, it ages out like an unmatched one.
+  mtiClutterDensity?: (point: { x: number; y: number }) => number;
 };
 
 export class TrackingComputer {
@@ -64,13 +72,14 @@ export class TrackingComputer {
   // the caller's to set.
   update(
     returns: RadarReturn[],
-    _ownerPos: Vector2,
+    ownerPos: Vector2,
     {
       maxMissedScans = TRACK_MAX_MISSED_SCANS,
       maxTracks = Infinity,
       minCourseSpeed = TRACK_MIN_COURSE_SPEED_PX,
       courseWindow = TRACK_COURSE_WINDOW_SCANS,
       courseFromMeasurements = false,
+      mtiClutterDensity,
     }: TrackingOptions = {},
   ): Track[] {
     const centroids = this.cluster(returns);
@@ -95,6 +104,15 @@ export class TrackingComputer {
           minCourseSpeed,
           courseWindow,
           courseFromMeasurements,
+          // MTI: a near-zero-radial-rate echo inside significant clutter is
+          // clutter's own echo and is not accepted as target evidence. The
+          // filter still measures (so a contact that starts moving can prove
+          // itself within a couple of scans — an MTI filter needs pulses to
+          // establish velocity too), but confidence decays and the missed-
+          // scan counter runs, aging a stationary contact out.
+          accept: !this.isClutterLike(
+            this.states[bestIdx], centroid, ownerPos, minCourseSpeed, mtiClutterDensity,
+          ),
         });
       } else {
         this.states.push(this.spawn(centroid));
@@ -117,7 +135,7 @@ export class TrackingComputer {
     return this.states.map(s => s.track);
   }
 
-  // Chain single-linkage clustering with angular α-trimmed centroid. Two
+  // Chain single-linkage clustering with amplitude-weighted centroid. Two
   // returns join the same group when they fall in the same resolution cell
   // (sameResolutionCell in data/signalPath.ts) rather than within a flat px
   // radius: range resolution stays a fixed width at any range, cross-range
@@ -149,30 +167,53 @@ export class TrackingComputer {
         }
       }
 
-      centroids.push(this.trimmedCentroid(group));
+      centroids.push(this.weightedCentroid(group));
     }
 
     return centroids;
   }
 
-  // Sort cluster members by their sweep angle and discard the outer
-  // configured trim fraction on each side before computing the mean. This eliminates
-  // the unstable edge hits that cause centroid drift when a target is only
-  // partially within the scan cone.
-  private trimmedCentroid(group: RadarReturn[]): RadarReturn {
-    const sorted = [...group].sort((a, b) => a.angle - b.angle);
+  // Amplitude-weighted centroid — the bearing measurement a monopulse
+  // comparator forms. Each return carries the effective signal its detection
+  // was made on (RadarReturn.signal): looks nearer the beam boresight came
+  // back with more of the beam pattern, grazing hull edges came back weak,
+  // and a noise spike carries exactly the floor it cleared. Weighting the
+  // mean by those amplitudes is what the old α-trimmed centroid did
+  // discretely — cutting the outer fraction of each cluster by angle to
+  // remove unstable edge hits — except the trim is no longer a flat geometric
+  // rule: a real set forms the target bearing from how loudly each look came
+  // back, and so does this.
+  private weightedCentroid(group: RadarReturn[]): RadarReturn {
+    let weightSum = 0;
+    let cx = 0;
+    let cy = 0;
+    let cr = 0;
+    let ca = 0;
+    for (const r of group) {
+      const w = Math.max(r.signal, 0);
+      weightSum += w;
+      cx += r.point.x * w;
+      cy += r.point.y * w;
+      cr += r.range * w;
+      ca += r.angle * w;
+    }
 
-    const trim = group.length >= 6
-      ? Math.floor(sorted.length * TRACK_TRIM_FRACTION)
-      : 0;
-    const core = sorted.slice(trim, sorted.length - trim);
+    // A cluster of only floor-level spikes has no amplitude structure to
+    // read; fall back to the plain mean rather than divide into nothing.
+    if (weightSum <= 0) {
+      const cx0 = group.reduce((s, r) => s + r.point.x, 0) / group.length;
+      const cy0 = group.reduce((s, r) => s + r.point.y, 0) / group.length;
+      const cr0 = group.reduce((s, r) => s + r.range, 0) / group.length;
+      const ca0 = group.reduce((s, r) => s + r.angle, 0) / group.length;
+      return { point: new Phaser.Math.Vector2(cx0, cy0), range: cr0, angle: ca0, signal: 0 };
+    }
 
-    const cx = core.reduce((s, r) => s + r.point.x, 0) / core.length;
-    const cy = core.reduce((s, r) => s + r.point.y, 0) / core.length;
-    const cr = core.reduce((s, r) => s + r.range, 0) / core.length;
-    const ca = core.reduce((s, r) => s + r.angle, 0) / core.length;
-
-    return { point: new Phaser.Math.Vector2(cx, cy), range: cr, angle: ca };
+    return {
+      point: new Phaser.Math.Vector2(cx / weightSum, cy / weightSum),
+      range: cr / weightSum,
+      angle: ca / weightSum,
+      signal: weightSum / group.length,
+    };
   }
 
   // No return this scan: the track coasts on its last smoothed velocity rather
@@ -215,14 +256,49 @@ export class TrackingComputer {
     return state.track.pos;
   }
 
+  // Whether this echo, matched to `state`, reads as clutter rather than a
+  // target: it sits in significant clutter (per the CfarDetector's density
+  // map) and its fitted radial rate along the line of sight is below the
+  // blind speed. The blind speed is the reported course's minimum detectable
+  // velocity — the same number, scaled by range the same way reportCourse
+  // scales it — because one threshold serves both questions in a real set:
+  // how much motion the display will claim, and how much Doppler the MTI
+  // filter will believe. The radial projection uses the *reported* course and
+  // speed (the least-squares fit), not the α-β velocity state: the fit is
+  // the estimate the set is prepared to stand behind, it is range-aware
+  // already, and a fresh track reports zero — so it is gated until it has
+  // measured motion, exactly as an MTI filter is blind for its first pulses.
+  private isClutterLike(
+    state: TrackState,
+    centroid: RadarReturn,
+    ownerPos: Vector2,
+    minCourseSpeed: number,
+    mtiClutterDensity?: (point: { x: number; y: number }) => number,
+  ): boolean {
+    if (!mtiClutterDensity) return false;
+    if (mtiClutterDensity(centroid.point) < MTI_ACTIVATION_DENSITY) return false;
+
+    const dx = centroid.point.x - ownerPos.x;
+    const dy = centroid.point.y - ownerPos.y;
+    const bearing = Math.atan2(dy, dx);
+    const courseRad = Phaser.Math.DegToRad(state.track.dir);
+    const radial = state.track.speed * Math.cos(courseRad - bearing);
+
+    // Same range scaling reportCourse applies: wander is angular at heart
+    // and spreads into more pixels the further out the contact sits.
+    const blind = minCourseSpeed
+      * (state.track.dist / TRACK_COURSE_RANGE_REF_PX) ** TRACK_COURSE_RANGE_EXPONENT;
+    return Math.abs(radial) < blind;
+  }
+
   // α-β filter update. The innovation (measurement minus prediction) corrects
   // both position and velocity estimates, damping noise across scans.
   private refresh(
     state: TrackState,
     centroid: RadarReturn,
-    { minCourseSpeed, courseWindow, courseFromMeasurements }: Required<
+    { minCourseSpeed, courseWindow, courseFromMeasurements, accept }: Required<
       Pick<TrackingOptions, 'minCourseSpeed' | 'courseWindow' | 'courseFromMeasurements'>
-    >,
+    > & { accept: boolean },
   ): void {
     const predicted = this.predictedPos(state);
 
@@ -252,8 +328,16 @@ export class TrackingComputer {
     this.reportCourse(state, minCourseSpeed, courseWindow);
     state.track.age++;
     state.track.lastUpdate = 0;
-    state.track.confidence = Math.min(state.track.confidence + 0.15, 1.0);
-    state.missedScans = 0;
+    if (accept) {
+      state.track.confidence = Math.min(state.track.confidence + 0.15, 1.0);
+      state.missedScans = 0;
+    } else {
+      // MTI-rejected: measured but not believed. The decay mirrors a coast
+      // (coast uses 0.1) so a contact the set refuses to believe ages out on
+      // the same clock an unmatched one would.
+      state.track.confidence = Math.max(state.track.confidence - 0.1, 0);
+      state.missedScans++;
+    }
   }
 
   // One sample per update into the course baseline, oldest dropped once the

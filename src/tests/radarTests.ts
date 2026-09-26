@@ -39,15 +39,21 @@ const OUTSIDE_RADAR_RANGE = 1.3;
 const RWR_ONLY_OUTSIDE_RANGE = 1.6;
 // Far enough out that even one-way there is nothing left to receive.
 const BEYOND_RWR_RANGE = 2.0;
-// Close enough that returns come back reliably, so a missing/displaced track
-// can only be the jamming.
-const JAMMER_RANGE_FACTOR = 0.45;
 // Inside the rated range, but far enough out that a cloud in the way costs more
 // signal than the budget has to spare.
 const GAS_FAR_RANGE_FACTOR = 0.71;
 // Deep inside it, where there is signal to burn — the same cloud costs the same
 // fraction of it and the contact is still there.
 const GAS_NEAR_RANGE_FACTOR = 0.29;
+
+// Where jamming wins and where it loses. A jamming burst is quoted against a
+// reference echo at the rated range (JAMMER_POWER in radarGameSettings); the
+// echo grows as the fourth power of closing range while the burst only
+// strengthens as the square, so at 0.8x the burst comfortably wins the J/S
+// contest and the sweep is rewritten, while at 0.45x the same hull's echo
+// burns through. The two jamming tests below sit one on each side.
+const JAMMER_RANGE_FACTOR = 0.8;
+const BURNTHROUGH_RANGE_FACTOR = 0.45;
 
 // A jammed sweep is displaced by at least JAMMER_DISTANCE_ERROR_MIN_PX (60) in
 // range, so anything nearer than this to the real hull is a genuine return, not
@@ -294,6 +300,185 @@ const jammingShipShowsAsFalseTrack: GameTest = {
     },
 };
 
+// (f2) The other side of the energy contest: the echo grows as the fourth
+// power of closing range while the jammer's burst only strengthens as the
+// square, so the same hull that is rewritten out at 0.8x burns through close
+// in — and a broadside cargo hauler, more than twice the reflector, burns
+// through sooner still. Close enough, the jammer is just a loud neighbour:
+// the real contact tracks through it, on the hull, unmoved.
+const jammingBurnsThroughCloseIn: GameTest = {
+    name: 'Burn-through: a close echo out-shouts the jammer',
+    description: `A broadside cargo hull at ${BURNTHROUGH_RANGE_FACTOR}x radar range with its jammer `
+        + 'running is tracked on the hull anyway — the burst loses the J/S contest.',
+    async run(ctx) {
+        const drone = ctx.scene.spawnDrone({
+            bearingDeg: ctx.player.getDirection(),
+            rangePx: RADAR_DEFAULT_RANGE_PX * BURNTHROUGH_RANGE_FACTOR,
+            facingDeg: ctx.player.getDirection() + 90,
+            hull: 'cargo',
+            emitting: true,
+        });
+        drone.radar.activateJammer();
+
+        const tracked = await ctx.waitUntil(
+            () => ctx.player.radar.getTracks().length > 0,
+            FRAMES_PER_SWEEP * 6,
+        );
+        const offset = nearestTrackOffset(ctx, drone);
+
+        ctx.check('jammer is transmitting', drone.radar.jammer.isActive());
+        ctx.check('player forms a track', tracked,
+            `${ctx.player.radar.getTracks().length} track(s)`);
+        ctx.check('the track sits on the hull', offset < FAKE_TRACK_MIN_OFFSET_PX,
+            `nearest track ${formatOffset(offset)} from the ship (max ${FAKE_TRACK_MIN_OFFSET_PX}px)`);
+    },
+};
+
+// (f3) The jammer is an emission too, and a loud one: whoever it is pointed
+// at hears it regardless of the energy contest — a burst that cannot fool the
+// radar is still being heard by it. The victim's RWR marks the jammer as a
+// strobe at its bearing while the burst runs.
+const jammerShowsAsStrobe: GameTest = {
+    name: 'A jamming burst strobes on the victim RWR',
+    description: 'A drone running its jammer with its cone on the player shows up on the '
+        + "player's RWR as a jammer strobe at the jammer's bearing.",
+    async run(ctx) {
+        const boresight = ctx.player.getDirection();
+        const drone = ctx.scene.spawnDrone({
+            bearingDeg: boresight,
+            rangePx: RADAR_DEFAULT_RANGE_PX * BURNTHROUGH_RANGE_FACTOR,
+            emitting: true,
+        });
+        drone.radar.activateJammer();
+
+        let strobed = false;
+        for (let i = 0; i < FRAMES_PER_SWEEP * 4 && !strobed; i++) {
+            await ctx.frames(1);
+            strobed = ctx.player.radar.rwrReceiver.getRwrSignals().some(s => s.isJammer);
+        }
+        ctx.check('jammer is transmitting', drone.radar.jammer.isActive());
+        ctx.check('the RWR shows the jammer strobe', strobed,
+            `signals: ${ctx.player.radar.rwrReceiver.getRwrSignals()
+                .map(s => s.isJammer ? 'strobe' : s.isLocked ? 'lock' : 'search').join(', ') || 'none'}`);
+    },
+};
+
+// (i) MTI: clutter is the one thing with no radial rate. The same hull parked
+// beside a rock sits in the notch — measured but not believed, so it never
+// holds a confirmed track — while the identical hull under way carries the
+// radial rate the clutter lacks and lifts out of the same rock's masking.
+// The contact that never moves still flickers transiently (a fresh contact
+// has no measured motion yet, so it is gated until proven) — what it never
+// earns is confirmation.
+const mtiMasksStationaryContact: GameTest = {
+    name: 'MTI: a parked contact in clutter is rejected, a moving one is not',
+    description: 'Two cargo hulls beside one rock: the parked one never holds a confirmed '
+        + 'track in the clutter; the same hull moving radially is tracked normally.',
+    async run(ctx) {
+        const boresight = ctx.player.getDirection();
+        // One rock per hull, on opposite sides of boresight: each hull close
+        // enough to its rock to sit in its clutter window (the CFAR reference
+        // reaches ~2 cells = 100px) but clear of its hull, and the two hulls
+        // far enough apart (well over the 200px tracking gate) that neither
+        // can be mistaken for the other. Any further out and the density the
+        // gate is judged against dilutes to nothing — which is the honest
+        // answer: clutter that is not around the contact does not notch it.
+        // The rocks stay small so a ~65px cargo hull clears them with room to
+        // fly past rather than crash into them.
+        ctx.scene.spawnAsteroid({ bearingDeg: boresight - 15, rangePx: 460, radiusPx: 70 });
+        const parked = ctx.scene.spawnDrone({
+            bearingDeg: boresight - 25,
+            rangePx: 340,
+            hull: 'cargo',
+        });
+        ctx.scene.spawnAsteroid({ bearingDeg: boresight + 15, rangePx: 460, radiusPx: 70 });
+        const moving = ctx.scene.spawnDrone({
+            bearingDeg: boresight + 25,
+            rangePx: 340,
+            // Flying inward, away from its rock: the hull flies the gap open
+            // rather than nose-first into it, and its closing rate is still
+            // the radial rate the notch asks about.
+            facingDeg: boresight + 25 + 180,
+            hull: 'cargo',
+            speed: 0.1,
+        });
+
+        let parkedEverConfirmed = false;
+        let movingEverConfirmed = false;
+        let movingTrackedFraction = 0;
+        let movingMaxConf = 0;
+        let frames = 0;
+        for (let i = 0; i < FRAMES_PER_SWEEP * 8; i++) {
+            await ctx.frames(1);
+            frames++;
+            for (const track of ctx.player.radar.getTracks()) {
+                if (Phaser.Math.Distance.Between(track.pos.x, track.pos.y, parked.x, parked.y) < TRACK_ON_TARGET_PX
+                    && track.confidence >= 0.5) parkedEverConfirmed = true;
+                if (Phaser.Math.Distance.Between(track.pos.x, track.pos.y, moving.x, moving.y) < TRACK_ON_TARGET_PX) {
+                    if (track.confidence >= 0.5) movingEverConfirmed = true;
+                    movingMaxConf = Math.max(movingMaxConf, track.confidence);
+                    movingTrackedFraction++;
+                }
+            }
+        }
+
+        ctx.check('the parked hull is never confirmed', !parkedEverConfirmed);
+        ctx.check('the moving hull is confirmed', movingEverConfirmed,
+            `tracked ${(movingTrackedFraction / frames * 100).toFixed(0)}% of the run, `
+            + `max confidence ${movingMaxConf.toFixed(2)}`);
+    },
+};
+
+// (j) Chaff is a reflector, not a dice roll. A cloud deployed between the
+// radar and its contact returns energy of its own: the contact the scope
+// draws jumps from the hull to the cloud, and the hull behind the cloud
+// simply stops being sampled — the same nearest-wins rule terrain competes
+// under. No probability anywhere: the cloud echoes, and that echo is what
+// the radar believes.
+const chaffShowsAsContactAndMasks: GameTest = {
+    name: 'Chaff returns as its own contact and hides the hull behind it',
+    description: 'A drone deploying chaff between itself and the player: the track moves off '
+        + 'the hull onto the cloud, and the hull behind the cloud is no longer tracked.',
+    async run(ctx) {
+        const boresight = ctx.player.getDirection();
+        // Nose away, so the cloud deploys on the side facing the player —
+        // between the hull and the radar that is looking at it.
+        const drone = ctx.scene.spawnDrone({
+            bearingDeg: boresight,
+            rangePx: 300,
+            facingDeg: boresight,
+        });
+        drone.deployDecoy();
+        const cloud = drone.getActiveDecoys()[0].getCircle();
+
+        // Two sweeps for the old track to be dragged to the cloud's echo,
+        // then measure across the cloud's remaining lifetime.
+        await ctx.frames(FRAMES_PER_SWEEP * 2);
+        let minOffset = Infinity;
+        let maxOffset = -Infinity;
+        let trackedFrames = 0;
+        const samples = FRAMES_PER_SWEEP * 4;
+        for (let i = 0; i < samples; i++) {
+            await ctx.frames(1);
+            const offset = nearestTrackOffset(ctx, drone);
+            if (offset < minOffset) minOffset = offset;
+            if (offset > maxOffset) maxOffset = offset;
+            if (Number.isFinite(offset)) trackedFrames++;
+        }
+
+        ctx.check('the radar holds a contact through the cloud', trackedFrames > samples * 0.8,
+            `tracked ${((trackedFrames / samples) * 100).toFixed(0)}% of the run`);
+        // The contact sits on the cloud (20-90px off the hull), never back on
+        // it — the hull behind the cloud has stopped being sampled. Before the
+        // chaff, the same tracking sat within ~10px of the hull.
+        ctx.check('the contact is on the cloud, not the hull',
+            Number.isFinite(minOffset) && minOffset > 20 && maxOffset < 90,
+            `track ranged ${formatOffset(minOffset)}-${formatOffset(maxOffset)} from the hull`);
+        ctx.check('the cloud is where the track should be',
+            Phaser.Math.Distance.Between(cloud.x, cloud.y, drone.x, drone.y) < 120);
+    },
+};
+
 // (g) A missile's seeker is a radar too: once it goes active the ship it is
 // homing on gets a lock warning from the missile itself, separate from the
 // launching ship's own emissions.
@@ -462,6 +647,10 @@ export const radarTests: GameTest[] = [
     noShotAtAnUndisplayedTrack,
     gasCostsRangeNotSight,
     jammingShipShowsAsFalseTrack,
+    jammingBurnsThroughCloseIn,
+    jammerShowsAsStrobe,
+    mtiMasksStationaryContact,
+    chaffShowsAsContactAndMasks,
     rwrWarnsOfMissileSeeker,
     seekerBlindedByTerrain,
 ];

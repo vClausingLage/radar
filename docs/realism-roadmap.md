@@ -107,11 +107,11 @@ gap rather than a new one:
 
 **Still open.**
 
-- **Dwell / integration is now partial, not full.** The sum-then-threshold
+- ~~**Dwell / integration is now partial, not full.** The sum-then-threshold
   fix above is a first pass, not the real thing: proper non-coherent
   integration has a gain closer to √N than N, and a resolution-cell grid
-  (roadmap item 4/5) is the honest way to decide which hits belong to the same
-  dwell, rather than a fixed pixel radius.
+  (roadmap item 4/5) is the honest way to decide which hits belong to the
+  same dwell, rather than a fixed pixel radius.~~ **Done — see §13.**
 - ~~**Missile seeker and dish aperture** were explicitly left out of the gain
   wiring~~ — the seeker is now on the signal path (§8), with its rated range
   quoted at its own beam width, so it needs no `beamGain` term; the dish
@@ -251,11 +251,11 @@ project on its own):
 - **Interleaved modes.** An AESA can search while dwelling on a priority
   track a few frames per sweep — search-while-track. The mode machine
   already separates sweep and stare; interleaving is a scheduler above it.
-- **Beam shape instead of a line.** Weight each hit's signal by a main-lobe
+- ~~**Beam shape instead of a line.** Weight each hit's signal by a main-lobe
   pattern (sinc² or Gaussian in off-axis angle) rather than the current flat
   in-beam/sidelobe split. Edge-of-beam hits weakening smoothly is why
   `trimmedCentroid()` exists as a discrete trim; amplitude-weighted
-  centroiding could replace it — a poor man's monopulse.
+  centroiding could replace it — a poor man's monopulse.~~ **Done — see §12.**
 
 ## 7. CFAR — `systems/modules/cfarDetector.ts`
 
@@ -297,7 +297,8 @@ a "hit" is a geometric ray intersection with an instantaneous energy value.
 Giving returns a radial-velocity component and a filter that rejects
 near-zero-Doppler ones is a real, separate piece of work, not a small
 extension of the clutter map above — it is closer in size to another item on
-this list than a sub-bullet of this one.
+this list than a sub-bullet of this one. (It was eventually done as the
+scan-to-scan stand-in — see §9.)
 
 ---
 
@@ -357,6 +358,244 @@ not an envelope, decides.
 
 ---
 
+## 9. Radial velocity (scan-to-scan Doppler / MTI) — `trackingComputer.ts`, `cfarDetector.ts`
+
+**Was.** CFAR judged every return by amplitude alone; a contact parked in
+clutter was masked exactly like a moving one, and the "minimum detectable
+velocity" lived only in the reported course's fitted-slope heuristic
+(`reportCourse`), answering nothing about whether the *set* believes the
+contact.
+
+**Done — as the honest geometric stand-in, not phase Doppler.** There is no
+carrier and no phase anywhere in this raycasting engine, so per-pulse Doppler
+does not exist and cannot be bolted on: nothing can measure a frequency
+shift. What the engine can measure is the scan-to-scan stand-in — classical
+*area MTI*. The tracking computer already fits every track's course and speed
+across scans, so the radial rate a contact shows (its fitted velocity
+projected on the line of sight) is real measured information, and clutter is
+the one thing that has none of it.
+
+- **The gate** (`TrackingComputer.isClutterLike`): a contact sitting in
+  significant clutter (`CfarDetector.clutterDensity` ≥
+  `MTI_ACTIVATION_DENSITY`) whose fitted radial rate is below the blind speed
+  is rejected as clutter itself — the measurement still updates the α-β
+  filter (the set keeps watching, so a contact that starts moving can prove
+  itself within a couple of scans, the way a real MTI filter is blind for its
+  first pulses), but the echo is not accepted as target evidence: confidence
+  decays and the missed-scan counter runs, aging a stationary contact out.
+- **One threshold, two jobs**: the blind speed *is* the reported course's
+  minimum detectable velocity (`TRACK_MIN_COURSE_SPEED_PX`, scaled by range
+  exactly as `reportCourse` scales it) — the same number serves the display
+  and the MTI filter, the way a real set's MDS does.
+- **Scoped to the search picture** (RWS/TWS, like CFAR): STT stares with a
+  boosted narrow beam and maintains a lock; there is no picture for a notch
+  to protect.
+
+**What it buys, on top of CFAR's amplitude threshold**: a contact parked in
+clutter is suppressed — no radial rate, no acceptance, and it never holds a
+stable track — while the identical hull under way lifts out of the same
+clutter. A contact crossing *tangentially* sits in the notch too: that is a
+real MTI's blind speed, not a bug.
+
+**Still open**: the notch is centred on zero *world-frame* radial velocity
+(static clutter). A real moving radar must compensate its own platform motion
+before the notch means anything; here the radar's own velocity is ignored, so
+a fast-moving radar does not smear its clutter map the way a real one's
+residue does. Also still open: giving the seeker a notch (its own target is
+almost always closing, so it would rarely bite) and a true Doppler spectrum —
+which needs the carrier this engine does not have.
+
+**Verified.** New suite entry *MTI: a parked contact in clutter is rejected, a
+moving one is not*: two cargo hulls, each beside its own rock — the parked one
+never holds a confirmed track (confidence never reaches 0.5, transients decay
+under the gate), the same hull moving radially is tracked normally.
+
+---
+
+## 10. Chaff is a reflector, not a dice roll — `radar.ts nearestDecoyEcho`, `receiver.ts`
+
+**Was.** `Receiver.isBlockedByDecoy` was a flat per-cloud coin flip (70%) with
+no echo of its own — chaff deleted a return; it never produced one.
+
+**Done.** A chaff cloud is a reflector: `decoySettings.CROSS_SECTION` (3.5×
+the reference hull) is fed through the same energy budget as any hull, so the
+cloud *paints a contact and forms a track* — the tracking computer cannot
+tell it from a hull, which is the whole point of throwing it. The cloud
+competes for the beam under the same nearest-wins rule terrain already runs:
+nearer than the target, its echo is what the radar sees and the hull behind
+it stops being sampled; a nearer ship still masks the cloud. Applied in both
+the RWS sweep and the STT beam fan (where the cloud's echo can land inside
+the gate and drag the lock — self-screening chaff works close in, escort
+chaff creates a decoy contact), and in the missile seeker
+(`MissileRadar.isMaskedByDecoy`, deterministic nearest-wins instead of the old
+`BLOCK_PROBABILITY` roll). `Receiver.isBlockedByDecoy` is gone.
+
+**Deliberately left out**: chaff as a *seeker target* (a real seeker can lock
+the cloud; this seeker only loses its target behind it — making decoys
+`GuidanceTarget`s is a separate decision), and any bloom/thinning of the
+cloud's RCS over its lifetime (the cloud is constant until it expires, while
+its sprite fades).
+
+**Verified.** New suite entry *Chaff returns as its own contact and hides the
+hull behind it*: a drone deploying chaff between itself and the radar has its
+track dragged off the hull onto the cloud (80px away, never back on the
+hull), and the hull behind the cloud stops being sampled entirely.
+
+---
+
+## 11. Jamming is an energy contest — `signalPath.ts jammerSignal`, `radar.ts detectJamming`
+
+**Was.** Deception jamming always succeeded when the geometry allowed it: a
+burst within the cone rewrote the sweep at a fixed rolled offset, and STT
+frames were swallowed at a flat 0.5 probability — regardless of how loud the
+echo was or how close the target was. Burn-through did not exist.
+
+**Done.** The jammer is now an emission in the same units everything else is
+measured in: `jammerSignal(range, ratedRange)` = `JAMMER_POWER × (rated/range)²`
+— one-way, quoted so `JAMMER_POWER` is the J/S against a *reference hull's
+echo at the rated range*, where that echo is exactly 1. The victim's own
+echo signal S is the strongest integration group of the sweep's real hits
+(`Receiver.dwellSignal` — the same grouping `processHits` tests, so several
+distinct contacts or chaff clouds cannot gang up as one overpowering echo).
+
+- **RWS/TWS** (`sweepComplete`): the burst must *win* — J ≥ S — before the
+  sweep is rewritten into a false track; a weaker burst loses and the real
+  returns process normally. Burn-through falls straight out of the range
+  laws: the echo strengthens as the fourth power of closing range while the
+  burst only strengthens as the square, so any jammer sized like this one
+  rewrites a sweep out at the ring and is powerless against a close or large
+  contact. No new tunable: the contest is decided entirely by
+  `JAMMER_POWER` and geometry.
+- **STT**: the flat `JAMMER_STT_DEGRADE_PROB` becomes the *ceiling*, scaled by
+  `min(J/S, 1)` per frame — a lock whose concentrated beam has signal to burn
+  shrugs the jammer off; one held far out or on a small hull degrades toward
+  the ceiling as it loses the same contest.
+- **The victim knows** (`registerJammingStrobes`): a jamming burst is itself a
+  loud emission, heard one-way regardless of the contest — a jammer that
+  cannot fool the radar is still being heard by it. The victim's RWR records
+  the jammer as a strobe (`RwrContact.isJammer`, keyed by the jammer ship's
+  own id, registered after `illuminateRwr` so it supersedes that ship's
+  search symbol for the burst), rendered as a filled yellow diamond.
+
+**Deliberately left out**: home-on-jam for the ARH missile (the geometry
+loop nearly supports it; it needs the jammer to be a `GuidanceTarget` — same
+open decision as chaff-as-seeker-target), velocity gating of the jammer's
+own noise in the victim (no Doppler, see §9), and deinterleaving multiple
+simultaneous jammers (the first affecting jammer wins, as before).
+
+**Verified.** Two new suite entries: *Burn-through* — a broadside cargo hull
+at 0.45× range with its jammer running is tracked **on the hull** (the burst
+loses J/S); and *strobe* — the victim RWR shows the jammer as a strobe. The
+existing spoof test moved out to 0.8× range, where the burst genuinely wins,
+and passes with the ghost displaced as before.
+
+---
+
+## 12. The beam has a shape — `signalPath.ts beamPattern`, `radar.ts nearestHit`
+
+**Was.** A hit was in the beam or it was not: full gain inside, a flat
+`ANTENNA_SIDELOBE_LEVEL` leak outside, and `TrackingComputer.trimmedCentroid()`
+cut the outer fraction of every cluster by angle to control the edge hits
+that geometry alone could not price.
+
+**Done.**
+
+- **`beamPattern(offAxisDeg, beamWidthDeg)`**: a Gaussian main lobe
+  normalised to 1 on boresight and −3 dB at half the beamwidth (so
+  `beamWidthDeg` means the same thing it means in the resolution cell),
+  floored at `ANTENNA_SIDELOBE_LEVEL` — a real antenna leaks in every
+  direction, so the pattern's floor stands in for the whole lobe structure
+  outside the main lobe, the same simplification `illuminateRwr` always
+  made, now as the pattern's floor rather than a separate branch.
+- **Applied to returns** (`Radar.nearestHit`): a hit's cross-section is
+  weighted by the pattern at its own bearing off the beam centre. An STT
+  beam is sampled by a fan of rays, so a hull lit by an edge ray returns
+  measurably less than one lit dead-centre; a search sweep's pencil ray is
+  its own boresight, so its hits sit at pattern ≈ 1 and the sweep picture is
+  unchanged.
+- **Applied to the RWR path** (`illuminateRwr`): a hull the beam rests on
+  hears full gain (the crossing point *is* on the boresight ray); a hull
+  wholly off the beam hears the pattern at its own bearing — near the lobe
+  nearly full, decaying smoothly to the sidelobe floor — replacing the flat
+  binary split while keeping the once-per-leg sidelobe cadence.
+- **Amplitude-weighted centroid** (`TrackingComputer.weightedCentroid`):
+  each return now carries the effective signal its detection was made on
+  (`RadarReturn.signal`), and the cluster centroid is weighted by it — the
+  bearing measurement a monopulse comparator forms. The old discrete α-trim
+  falls out of the amplitudes continuously: looks near boresight came back
+  with more of the beam pattern and they steer the contact; a grazing
+  hull-edge look came back faint and barely moves it; a noise spike carries
+  exactly the floor it cleared. `TRACK_TRIM_FRACTION` is gone.
+
+**Deliberately left out**: two-way monopulse angle-error extraction (the
+difference between two squinted beams) — the weighted centroid is the
+estimate, not a ±Δ bearing channel; and a true sinc² pattern with real
+sidelobe structure.
+
+**Verified.** The full suite passes against the reweighted pipeline — the
+aspect, gas, jamming, MTI and chaff tests all still hold, and the
+amplitude-weighted centroid keeps the aspect-decides-range test's
+broadside/bow-on separation. The beam pattern also made false alarms respect
+the CFAR floor: the thermal false-alarm spawn is now divided by the same
+noise-floor multiplier real hits are judged against — clutter residue
+suppresses noise spikes exactly as it suppresses weak echoes, instead of
+making noise most believable where a real set declares nothing.
+
+---
+
+## 13. Non-coherent integration and the resolution-cell dwell — `receiver.ts`
+
+**Was.** A dwell's hits summed with gain N (each extra look worth a full
+hit's signal), and the grouping that decided which hits were one dwell used
+a fixed 40px radius next to the tracking computer's anisotropic resolution
+cell — two answers to the same radar's question.
+
+**Done.**
+
+- **~√N integration law** (`RADAR_INTEGRATION_GAIN_EXPONENT` = 0.5): the
+  group's summed signal is divided by N to that exponent — a real
+  square-law detector integrating non-coherently buys roughly √N in
+  effective SNR, not N. Each extra look is now worth *part* of a hit rather
+  than a whole one, so far and marginal contacts are harder to hold than the
+  sum-then-threshold made them.
+- **Resolution-cell grouping**: `integrationGroups()` chains hits by
+  `sameResolutionCell` — the same anisotropic cell the tracking computer
+  clusters returns by — so "which hits are one look at one contact" and "can
+  two contacts be told apart" share one physical answer. A hull deeper than
+  the pulse length spans several range bins and integrates as several
+  groups; the tracking computer's cluster merges the resulting returns
+  exactly as it would two contacts it cannot resolve.
+- **Adjacent bins are one plot**: the resolution comparison is inclusive —
+  returns quantised into *adjacent* bins differ by exactly one resolution
+  element, and the binning is the receiver's own reporting grid, not a
+  property of the targets, so its boundary must not split what one hull
+  produced (a real set's plot extractor groups detected cells that touch
+  the same way).
+- **Scintillation is one draw per dwell** (per `processHits` call, i.e. per
+  scan), shared by every cell the dwell lit — not one draw per cell. The
+  fluctuation is the target's aspect toward this scan, not the receiver's
+  cell grid; per-cell draws made the *composition* of detected cells wander
+  scan to scan, which the tracker reads as centroid motion a stationary
+  hull never made.
+- **The J/S contest weighs S the same way**: `Receiver.dwellSignal` returns
+  the strongest group's effective signal under the same √N law, so the
+  jammer competes against what the detector would actually accept.
+- **Deception ghosts are jammer-powered** (`createFakeHits`): the spoofed
+  look is priced as a reflector of whatever size makes its return read at
+  the burst's power at the spoofed range — a deception jammer transmits a
+  false echo of its own, and a ghost priced off the hull would be fainter
+  than the real contact it replaced.
+
+**Verified.** The full suite holds across the reweighted receiver: the
+aspect test still separates broadside from bow-on at 1.3× range (the √N law
+costs the broadside hull part of its old sum-N margin and it still tracks
+past the ring), the jamming ghost still forms and displaces, and the
+pre-existing marginal tests keep their outcomes. The one environmental
+caveat unchanged from before: the gas test's frame-supply cadence in
+headless runs.
+
+---
+
 ## Suggested order
 
 1. ~~**Detection curve + false alarms + SNR-scaled measurement noise** (§3).~~
@@ -372,19 +611,41 @@ not an envelope, decides.
    **Done.** `RADAR_BEAM_WIDTH_DEG`/`RADAR_PULSE_LENGTH_PX` now live in the
    Antenna section and drive both terrain and `TrackingComputer.cluster()`.
 5. ~~**Clutter → CFAR** (§7).~~ **Done**, and it was genuinely the long arc
-   this list said it would be. **Doppler/MTI is not** — see §7's note on why
-   it is closer to a whole extra item than a natural follow-on.
+   this list said it would be. Doppler/MTI followed later anyway (§9) — as
+   the scan-to-scan stand-in, not phase processing.
 6. ~~**`PhasedArrayAntenna`** (§6).~~ **Done**, and left unassigned to any
    ship — see §6 for why, and the one line it takes to wire in.
+7. ~~**The seeker on the shared signal path** (§8).~~ **Done.** Energy budget,
+   cross-section by aspect, specular glint, gas, and terrain occlusion all
+   reach the VIM-220; a hard SNR gate replaces the old envelope, because the
+   seeker re-tests every frame and a probabilistic floor would eventually
+   lock anything.
+8. ~~**Scan-to-scan Doppler / MTI** (§9).~~ **Done.** Radial rate comes from
+   the tracker's own fitted velocity; the notch rejects near-zero-radial-rate
+   echoes inside significant clutter while movers lift out.
+9. ~~**Chaff as a reflector** (§10) and **the jamming energy contest** (§11).~~
+   **Done.** Chaff echoes with its own cross-section and forms false tracks
+   under the same nearest-wins rule terrain runs; jamming must win J/S before
+   it rewrites anything, burns through close in, and strobes on the victim's
+   RWR.
+10. ~~**Beam shape + amplitude-weighted centroid** (§12).~~ **Done.** A
+    Gaussian main lobe floored at the sidelobe level prices every hit by its
+    off-axis angle; the tracking computer's centroid is weighted by the
+    amplitudes (poor man's monopulse) and the discrete α-trim is gone.
+11. ~~**~√N integration + resolution-cell dwell grouping** (§13).~~ **Done.**
+    The group's signal is divided by N^0.5, dwell grouping and contact
+    resolution share the one anisotropic cell, scintillation is one draw per
+    scan, and the jamming contest weighs S under the same law.
 
-All six items are done. Every one of them is a testable claim in the style of
-`src/tests/radarTests.ts` — the suite grew from 7 tests to 7 (unchanged
-count, several rebuilt) across this work, plus direct verification (outside
-the test harness, in the running game) of `sameResolutionCell`'s merge/split
-behaviour, `CfarDetector`'s masking multiplier, and `PhasedArrayAntenna`'s
-lag-free tracking and scan loss — each cited inline in the section it
-belongs to above. `DEFAULT_TEST_SEED` in `testHarness.ts` may need
-re-picking again if a future change adds another random draw to the
-per-frame update loop and shifts the sequence enough to land a borderline
-test on an unlucky roll (see §3's note on why that is expected, not a sign
+All thirteen items are done. Every one of them is a testable claim in the style
+of `src/tests/radarTests.ts` — the suite grew from 7 tests through the
+seeker-terrain, MTI, chaff and jamming entries to 12 across this work, plus
+direct verification (outside the test harness, in the running game) of
+`sameResolutionCell`'s merge/split behaviour, `CfarDetector`'s masking
+multiplier, and `PhasedArrayAntenna`'s lag-free tracking and scan loss — each
+cited inline in the section it belongs to above. `DEFAULT_TEST_SEED` in
+`testHarness.ts` may need re-picking again if a future change adds another
+random draw to the per-frame update loop and shifts the sequence enough to
+land a borderline test on an unlucky roll (see §3's note on why that is
+expected, not a sign
 anything broke).

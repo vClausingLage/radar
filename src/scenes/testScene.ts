@@ -46,9 +46,12 @@ export class TestScene extends Game {
         rangePx: number;
         facingDeg?: number;
         emitting?: boolean;
-        // Which hull to place. It decides how big a reflector the drone is —
+        // Cruise speed in px per step, for tests that need the drone under
+        // way (MTI's moving contact). 0 — holding station — by default.
+        speed?: number;
+        // Which hull to place. It decides how big a reflector the drone is �?"
         // a cargo hauler is more than twice the cross-section of a cruiser
-        // broadside, and no bigger than one bow-on — so any test about
+        // broadside, and no bigger than one bow-on �?" so any test about
         // detection range has to say which one it means.
         hull?: 'cruiser' | 'cargo';
     }): Target {
@@ -59,10 +62,10 @@ export class TestScene extends Game {
         const drone = this.add.target({
             x: player.x + Math.cos(rad) * opts.rangePx,
             y: player.y + Math.sin(rad) * opts.rangePx,
-            // Nose back at the player by default — that is the aspect the
+            // Nose back at the player by default �?" that is the aspect the
             // jamming and RWR geometry care about.
             direction: opts.facingDeg ?? opts.bearingDeg + 180,
-            speed: 0,
+            speed: opts.speed ?? 0,
             type: opts.hull ?? 'cruiser',
             activity: 'inactive',
         });

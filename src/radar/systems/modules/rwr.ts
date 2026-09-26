@@ -14,6 +14,11 @@ import { RWR_CONTACT_TTL_MS } from '../../data/radarGameSettings';
 export type RwrContact = {
   bearingDeg: number;
   isLocked: boolean;     // true when source is in STT (fire-control lock)
+  // True when this contact is an active jammer strobe — the emitter is
+  // painting us with noise rather than sweeping us. Keyed by the jammer
+  // ship's own id, so it replaces the plain search symbol for that ship
+  // while the burst runs.
+  isJammer?: boolean;
   lastSeenAt: number;    // Phaser.time.now for aging out stale contacts
 };
 
@@ -22,9 +27,10 @@ export class RwrReceiver {
 
   // Called by the Radar when it detects an incoming emission from a known
   // bearing. `key` uniquely identifies the emitter (e.g. entity id or
-  // missile id as a string) so contacts can be deduplicated.
-  receive(key: string, bearingDeg: number, isLocked: boolean, now: number): void {
-    this.contacts.set(key, { bearingDeg, isLocked, lastSeenAt: now });
+  // missile id as a string) so contacts can be deduplicated; `isJammer`
+  // marks a jamming strobe (registerJammingStrobes in systems/radar.ts).
+  receive(key: string, bearingDeg: number, isLocked: boolean, now: number, isJammer = false): void {
+    this.contacts.set(key, { bearingDeg, isLocked, isJammer, lastSeenAt: now });
   }
 
   // Purge contacts whose signal has not been refreshed within the TTL.

@@ -90,16 +90,22 @@ is also what *other* ships' RWR can detect.
 
 ### `modules/receiver.ts` — `Receiver`
 Converts raw ray hit-points into `RadarReturn`s — but not one at a time.
-`integrationGroups()` first clusters the raw hits one sweep-leg pass leaves on
-one hull (a tight radius, `RECEIVER_INTEGRATION_RADIUS_PX`, well under the
-tracking computer's own cluster radius) and sums their signal, then the group
-is accepted or dropped once. This matters because `Pfa` never reaches exactly
-zero (below): testing several hits from the same encounter independently
-would let a genuinely faint target eventually clear the floor just by being
-rolled enough times, which is an artefact of the test, not a real detection.
+`integrationGroups()` first clusters the raw hits one sweep-leg pass leaves
+on one hull by the radar's own resolution cell (`sameResolutionCell()` — the
+same anisotropic cell the tracking computer clusters returns by, so "which
+hits are one look" and "can two contacts be told apart" share one physical
+answer), then the group is accepted or dropped once. This matters because
+`Pfa` never reaches exactly zero (below): testing several hits from the same
+encounter independently would let a genuinely faint target eventually clear
+the floor just by being rolled enough times, which is an artefact of the
+test, not a real detection.
 
-Each group is accepted or dropped on its combined signal strength
-(`returnSignal` in `data/signalPath.ts`) against a Neyman-Pearson detection
+Each group's hits are summed, and the sum is divided by N to
+`RADAR_INTEGRATION_GAIN_EXPONENT` (0.5) before the detection test: real
+non-coherent integration buys roughly **√N** in effective SNR, not N — each
+extra look is worth part of a hit, not a whole one. The group is accepted or
+dropped on that effective signal (`returnSignal` in `data/signalPath.ts`)
+against a Neyman-Pearson detection
 curve — Swerling I's closed form, `Pd = Pfa ^ (1 / (1 + signal))`
 (`detectionProbability`). `Pfa` (`RADAR_PFA`) sets how fast Pd climbs with
 signal, and it is a hard floor, not just a knob: Pd is monotonically
@@ -124,7 +130,7 @@ adds Gaussian range/bearing noise scaled by `resolution / sqrt(2 · signal)`, so
 a strong, close contact is nearly exact and a faint one at the edge of the
 picture visibly wanders scan to scan — the accuracy half of detection theory,
 distinct from the resolution question of whether two contacts can be told
-apart at all (still open — see the realism roadmap).
+apart at all (see the realism roadmap's resolution item).
 
 The hull's own presented cross-section is not fixed either. `nearestHit()`
 weights the width-based `crossSection()` measurement by `specularFactor()` —
@@ -136,11 +142,9 @@ different signal scan to scan. Both make a marginal contact fade in and out
 in bursts across several sweeps, closer to how a real return actually
 behaves than a single fixed number would.
 
-The receiver also owns the two ways a return can be lost on the path rather
-than at the target:
+The receiver also owns the way a return can be lost on the path rather than
+at the target:
 
-- `isBlockedByDecoy()` — a chaff cloud between antenna and target swallows the
-  return with a fixed per-cloud probability.
 - `isAbsorbedByGas()` — a gas cloud (`entities/gasCloud.ts`) absorbs energy
   along the path instead of blocking it. Beer-Lambert: the surviving fraction
   is `exp(−2 · Σ pathLengthInside · density · ATTENUATION_PER_PX)`, doubled
@@ -150,6 +154,12 @@ than at the target:
   geometry, not to out-power it. Applied to ship *and* terrain returns, so the
   ground map thins out over gas too.
 
+Chaff is not on this list any more: a decoy cloud is a *reflector* (see
+`Radar.nearestDecoyEcho` and the realism roadmap's chaff item) — it returns
+energy of its own, competes for the beam under the same nearest-wins rule
+terrain does, and paints a false contact the tracking computer cannot tell
+from a hull.
+
 ### `modules/trackingComputer.ts` — `TrackingComputer`
 The heart of the simulation. It builds **tracks purely from geometry** — there
 are no entity IDs in the return data. Per call (one RWS sweep, or every STT
@@ -157,17 +167,24 @@ frame):
 
 1. **Clustering** — chain single-linkage (BFS frontier): a return joins a
    cluster if it falls in the *same resolution cell* as any member
-   (`sameResolutionCell()` in `data/signalPath.ts` — `|Δrange| <
-   RADAR_PULSE_LENGTH_PX` and `|Δbearing| < RADAR_BEAM_WIDTH_DEG`, the same two
-   constants the ground map is quoted against, not an isotropic px radius).
+   (`sameResolutionCell()` in `data/signalPath.ts` — inclusive on both axes:
+   adjacent bins are the receiver's own reporting grid, not distinct
+   targets, so detected cells that touch form one plot, the way a real
+   set's plot extractor groups them; `|Δrange| <= RADAR_PULSE_LENGTH_PX` and
+   `|Δbearing| <= RADAR_BEAM_WIDTH_DEG`, the same two constants the ground
+   map is quoted against, not an isotropic px radius).
    This keeps a wide ship body as one contact instead of splitting it, and it
    is why two ships in close formation read as one fat contact at long range
    and split into two as they close — cross-range resolution is a fixed
    angle, so the px gap it takes to tell them apart grows with range.
-2. **α-trimmed centroid** — cluster returns are sorted by sweep angle and the
-   outer `TRIM_FRACTION` on each end is discarded before averaging. This is the
-   *spatial* noise filter: it rejects the unstable polygon-edge hits that
-   otherwise make the centroid jump when a target is only partially in the cone.
+2. **Amplitude-weighted centroid** — the cluster's position, range and
+   bearing are averaged weighted by each return's effective signal
+   (`RadarReturn.signal`): looks nearer the beam boresight came back with
+   more of the beam pattern (`beamPattern()` in `data/signalPath.ts`) and
+   steer the contact; a grazing hull-edge look came back faint and barely
+   moves it. This is the bearing estimate a monopulse comparator forms, and
+   it replaces the old discrete α-trim — the trim falls out of the
+   amplitudes instead of being a flat geometric rule.
 3. **Association** — each centroid is matched to the nearest existing track
    within `GATE_RADIUS`, where the gate is centred on the track's
    **velocity-predicted** position (not its last position).
@@ -201,14 +218,25 @@ While active it projects a `JAMMER_CONE_DEG` cone ahead of the ship.
 The victim radar drives the effect, not the jammer: each frame `Radar.detectJamming()`
 checks every contact and a jammer "takes" if **(a)** the victim's beam actually
 paints the jamming ship and **(b)** the victim sits inside that jammer's cone
-(`Jammer.covers()`). On a hit:
+(`Jammer.covers()`). Geometry only decides who is *in* the contest; the
+outcome is decided by energy (see the realism roadmap's jamming item):
 
-- **RWS/TWS** — the sweep's hits are routed through `Receiver.createFakeHits()`
-  with the jammer's error, producing a ghost track offset from (and replacing)
-  the real one. The error is rolled once per activation, so the ghost is stable.
-- **STT** — the concentrated beam is *not* spoofed; instead each jammed frame has
-  a `JAMMER_STT_DEGRADE_PROB` chance to swallow the return, feeding the existing
-  missed-frame lock-break counter. So a jammer can *starve* a lock but not fake it.
+- **RWS/TWS** — the burst must first beat the sweep's own echo at the J/S
+  contest (`jammerSignal` vs `Receiver.dwellSignal`, the strongest
+  integration group of the real hits). A winning burst routes the sweep
+  through `Receiver.createFakeHits()` with the jammer's error, producing a
+  ghost track offset from (and replacing) the real one; the error is rolled
+  once per activation, so the ghost is stable. A burst that loses — burn-
+  through: the echo grows as the fourth power of closing range while the
+  burst only strengthens as the square — leaves the real returns untouched.
+- **STT** — the concentrated beam is *not* spoofed; each jammed frame may
+  have its return swallowed, feeding the existing missed-frame lock-break
+  counter. The flat degrade chance is a ceiling scaled by `min(J/S, 1)`, so
+  a lock with signal to burn shrugs the burst off.
+- **Either way, the victim hears it** (`registerJammingStrobes`) — a burst is
+  a loud one-way emission, and the victim's RWR marks the jammer as a strobe
+  at its bearing (`RwrContact.isJammer`, yellow filled diamond), replacing
+  that ship's plain search symbol while it transmits.
 
 All tunables live in `radar/data/radarGameSettings.ts`.
 
@@ -234,7 +262,7 @@ terrain returns (but their beams are still blocked by terrain).
 
 ### `modules/cfarDetector.ts` — `CfarDetector`
 Ground/volume clutter and the adaptive (CFAR) threshold it forces on ship
-detection, scoped to RWS/TWS — STT does not use it. Every terrain hit the
+detection, scoped to the search picture (RWS/TWS) — STT does not use it. Every terrain hit the
 ground map paints and every sample along a gas volume's spine also logs a
 clutter return into a world-space grid (`CLUTTER_CELL_PX`, deliberately not
 the ship-return resolution cell — clutter belongs to a place, not to the
@@ -247,10 +275,17 @@ against a rock or inside a cloud has to clear a floor raised right there, not
 the flat one everywhere else, which is what makes clutter *mask* a contact
 rather than merely dim it uniformly.
 
+On top of that threshold the tracking computer runs the MTI gate (see the
+realism roadmap's radial-velocity item, §9): `clutterDensity(point)` answers
+"is there significant clutter here at all", and a contact whose fitted radial
+rate is below the blind speed inside it is rejected as clutter itself — a
+parked hull in clutter never holds a stable track, while the same hull under
+way lifts out.
+
 ### `modules/rwr.ts` — `RwrReceiver`
 Radar Warning Receiver. A passive receiver: when another ship's emission hits
-this ship it records an `RwrContact` (bearing, locked?, timestamp). Contacts
-age out after `CONTACT_TTL_MS`. The HUD reads these for the threat display.
+this ship it records an `RwrContact` (bearing, locked?, jammer?, timestamp).
+Contacts age out after `CONTACT_TTL_MS`. The HUD reads these for the threat display.
 
 A contact does not require standing in the exact instantaneous beam:
 `Radar.illuminateRwr()` also tests ships off to the side at
@@ -356,7 +391,7 @@ for the VIM-220 the active-radar activation time, range and azimuth.
   branch in `Radar.update`.
 - New missile → add an entity class, a guidance branch in
   `MissileGuidance.update`, and a fire path in `FireControl.shoot`.
-- Tracking behaviour is tuned by `GATE_RADIUS`, `TRIM_FRACTION`, `ALPHA`,
+- Tracking behaviour is tuned by `GATE_RADIUS`, `ALPHA`,
   `BETA`, `MAX_MISSED_SCANS` in `trackingComputer.ts`, and by
   `RADAR_BEAM_WIDTH_DEG`/`RADAR_PULSE_LENGTH_PX` (the resolution cell
   `cluster()` groups returns by — shared with the ground map) in

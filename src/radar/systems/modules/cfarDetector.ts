@@ -85,4 +85,13 @@ export class CfarDetector {
   noiseFloorMultiplier(point: { x: number; y: number }, now: number): number {
     return 1 + CFAR_THRESHOLD_FACTOR * this.localDensity(point, now);
   }
+
+  // The raw mean clutter density around `point`, without the threshold
+  // factor — the detector's own answer to "is there clutter here at all".
+  // The tracking computer's MTI gate asks this in density units, not as a
+  // floor multiplier: the notch cares whether the echo sits in significant
+  // clutter, not how many times the amplitude test would raise the bar.
+  clutterDensity(point: { x: number; y: number }, now: number): number {
+    return this.localDensity(point, now);
+  }
 }

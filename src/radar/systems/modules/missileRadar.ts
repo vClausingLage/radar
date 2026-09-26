@@ -3,7 +3,6 @@ import type { Vector2 } from '../../../types';
 import type { GasVolume, Terrain } from '../../data/types';
 import { Ray } from '../../../physics/ray';
 import {
-  decoySettings,
   MISSILE_RADAR_MAX_MISSED_LOCK_FRAMES,
   MISSILE_SEEKER_BEAM_DEG,
   MISSILE_SEEKER_MIN_SIGNAL,
@@ -225,7 +224,7 @@ export class MissileRadar {
       const d = Phaser.Math.Distance.Between(pos.x, pos.y, t.x, t.y);
       if (d > reach || d >= bestDist) continue;
       if (!this.inCone(pos, coneCentreDeg, t, coneHalfDeg)) continue;
-      if (this.isOccluded(pos, t, decoyCircles)) continue;
+      if (this.isMaskedByDecoy(pos, t, decoyCircles)) continue;
       if (this.returnStrength(pos, t, gasVolumes, terrain) < MISSILE_SEEKER_MIN_SIGNAL) continue;
       bestDist = d;
       best = t;
@@ -371,12 +370,18 @@ export class MissileRadar {
     );
   }
 
-  // True if chaff between the seeker and the target masks the return this frame.
-  private isOccluded(pos: Vector2, t: GuidanceTarget, decoyCircles: Phaser.Geom.Circle[]): boolean {
+  // True if a chaff cloud stands nearer along the line than the target: the
+  // cloud is a reflector, so it returns before the target does and the
+  // seeker's gate never sees past it — the same nearest-wins rule the ship
+  // radar's sweep competes under. Deterministic, not a coin flip: what hides
+  // the target is the cloud's own echo, not a dice roll.
+  private isMaskedByDecoy(pos: Vector2, t: GuidanceTarget, decoyCircles: Phaser.Geom.Circle[]): boolean {
     if (decoyCircles.length === 0) return false;
+    const targetDist = Phaser.Math.Distance.Between(pos.x, pos.y, t.x, t.y);
     const line = new Phaser.Geom.Line(pos.x, pos.y, t.x, t.y);
     for (const circle of decoyCircles) {
-      if (Phaser.Geom.Intersects.LineToCircle(line, circle) && Math.random() < decoySettings.BLOCK_PROBABILITY) {
+      if (Phaser.Math.Distance.Between(pos.x, pos.y, circle.x, circle.y) < targetDist
+        && Phaser.Geom.Intersects.LineToCircle(line, circle)) {
         return true;
       }
     }

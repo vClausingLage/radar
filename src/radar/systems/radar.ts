@@ -19,8 +19,10 @@ import {
     emissionSignal,
     gasTransmission,
     isDetected,
+    jammerSignal,
     scanLossFactor,
     specularFactor,
+    beamPattern,
 } from "../data/signalPath";
 import { Track } from "../data/track";
 import { Entity, GasVolume, Loadout, Mode, RadarHost, Terrain } from "../data/types";
@@ -33,11 +35,11 @@ import { Ray } from "../../physics/ray";
 import { RadarEventEmitter } from "./game/radarEventEmitter";
 
 import {
-    ANTENNA_SIDELOBE_LEVEL,
     CLUTTER_GAS_DENSITY,
     CLUTTER_TERRAIN_DENSITY,
     JAMMER_STT_DEGRADE_PROB,
     MAX_TWS_TRACKS,
+    RADAR_BEAM_WIDTH_DEG,
     RADAR_DEFAULT_RANGE_PX,
     RADAR_FALSE_ALARM_RATE,
     STT_ACQUISITION_BEAM_DEG,
@@ -47,6 +49,7 @@ import {
     STT_LOCK_BREAK_FRAMES,
     TRACK_STT_COURSE_WINDOW_FRAMES,
     TRACK_STT_MIN_COURSE_SPEED_PX,
+    decoySettings,
 } from "../data/radarGameSettings";
 
 export class Radar {
@@ -101,9 +104,11 @@ export class Radar {
     // Receiver.processHits' localNoiseFloor).
     private cfarDetector = new CfarDetector();
 
-    // Error captured if an enemy jammer spoofed this radar during the current
-    // RWS sweep; applied to the buffered hits at sweepComplete, then cleared.
-    private sweepJammerError: JammerError | null = null;
+    // Jamming captured if an enemy jammer painted us during the current RWS
+    // sweep: its rolled offset and its range from us, so the energy contest
+    // (does the burst out-shout the echo we actually caught?) can be judged at
+    // sweepComplete with the sweep's real signal in hand. Cleared after use.
+    private sweepJamming: { error: JammerError; range: number } | null = null;
 
     public eventEmitter = new RadarEventEmitter();
 
@@ -461,23 +466,35 @@ export class Radar {
         // a (non-locked) RWR contact — shown as a green diamond on its RWR.
         // The off-beam sidelobe test only runs on sweepComplete (see
         // illuminateRwr) — once per leg, not once per frame.
-        this.illuminateRwr(targets, [pulse.line], ownerPos, false, gasVolumes, scanGain, sweepComplete);
+        this.illuminateRwr(targets, [pulse.line], ownerPos, false, gasVolumes, scanGain, sweepComplete, pulseDirection, RADAR_BEAM_WIDTH_DEG);
+        this.registerJammingStrobes(targets, ownerPos);
 
-        // If an enemy jammer paints us this frame, remember its spoof error for
-        // the rest of the sweep — the buffered hits are rewritten at sweepComplete.
-        const jamError = this.detectJamming(targets, [pulse.line], ownerPos);
-        if (jamError) this.sweepJammerError = jamError;
+        // If an enemy jammer paints us this frame, remember its spoof error
+        // and its range for the rest of the sweep — at sweepComplete the
+        // buffered hits are judged against the burst's energy before anything
+        // is rewritten.
+        const jamming = this.detectJamming(targets, [pulse.line], ownerPos);
+        if (jamming) this.sweepJamming = jamming;
 
-        // Ship and terrain returns compete for the beam — the nearer one wins.
-        // A terrain hit is painted on the ground map (and shadows any ship
-        // behind it); a nearer ship return masks the terrain behind it.
-        const shipHit = this.nearestHit(pulse.line, ownerPos, targets);
-        const terrainHit = this.nearestHit(pulse.line, ownerPos, terrain);
-        const terrainWins = terrainHit && (!shipHit ||
-            Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, terrainHit.point.x, terrainHit.point.y) <
-            Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, shipHit.point.x, shipHit.point.y));
+        // Ship, terrain and chaff returns compete for the beam — the nearer
+        // reflector wins the ray. Terrain shadows ships and is handed to the
+        // TerrainMapper; a chaff cloud is a reflector like any other, so
+        // nearer than the target it hides it behind an echo of its own (and
+        // paints a contact — that is what chaff is for); a nearer ship return
+        // masks both. The pencil ray is its own beam boresight, so hits are
+        // pattern-weighted at the pencil's width.
+        const shipHit = this.nearestHit(pulse.line, ownerPos, targets, pulseDirection, RADAR_BEAM_WIDTH_DEG);
+        const terrainHit = this.nearestHit(pulse.line, ownerPos, terrain, pulseDirection, RADAR_BEAM_WIDTH_DEG);
+        const decoyEcho = this.nearestDecoyEcho(pulse.line, ownerPos, decoyCircles);
+        const distSqOf = (hit: { point: Phaser.Math.Vector2 } | null): number =>
+            hit
+                ? Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, hit.point.x, hit.point.y)
+                : Infinity;
+        const shipDistSq = distSqOf(shipHit);
+        const terrainDistSq = distSqOf(terrainHit);
+        const decoyDistSq = distSqOf(decoyEcho);
 
-        if (terrainWins) {
+        if (terrainHit && terrainDistSq <= shipDistSq && terrainDistSq <= decoyDistSq) {
             // Ground mapping is a picture, not a track, and the picture stops at
             // the rated range - the beam reaching past it paints nothing. Gas
             // dims what is inside exactly as it dims a contact.
@@ -488,10 +505,18 @@ export class Radar {
                 // also raising the floor a ship return here must clear.
                 this.cfarDetector.addClutter(terrainHit.point, CLUTTER_TERRAIN_DENSITY, this.scene.time.now);
             }
-        } else if (shipHit
-            && !this.receiver.isBlockedByDecoy(ownerPos, shipHit.point, decoyCircles)) {
-            // Chaff between the antenna and the target swallows the return
-            // outright. Gas only weakens it, so it goes into the hit's signal
+        } else if (decoyEcho && decoyDistSq < shipDistSq) {
+            // The chaff cloud's echo enters the tracking pipeline like a
+            // contact: same energy budget, same clustering, and the tracking
+            // computer cannot tell it from a hull — a false track is the
+            // whole point of throwing chaff.
+            this.sweepBuffer.push({
+                point: decoyEcho.point,
+                crossSection: decoySettings.CROSS_SECTION,
+                transmission: this.receiver.gasRoundTrip(ownerPos, decoyEcho.point, gasVolumes),
+            });
+        } else if (shipHit) {
+            // Gas only weakens it, so it goes into the hit's signal
             // budget instead, to be weighed against range and hull size when the
             // sweep is processed.
             this.sweepBuffer.push({
@@ -529,38 +554,73 @@ export class Radar {
         // is: that is the tell that separates a noise spike from a
         // reflection, a genuine return thins out with distance and receiver
         // noise does not.
-        if (Math.random() < RADAR_FALSE_ALARM_RATE) {
-            const phantomRange = Math.random() * this.emitter.getReach();
-            const phantomRad = Phaser.Math.DegToRad(pulseDirection);
+        //
+        // The same CFAR threshold applies to noise as to echoes: the raised
+        // floor near clutter suppresses noise spikes there exactly as it
+        // suppresses weak target returns, so the roll is divided by the same
+        // floor multiplier the real hits are judged against. Without this the
+        // threshold would be higher only for echoes — and noise would be
+        // *most* believable exactly where a real set declares nothing, which
+        // is backwards: clutter residue is the reason a real CFAR detector
+        // raises its threshold in the first place.
+        const phantomRange = Math.random() * this.emitter.getReach();
+        const phantomRad = Phaser.Math.DegToRad(pulseDirection);
+        const phantomPoint = new Phaser.Math.Vector2(
+            ownerPos.x + Math.cos(phantomRad) * phantomRange,
+            ownerPos.y + Math.sin(phantomRad) * phantomRange,
+        );
+        if (Math.random() < RADAR_FALSE_ALARM_RATE
+            / this.cfarDetector.noiseFloorMultiplier(phantomPoint, this.scene.time.now)) {
             this.falseAlarmBuffer.push({
-                point: new Phaser.Math.Vector2(
-                    ownerPos.x + Math.cos(phantomRad) * phantomRange,
-                    ownerPos.y + Math.sin(phantomRad) * phantomRange,
-                ),
+                point: phantomPoint,
                 range: phantomRange,
                 angle: pulseDirection,
+                // A noise spike that cleared the threshold carries exactly the
+                // floor it cleared — no amplitude structure for the tracking
+                // computer's weighted centroid to read anything into.
+                signal: 1,
             });
         }
 
         if (sweepComplete) {
-            // A jammed sweep rewrites every buffered hit into one coherent false
-            // track (replacing the real return); an un-jammed sweep is normal.
-            // False alarms are neither: they are noise, not an echo of anything
-            // the jammer could have displaced, so they are appended untouched.
             const now = this.scene.time.now;
-            const returns = (this.sweepJammerError
-                ? this.receiver.createFakeHits(this.sweepBuffer, ownerPos, this.range, this.sweepJammerError, scanGain)
-                : this.receiver.processHits(
+            // The jammer must first win the energy contest: its burst is
+            // judged against the signal the sweep's real echoes actually
+            // carry (nominal — scintillation and CFAR ride on top). Only a
+            // burst that out-shouts them rewrites the sweep into one coherent
+            // false track; a weaker one loses and the real returns process
+            // normally — burn-through is the fourth-power range law doing its
+            // work. False alarms are neither an echo nor a spoof: they are
+            // noise, appended untouched either way.
+            let processed: RadarReturn[];
+            if (this.sweepJamming) {
+                const jam = jammerSignal(this.sweepJamming.range, this.range);
+                const signal = this.receiver.dwellSignal(this.sweepBuffer, ownerPos, this.range, scanGain);
+                processed = signal > 0 && jam >= signal
+                    ? this.receiver.createFakeHits(this.sweepBuffer, ownerPos, this.range, this.sweepJamming.error, scanGain, jam)
+                    : this.receiver.processHits(
+                        this.sweepBuffer, ownerPos, this.range, scanGain,
+                        point => this.cfarDetector.noiseFloorMultiplier(point, now),
+                    );
+            } else {
+                processed = this.receiver.processHits(
                     this.sweepBuffer, ownerPos, this.range, scanGain,
                     point => this.cfarDetector.noiseFloorMultiplier(point, now),
-                )
-            ).concat(this.falseAlarmBuffer);
-            // TWS caps simultaneous tracks; RWS searches without a cap.
+                );
+            }
+            const returns = processed.concat(this.falseAlarmBuffer);
+            // TWS caps simultaneous tracks; RWS searches without a cap. The
+            // MTI gate rides the same picture (search modes only — STT stares
+            // rather than builds a picture): the clutter map decides whether a
+            // contact's motion is even worth judging.
             const maxTracks = this.mode === 'tws' ? MAX_TWS_TRACKS : Infinity;
-            this.trackingComputer.update(returns, ownerPos, { maxTracks });
+            this.trackingComputer.update(returns, ownerPos, {
+                maxTracks,
+                mtiClutterDensity: point => this.cfarDetector.clutterDensity(point, now),
+            });
             this.sweepBuffer = [];
             this.falseAlarmBuffer = [];
-            this.sweepJammerError = null;
+            this.sweepJamming = null;
         }
 
         for (const track of this.displayedTracks()) {
@@ -647,29 +707,44 @@ export class Radar {
             this.radarRenderer?.renderJammerCone(graphics, ownerPos, shipDirection, this.range);
         }
 
-        // Collect every ship return in the beam. Terrain competes ray by ray:
-        // where terrain is nearer it paints the ground map and shadows whatever
-        // is behind it, so a target sliding behind a rock starves the lock.
+        // Collect every ship return in the beam. Terrain and chaff compete
+        // ray by ray under the same nearest-wins rule as the sweep: where
+        // terrain is nearer it paints the ground map and shadows whatever
+        // is behind it, so a target sliding behind a rock starves the lock;
+        // chaff nearer than the target hides it behind an echo of its own.
         const rawHits: BeamHit[] = [];
         for (const line of beamLines) {
-            const shipHit = this.nearestHit(line, ownerPos, targets);
-            const terrainHit = this.nearestHit(line, ownerPos, terrain);
-            const terrainWins = terrainHit && (!shipHit ||
-                Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, terrainHit.point.x, terrainHit.point.y) <
-                Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, shipHit.point.x, shipHit.point.y));
+            const shipHit = this.nearestHit(line, ownerPos, targets, lockDir, beamWidth);
+            const terrainHit = this.nearestHit(line, ownerPos, terrain, lockDir, beamWidth);
+            const decoyEcho = this.nearestDecoyEcho(line, ownerPos, decoyCircles);
+            const distSqOf = (hit: { point: Phaser.Math.Vector2 } | null): number =>
+                hit
+                    ? Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, hit.point.x, hit.point.y)
+                    : Infinity;
+            const shipDistSq = distSqOf(shipHit);
+            const terrainDistSq = distSqOf(terrainHit);
+            const decoyDistSq = distSqOf(decoyEcho);
 
-            if (terrainWins) {
+            if (terrainHit && terrainDistSq <= shipDistSq && terrainDistSq <= decoyDistSq) {
                 if (this.withinDisplayRange(ownerPos, terrainHit.point)
                     && !this.receiver.isAbsorbedByGas(ownerPos, terrainHit.point, gasVolumes)) {
                     this.terrainMapper.addSample(terrainHit.point, terrainHit.normal, ownerPos, this.scene.time.now);
                 }
-            } else if (shipHit
-                && !this.receiver.isBlockedByDecoy(ownerPos, shipHit.point, decoyCircles)) {
-                // Chaff between the antenna and the target swallows the return;
-                // gas only costs it energy, which the concentrated STT beam has
-                // more of to spend. Starved frames feed the lock-break counter
-                // below, so a target that drags the lock through a thick enough
-                // cloud can still shake it.
+            } else if (decoyEcho && decoyDistSq < shipDistSq) {
+                // The cloud's echo is a return like any other — it can land
+                // inside the gate and drag the lock, or starve it entirely if
+                // the target sits behind the cloud.
+                rawHits.push({
+                    point: decoyEcho.point,
+                    crossSection: decoySettings.CROSS_SECTION,
+                    transmission: this.receiver.gasRoundTrip(ownerPos, decoyEcho.point, gasVolumes),
+                });
+            } else if (shipHit) {
+                // Chaff between the antenna and the target has already lost
+                // the ray above; gas only costs it energy, which the
+                // concentrated STT beam has more of to spend. Starved frames
+                // feed the lock-break counter below, so a target that drags
+                // the lock through a thick enough cloud can still shake it.
                 rawHits.push({
                     point: shipHit.point,
                     crossSection: shipHit.crossSection,
@@ -679,10 +754,20 @@ export class Radar {
         }
 
         // STT energy overpowers the jammer, so returns are not spoofed — but a
-        // jammed frame has a chance to swallow them, feeding the lock-break
-        // counter below.
-        const jammed = this.detectJamming(targets, beamLines, ownerPos) !== null;
-        const hits = jammed && Math.random() < JAMMER_STT_DEGRADE_PROB ? [] : rawHits;
+        // burst that still out-shouts the lock's echo has a chance to swallow
+        // them, scaling with how badly the echo loses the same J/S contest the
+        // sweep runs. A concentrated beam's echo grows as the fourth power of
+        // closing range, so the burst wins only far out or against a small
+        // hull: burn-through protects a lock the old flat chance degraded
+        // regardless of geometry.
+        const jamming = this.detectJamming(targets, beamLines, ownerPos);
+        let hits = rawHits;
+        if (jamming) {
+            const jam = jammerSignal(jamming.range, this.range);
+            const signal = this.receiver.dwellSignal(rawHits, ownerPos, this.range, sttGain);
+            const swallow = JAMMER_STT_DEGRADE_PROB * (signal > 0 ? Math.min(jam / signal, 1) : 1);
+            if (Math.random() < swallow) hits = [];
+        }
 
         // Lock illumination: any ship in the beam detects a locked (red) RWR
         // contact and fires its lock-warning event. STT stares rather than
@@ -690,7 +775,8 @@ export class Radar {
         // roll on — left off here rather than rolled every frame (see
         // illuminateRwr); a ship not the lock's target still gets the plain
         // main-beam test whenever the beam happens to cross it.
-        this.illuminateRwr(targets, beamLines, ownerPos, true, gasVolumes, sttGain, false);
+        this.illuminateRwr(targets, beamLines, ownerPos, true, gasVolumes, sttGain, false, lockDir, beamWidth);
+        this.registerJammingStrobes(targets, ownerPos);
 
         // The narrow STT beam concentrates the same energy onto a smaller
         // patch of sky — see beamGain in data/signalPath.ts — which is why a
@@ -798,13 +884,17 @@ export class Radar {
     // are being looked at. Gas on the path costs the pulse energy once here,
     // not twice: nothing is coming back through it.
     //
-    // A ship in the main beam (the pulse ray(s) actually cross its hull) hears
-    // it at the beam's full gain; everyone else still hears the sidelobes —
-    // real antennas leak in every direction, just far more weakly, so being
-    // off the exact instantaneous bearing is not the same as being deaf to it
-    // (ANTENNA_SIDELOBE_LEVEL in data/radarGameSettings.ts).
+    // The gain a listener hears: a hull the beam is actually resting on
+    // (the pulse ray crosses it — the crossing point sits on the boresight
+    // ray) hears the beam's full gain; a hull wholly off the beam hears the
+    // amplitude pattern at its own bearing off the beam centre — the skirt
+    // just off the main lobe, decaying smoothly down to the flat sidelobe
+    // floor. This replaces the old binary in-beam/sidelobe split: being just
+    // off the instantaneous beam now sounds nearly as loud as being under
+    // it, which is what a real antenna's main-lobe skirt does, while far-off
+    // listeners still only catch the sidelobe leak.
     //
-    // `testSidelobes` gates that second, off-beam test to once per sweep leg
+    // `testSidelobes` gates that off-beam test to once per sweep leg
     // (the caller passes it true only on sweepComplete) rather than every
     // frame. It has to be rate-limited somehow: detectionProbability's floor
     // is RADAR_PFA, never truly zero, so a channel re-rolled every single
@@ -822,6 +912,8 @@ export class Radar {
         gasVolumes: GasVolume[],
         mainGain: number,
         testSidelobes: boolean,
+        beamCentreDeg: number,
+        beamWidthDeg: number,
     ): void {
         const now = this.scene.time.now;
         for (const entity of targets) {
@@ -829,11 +921,25 @@ export class Radar {
             const polygon = this.raycaster.getBodyPolygons(entity);
             const inMainBeam = lines.some(line => Phaser.Geom.Intersects.GetLineToPolygon(line, polygon));
             if (!inMainBeam && !testSidelobes) continue;
-            const gain = inMainBeam ? mainGain : mainGain * ANTENNA_SIDELOBE_LEVEL;
 
             const tgt = entity as PlayerShip | Target;
             const epos = tgt.getPosition();
             const range = Phaser.Math.Distance.Between(ownerPos.x, ownerPos.y, epos.x, epos.y);
+            let gain = mainGain;
+            if (!inMainBeam) {
+                // Off the beam: the listener catches the pattern's skirt at
+                // its own bearing off the beam centre — near the lobe nearly
+                // full, far out only the sidelobe floor.
+                const bearingToDeg = Phaser.Math.RadToDeg(
+                    Math.atan2(epos.y - ownerPos.y, epos.x - ownerPos.x),
+                );
+                gain = mainGain * beamPattern(
+                    Math.abs(Phaser.Math.Angle.WrapDegrees(bearingToDeg - beamCentreDeg)),
+                    beamWidthDeg,
+                );
+            }
+            // Gas on the path costs the pulse energy once here, not twice:
+            // nothing is coming back through it.
             const transmission = gasTransmission(ownerPos, epos, gasVolumes);
             if (!isDetected(emissionSignal(range, this.range, transmission, gain))) {
                 continue;
@@ -852,14 +958,15 @@ export class Radar {
         }
     }
 
-    // Return the spoof error of the first enemy jammer affecting us this frame,
-    // or null. A jammer affects us only when our beam actually paints the
-    // jamming ship *and* we (the emitter) sit inside its jamming cone.
+    // The jammer affecting us this frame and its range from us — the inputs
+    // the energy contest runs on — or null. A jammer affects us only when our
+    // beam actually paints the jamming ship *and* we (the emitter) sit inside
+    // its jamming cone.
     private detectJamming(
         targets: Entity[],
         lines: Phaser.Geom.Line[],
         ownerPos: { x: number; y: number },
-    ): JammerError | null {
+    ): { error: JammerError; range: number } | null {
         for (const entity of targets) {
             if (!('radar' in entity)) continue;
             const tgt = entity as PlayerShip | Target;
@@ -869,19 +976,57 @@ export class Radar {
             if (!lines.some(line => Phaser.Geom.Intersects.GetLineToPolygon(line, polygon))) continue;
 
             if (tgt.radar.jammer.covers(tgt.getPosition(), tgt.getDirection(), ownerPos, this.range)) {
-                return tgt.radar.jammer.getError();
+                return {
+                    error: tgt.radar.jammer.getError(),
+                    range: Phaser.Math.Distance.Between(
+                        ownerPos.x, ownerPos.y, tgt.getPosition().x, tgt.getPosition().y,
+                    ),
+                };
             }
         }
         return null;
     }
 
+    // A jamming burst is itself an emission, and a loud one: any ship inside
+    // the cone hears it regardless of whose beam is where — hearing is
+    // one-way, and it does not depend on the energy contest (a jammer that
+    // cannot fool the radar is still being heard by it). The victim's RWR
+    // therefore marks the jammer as a strobe at its bearing, keyed by the
+    // jammer ship's own id — the same emitter its search contact would use,
+    // so the strobe replaces that symbol while the burst runs. Registered
+    // after illuminateRwr so a same-frame search contact does not overwrite it.
+    private registerJammingStrobes(
+        targets: Entity[],
+        ownerPos: { x: number; y: number },
+    ): void {
+        const now = this.scene.time.now;
+        for (const entity of targets) {
+            if (!('radar' in entity)) continue;
+            const tgt = entity as PlayerShip | Target;
+            if (!tgt.radar.jammer.isActive()) continue;
+            if (!tgt.radar.jammer.covers(tgt.getPosition(), tgt.getDirection(), ownerPos, this.range)) continue;
+
+            const bearingDeg = Phaser.Math.RadToDeg(
+                Math.atan2(tgt.y - ownerPos.y, tgt.x - ownerPos.x),
+            );
+            this.rwrReceiver.receive(String(tgt.id), bearingDeg, false, now, true);
+        }
+    }
+
     // Where this ray first strikes something, and how much of that something is
     // turned towards the beam. The cross-section is measured here, at the hull,
-    // because this is the only place the geometry is known.
+    // because this is the only place the geometry is known — and weighted here
+    // by the beam pattern at the hit's own off-axis angle, since the beam is
+    // the thing doing the illuminating: an STT fan samples its beam with
+    // several rays, and a hull lit by an edge ray returns less than one lit
+    // dead-centre (a search sweep's pencil ray is its own boresight, so its
+    // hits sit at pattern ≈ 1).
     private nearestHit(
         line: Phaser.Geom.Line,
         ownerPos: { x: number; y: number },
         targets: Entity[],
+        beamCentreDeg: number,
+        beamWidthDeg: number,
     ): { point: Phaser.Math.Vector2; crossSection: number; normal: { x: number; y: number } } | null {
         let nearest: { point: Phaser.Math.Vector2; crossSection: number; normal: { x: number; y: number } } | null = null;
         let nearestDistSq = Infinity;
@@ -906,17 +1051,56 @@ export class Radar {
                 const normal = this.raycaster.surfaceNormalAt(hit.part, hit.point);
                 const beamDirX = (hit.point.x - ownerPos.x) / Math.sqrt(dSq || 1);
                 const beamDirY = (hit.point.y - ownerPos.y) / Math.sqrt(dSq || 1);
+                // The beam pattern at this hit's own bearing off the beam
+                // centre: the amplitude the return carries before range and
+                // hull size are even considered.
+                const hitBearingDeg = Phaser.Math.RadToDeg(Math.atan2(beamDirY, beamDirX));
+                const pattern = beamPattern(
+                    Math.abs(Phaser.Math.Angle.WrapDegrees(hitBearingDeg - beamCentreDeg)),
+                    beamWidthDeg,
+                );
                 nearest = {
                     point: hit.point,
                     // The hull's silhouette (how much of it is turned
                     // broadside) weighted by how square-on the specific facet
                     // struck actually faces the beam — the same width can be
                     // a flat glint or a curved graze depending on which part
-                    // of the hull the ray happened to land on.
+                    // of the hull the ray happened to land on — and by how
+                    // much of the beam's amplitude that look carried.
                     crossSection: crossSection(this.raycaster.getBodyPolygons(target), ownerPos)
-                        * specularFactor({ x: beamDirX, y: beamDirY }, normal),
+                        * specularFactor({ x: beamDirX, y: beamDirY }, normal)
+                        * pattern,
                     normal,
                 };
+            }
+        }
+
+        return nearest;
+    }
+
+    // Where the beam first enters the nearest chaff cloud, or null. The echo
+    // comes off the cloud's near side — the resolution cell cannot see into
+    // it — so the contact paints at the entry point and competes by that
+    // range, the same as a terrain or hull return would.
+    private nearestDecoyEcho(
+        line: Phaser.Geom.Line,
+        ownerPos: { x: number; y: number },
+        decoyCircles: Phaser.Geom.Circle[],
+    ): { point: Phaser.Math.Vector2 } | null {
+        let nearest: { point: Phaser.Math.Vector2 } | null = null;
+        let nearestDistSq = Infinity;
+
+        for (const circle of decoyCircles) {
+            const points = Phaser.Geom.Intersects.GetLineToCircle(line, circle);
+            // A ray crossing a cloud yields one entry point; take the nearest.
+            const point = points?.sort((a, b) =>
+                Phaser.Math.Distance.Squared(line.x1, line.y1, a.x, a.y) -
+                Phaser.Math.Distance.Squared(line.x1, line.y1, b.x, b.y))[0];
+            if (!point) continue;
+            const dSq = Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, point.x, point.y);
+            if (dSq < nearestDistSq) {
+                nearestDistSq = dSq;
+                nearest = { point: new Phaser.Math.Vector2(point.x, point.y) };
             }
         }
 
