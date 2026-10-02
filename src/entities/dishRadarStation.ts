@@ -158,7 +158,7 @@ export class DishRadarStation implements RadarHost {
     update(
         delta: number,
         ships: Entity[],
-        terrain: Entity[],
+        terrain: Terrain[],
         graphics: Phaser.GameObjects.Graphics,
         gasVolumes: GasVolume[] = [],
     ): void {

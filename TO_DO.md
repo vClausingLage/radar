@@ -21,12 +21,11 @@ flanking beaming etc RIGHT? -> test!
   against a rock is genuinely harder to pull out than one against empty
   space, verified directly: 2.5x the signal needed at a rock's centre, 1.875x
   at its edge, no effect somewhere clean. Scoped to RWS/TWS, not STT.
-  Still open: an MTI/Doppler gate to reject clutter by radial velocity rather
-  than amplitude — CFAR only changes the threshold a return is judged by, and
-  Doppler is a genuinely different physical quantity (a carrier phase/
-  frequency shift) that nothing in this raycasting engine represents anywhere;
-  see the realism roadmap's CFAR item for why that is its own undertaking,
-  not a small extension of this one.)
+  The MTI follow-on is done too, as the scan-to-scan stand-in (see the
+  realism roadmap §9): the tracking computer's fitted radial rate rejects
+  near-zero-radial-rate echoes inside significant clutter — a parked hull in
+  clutter never holds a stable track while the same hull under way lifts out.
+  Phase Doppler remains genuinely out of reach: the engine has no carrier.)
 - move visibility material etc and other atributes to group instead of the objects themselves
 - gas clouds that reduce radar effectiveness   (done: `entities/gasCloud.ts`.
   Absorption is now a cost in the energy budget rather than a coin flip
@@ -71,9 +70,23 @@ guided onto — for the AI as much as for the player.
                         width, against `RADAR_REFERENCE_CROSS_SECTION_PX`)
 - cross section -> side / front     (done: the same measurement is taken across
                         the line of sight, so aspect falls straight out of it)
-- still open: a missile seeker has no hull geometry to measure, so it treats
-  every target as the reference size (`MissileRadar`) — a cargo hauler is no
-  easier for a seeker to find than a cruiser.
+- seeker on the shared signal path   (done, see the realism roadmap's §8:
+                        `MissileRadar` now detects on the same energy budget as
+                        the ship radar — aspect, specular glint, gas, and
+                        terrain shadowing all reach the seeker; its detection
+                        is a hard SNR gate at the noise floor rather than a
+                        probabilistic roll, because it re-tests every frame)
+- integration gain + dwell grouping  (done, see the realism roadmap's §13:
+                        non-coherent integration now buys ~√N not N, dwell
+                        grouping uses the same anisotropic resolution cell as
+                        contact resolution, and scintillation is one draw per
+                        scan shared by every cell the dwell lit)
+- beam shape / monopulse             (done, see the realism roadmap's §12:
+                        a Gaussian main lobe floored at the sidelobe level
+                        prices every hit by its off-axis angle, the receiver's
+                        amplitude rides the return, and the tracking
+                        computer's centroid is amplitude-weighted — the poor
+                        man's monopulse replacing the discrete α-trim)
 
 # Testing
 
@@ -98,7 +111,11 @@ assets load), and read the returned report rather than the on-screen one.
   - gas / medium                 (done: gas costs the radar range, not sight)
   - weapons stop at the ring     (done: fire control will not shoot at what the
                                   scope does not show)
-  - countermeasures (chaff)
+  - countermeasures (chaff)   (done: chaff is now a reflector, not a coin flip
+                            — the cloud echoes with its own cross-section,
+                            forms a false track, and hides what is behind it
+                            under the same nearest-wins rule terrain runs;
+                            see the realism roadmap §10)
   - clutter, once it exists
 - RWR
   - warned outside the emitting radar's own range   (done: illumination is now

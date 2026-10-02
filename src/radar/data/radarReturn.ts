@@ -13,9 +13,17 @@ export type BeamHit = {
 }
 
 // A reflection that made it through the receiver: this is what the tracking
-// computer gets to see.
+// computer gets to see. `signal` is the effective signal ratio the group of
+// hits was detected on (after non-coherent integration, scintillation and
+// CFAR — the same number the detection test judged), and it is the amplitude
+// the tracking computer's centroid is weighted by: a real set's monopulse
+// comparator forms the target's bearing from exactly this — how much of the
+// beam pattern each look came back with — so the loudest look steers the
+// contact and a marginal edge-of-beam look barely moves it.
 export type RadarReturn = {
   point: Phaser.Math.Vector2;
   range: number;
   angle: number;
+  // Signal ratio the detection was made on (>= RADAR_PFA by construction).
+  signal: number;
 }

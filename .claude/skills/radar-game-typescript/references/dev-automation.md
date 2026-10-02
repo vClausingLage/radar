@@ -71,4 +71,5 @@ from script use `s.player.setCurrentSpeed(v)` — REV is `-landingSettings.REVER
   `p.setPosition(1600, 2265); p.setAngle(270); p.setCurrentSpeed(-0.04)` then
   step until `p.getCurrentSpeed() === 0` (landed, ~270 steps). Heading 90 at
   0.033 from the same spot is a nose-first crash (`s.player` gone). A crawl
-  north from (1600, 1995) at 0.033 stops against the rock.
+  north from (1600, 1600) at 0.033 stops against the rock (the station rock is
+  centred on (1600, 1500) since the campaign levels moved it north).

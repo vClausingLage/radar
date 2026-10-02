@@ -208,6 +208,6 @@ directly rather than through the `typescript-eslint` wrapper.
 For behavioural changes, drive the running game rather than asking the user to
 click: the preview server is pinned to port **5199** in `.claude/launch.json`
 (the user runs their own on 5173). See
-[references/dev-automation.md](references/dev-automation.md) for the
+[references/dev-automation.md](.claude/skills/radar-game-typescript/references/dev-automation.md) for the
 `window.game` stepping recipes — the preview tab is backgrounded, so the clock
 must be advanced manually and verification is by state, not screenshot.
