@@ -35,6 +35,17 @@ flanking beaming etc RIGHT? -> test!
   it too. Still open: the cloud returns no volume clutter of its own, so it
   never paints on the scope — see the clutter item)
 - IRST -> exhaust detection -> IR missiles
+- DRAFT: explanatory layer -> "a struggle of formulas"
+  (idea only, not scoped yet. The project is neither a game nor a real
+  simulation, so an explanatory, visually appealing layer is a valid path:
+  show the numbers behind what happens on the scope, dynamically, as data and
+  formulas 'fighting' each other.
+  - tracked contact -> how the signal-response formula works, how a track is
+    generated, how tracking holds it
+  - intercept -> how a missile / radar calculates its intercept path
+  - jamming -> jammer vs. radar signal, and burn-through as the two energy
+    budgets crossing
+  Challenging, but worth it.)
 
 # RADAR
 
