@@ -6,6 +6,7 @@ import { InterfaceRenderer } from '../radar/renderer/interfaceRenderer';
 import { RadarRenderer } from '../radar/renderer/radarRenderer';
 import { TerrainRenderer } from '../radar/renderer/terrainRenderer';
 import { AiUnitController, UnitActivity } from '../controller/aiUnitController';
+import { JevTactician } from '../controller/jevTactician';
 import { PlayerController } from '../controller/playerController';
 import { targetShipSettings } from '../settings';
 
@@ -15,7 +16,11 @@ import { targetShipSettings } from '../settings';
 // stationary emplacement ('inactive') that holds position and heading while its
 // radar, jammer and weapons keep working. `side` defaults to hostile. `route`
 // hands a cargo ship a fixed itinerary — a flight from A to B with a
-// destination — instead of the endless loop it otherwise flies.
+// destination — instead of the endless loop it otherwise flies. `brain` picks
+// who makes the tactical calls: the scripted doctrine (default) or Jev, the
+// decision model behind the dev server's /api/jev proxy. Jev is DEV-only — a
+// production build has no proxy to hold the key — and cruiser-only: cargo
+// never fights, so it has nothing to decide.
 export type TargetParams = {
   x: number;
   y: number;
@@ -25,6 +30,7 @@ export type TargetParams = {
   activity?: UnitActivity;
   side?: Side;
   route?: Vector2[];
+  brain?: 'scripted' | 'jev';
 };
 
 declare global {
@@ -92,8 +98,10 @@ export const createPlayerShipFactory = () => {
     target.setMissileNoCollideGroup(targetMissileNoCollideGroup);
     target.addToDisplayList();
     target.addToUpdateList();
+    const useJev = params.brain === 'jev' && params.type === 'cruiser' && import.meta.env.DEV;
     const controller = new AiUnitController(
       this.scene, target, 0, false, target.radar, target.id, params.activity ?? 'active',
+      useJev ? new JevTactician() : null,
     );
     if (params.type === 'cargo') {
       controller.setTurnRate(targetShipSettings.TURN_RATE_CARGO);

@@ -53,7 +53,11 @@ src/scenes/level1..3.ts  Mule Train (VID traffic) / Shepherd (tow a derelict,
                          raider) / Backdoor (raid through the gas). Story lines
                          live in src/audio/radioScript.json
 src/scenes/startMenu.ts  Menu, ScenarioKey ('duel' | 'occluded' | 'skirmish')
-src/controller/          playerController.ts (key bindings), aiUnitController.ts (intent)
+src/controller/          playerController.ts (key bindings), aiUnitController.ts (intent:
+                         flies the ship; which state it is in comes from the scripted
+                         doctrine or a Tactician), jevTactician.ts (Jev decision model,
+                         DEV-only, via the /api/jev proxy in vite.config.ts holding AI_KEY
+                         from the gitignored .env). See decision_tree.md "Jev tactician"
 src/entities/            Ship/PlayerShip/Target, missiles, asteroid, decoy, exhaust,
                          dishRadarStation, structure (static solid scenery: surface,
                          launchpad) + *Factory.ts registering scene.add.* factories;
@@ -187,7 +191,9 @@ display-and-weapons concern.
 ## Verification
 
 Package manager is **pnpm**; the deploy workflow builds
-on push to `main`, so a broken build ships. A test scene is in `src/scenes/testScene.ts` and a test suite in `src/tests/radarTests.ts`.
+on push to `main`, so a broken build ships. A test scene is in `src/scenes/testScene.ts` and a test suite in `src/tests/radarTests.ts`
+(signal path) plus `src/tests/tacticianTests.ts` (the AI's tactician seam — stubbed, no
+network); `window.runRadarTests()` runs both.
 
 ```bash
 npx tsc --noEmit

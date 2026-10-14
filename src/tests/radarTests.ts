@@ -45,6 +45,18 @@ const GAS_FAR_RANGE_FACTOR = 0.71;
 // Deep inside it, where there is signal to burn — the same cloud costs the same
 // fraction of it and the contact is still there.
 const GAS_NEAR_RANGE_FACTOR = 0.29;
+// The test's cloud is thinner than a default one, on purpose. A default cloud
+// (gasCloudSettings.DENSITY, 0.8) pulls a 700 px radar in to ~290 px through
+// its core — and the band here spans 10–290 px, so a bow-on cruiser at 0.29x
+// (203 px) sits right on that edge: under 1% of its echo survives the round
+// trip, it is detected on only a fraction of sweeps, and "held through the
+// cloud" became a dice roll once the 2026-09-26 receiver rework (e801c4b)
+// cut its per-sweep detections further (5 of 8 sweeps before, 2 of 8 after,
+// same seed). At 0.3 the near contact keeps
+// nearly its gas-free tracking while the far one is still lost — and lost to
+// the gas: with no cloud at all the far drone is held 30–60% of the run, so
+// the far check is not passing on range alone.
+const GAS_TEST_DENSITY = 0.3;
 
 // Where jamming wins and where it loses. A jamming burst is quoted against a
 // reference echo at the rated range (JAMMER_POWER in radarGameSettings); the
@@ -243,6 +255,7 @@ const gasCostsRangeNotSight: GameTest = {
             rangePx: 150,
             alongDeg: boresight + 90,
             lengthPx: 400,
+            density: GAS_TEST_DENSITY,
         });
 
         const far = ctx.scene.spawnDrone({

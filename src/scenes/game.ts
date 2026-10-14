@@ -171,10 +171,11 @@ export default class Game extends Phaser.Scene
     this.buildTerrain();
 
     // PLAYER SHIP using factory
+    const start = this.playerStart();
     this.player = this.add.playerShip({
-      x: playerShipSettings.START_POSITION.x,
-      y: playerShipSettings.START_POSITION.y,
-      direction: playerShipSettings.DIRECTION,
+      x: start.x,
+      y: start.y,
+      direction: start.direction,
       speed: playerShipSettings.SPEED,
     });
 
@@ -212,6 +213,16 @@ export default class Game extends Phaser.Scene
     if (this.requiresColdStart()) {
       this.beginColdStart();
     }
+  }
+
+  // Where the player's ship enters the world and which way it points.
+  // Free play and the campaign start on the pad's spot, nose north.
+  protected playerStart(): { x: number; y: number; direction: number } {
+    return {
+      x: playerShipSettings.START_POSITION.x,
+      y: playerShipSettings.START_POSITION.y,
+      direction: playerShipSettings.DIRECTION,
+    };
   }
 
   // Static scenery under the ships. Free play is set in open space.

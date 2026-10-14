@@ -4,6 +4,7 @@ import Game from "./scenes/game";
 import Level1 from "./scenes/level1";
 import Level2 from "./scenes/level2";
 import Level3 from "./scenes/level3";
+import OneOnOne from "./scenes/oneOnOne";
 
 const debugConfig = import.meta.env.DEV ? {
   showBody: true,
@@ -21,7 +22,7 @@ const debugConfig = import.meta.env.DEV ? {
 
 const config = {
   type: Phaser.AUTO,
-  scene: [StartMenu, Game, Level1, Level2, Level3],
+  scene: [StartMenu, Game, Level1, Level2, Level3, OneOnOne],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,

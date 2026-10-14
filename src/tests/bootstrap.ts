@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { TestScene } from '../scenes/testScene';
 import { runGameTests, TestReport } from './testHarness';
 import { radarTests } from './radarTests';
+import { tacticianTests } from './tacticianTests';
 
 // DEV-only wiring for the in-game tests: registers the test scene and hangs the
 // runner off the window, so a run can be started from the start menu, from the
@@ -43,7 +44,7 @@ export function installTestHooks(game: Phaser.Game): void {
     const testWindow = window as TestWindow;
 
     testWindow.runRadarTests = async (seed?: number) => {
-        const report = await runGameTests(game, radarTests, seed);
+        const report = await runGameTests(game, [...radarTests, ...tacticianTests], seed);
         testWindow.radarTestReport = report;
         return report;
     };

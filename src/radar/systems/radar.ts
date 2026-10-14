@@ -6,7 +6,7 @@ import { Emitter } from "./modules/emitter";
 import { Receiver } from "./modules/receiver";
 import { TrackingComputer } from "./modules/trackingComputer";
 import { RwrReceiver } from "./modules/rwr";
-import { Jammer, JammerError, JammerHudStatus } from "./modules/jammer";
+import { Jammer, JammerError, JammerHudStatus, JammingContest } from "./modules/jammer";
 import { TerrainMapper } from "./modules/terrainMapper";
 import { CfarDetector } from "./modules/cfarDetector";
 
@@ -30,6 +30,7 @@ import { Entity, GasVolume, Loadout, Mode, RadarHost, Terrain } from "../data/ty
 import { InterfaceRenderer } from "../renderer/interfaceRenderer";
 import { RadarRenderer } from "../renderer/radarRenderer";
 import { TerrainRenderer } from "../renderer/terrainRenderer";
+import { ReceiverVideoRenderer } from "../renderer/receiverVideoRenderer";
 
 import { Ray } from "../../physics/ray";
 import { RadarEventEmitter } from "./game/radarEventEmitter";
@@ -108,13 +109,15 @@ export class Radar {
     // sweep: its rolled offset and its range from us, so the energy contest
     // (does the burst out-shout the echo we actually caught?) can be judged at
     // sweepComplete with the sweep's real signal in hand. Cleared after use.
-    private sweepJamming: { error: JammerError; range: number } | null = null;
+    private sweepJamming: { error: JammerError; range: number; bearingDeg: number } | null = null;
 
     public eventEmitter = new RadarEventEmitter();
 
     private interfaceRenderer: InterfaceRenderer | null = null;
     // Only the player's radar has a renderer; target radars track silently.
     private radarRenderer: RadarRenderer | null = null;
+    // Raw receiver output ring — player-only, like the scope.
+    private receiverVideoRenderer: ReceiverVideoRenderer | null = null;
 
     private raycaster = new Ray();
 
@@ -138,6 +141,11 @@ export class Radar {
     // radar renderer — AI radars discard terrain returns.
     setTerrainRenderer(renderer: TerrainRenderer): void {
         this.terrainMapper.setRenderer(renderer);
+    }
+
+    // Attach the receiver video ring (player-only, like the scope).
+    setReceiverVideoRenderer(renderer: ReceiverVideoRenderer): void {
+        this.receiverVideoRenderer = renderer;
     }
 
     setInterfaceRenderer(renderer: InterfaceRenderer): void {
@@ -366,6 +374,12 @@ export class Radar {
         return this.fireControl.getActiveMissileRange();
     }
 
+    // Max range (px) of a given weapon type, selected or not — lets an AI judge
+    // a shot without switching the loadout to find out.
+    getMissileRange(type: string): number | null {
+        return this.fireControl.getMissileRange(type);
+    }
+
     // ── Main update ───────────────────────────────────────────────────────
 
     update(
@@ -412,6 +426,9 @@ export class Radar {
             now: this.scene.time.now,
         }, graphics);
 
+        // A silent transmitter puts no echoes on the receiver — noise only.
+        if (this.mode === 'emcon') this.receiverVideoRenderer?.update([]);
+
         if (this.mode === 'stt') {
             this.updateStt(delta, ownerPos, shipDirection, entities, graphics, decoyCircles, terrain, gasVolumes);
         } else if (this.mode === 'emcon') {
@@ -422,6 +439,7 @@ export class Radar {
 
         // Paint the ground-mapping picture (persisted, decaying terrain returns).
         this.terrainMapper.render(graphics, ownerPos, this.range, this.scene.time.now);
+        this.receiverVideoRenderer?.render(graphics, ownerPos);
     }
 
     // ── RWS sweep ─────────────────────────────────────────────────────────
@@ -593,10 +611,19 @@ export class Radar {
             // work. False alarms are neither an echo nor a spoof: they are
             // noise, appended untouched either way.
             let processed: RadarReturn[];
+            let contest: JammingContest | null = null;
             if (this.sweepJamming) {
                 const jam = jammerSignal(this.sweepJamming.range, this.range);
                 const signal = this.receiver.dwellSignal(this.sweepBuffer, ownerPos, this.range, scanGain);
-                processed = signal > 0 && jam >= signal
+                const jammed = signal > 0 && jam >= signal;
+                contest = {
+                    bearingDeg: this.sweepJamming.bearingDeg,
+                    jammerSignal: jam,
+                    echoSignal: signal,
+                    jammed,
+                    spoofBearingDeg: jammed ? this.sweepJamming.bearingDeg + this.sweepJamming.error.angle : null,
+                };
+                processed = jammed
                     ? this.receiver.createFakeHits(this.sweepBuffer, ownerPos, this.range, this.sweepJamming.error, scanGain, jam)
                     : this.receiver.processHits(
                         this.sweepBuffer, ownerPos, this.range, scanGain,
@@ -607,6 +634,14 @@ export class Radar {
                     this.sweepBuffer, ownerPos, this.range, scanGain,
                     point => this.cfarDetector.noiseFloorMultiplier(point, now),
                 );
+            }
+            // Every echo the sweep caught, measured before the detector
+            // decided on any of them, and the jamming contest if one was run
+            // — what the receiver video ring draws and prints.
+            if (this.receiverVideoRenderer) {
+                const received = this.receiver.measure(this.sweepBuffer, ownerPos, this.range, scanGain);
+                this.receiverVideoRenderer.update(received, contest);
+                this.receiverVideoRenderer.printSweep(received, contest);
             }
             const returns = processed.concat(this.falseAlarmBuffer);
             // TWS caps simultaneous tracks; RWS searches without a cap. The
@@ -762,11 +797,19 @@ export class Radar {
         // regardless of geometry.
         const jamming = this.detectJamming(targets, beamLines, ownerPos);
         let hits = rawHits;
+        let contest: JammingContest | null = null;
         if (jamming) {
             const jam = jammerSignal(jamming.range, this.range);
             const signal = this.receiver.dwellSignal(rawHits, ownerPos, this.range, sttGain);
             const swallow = JAMMER_STT_DEGRADE_PROB * (signal > 0 ? Math.min(jam / signal, 1) : 1);
             if (Math.random() < swallow) hits = [];
+            contest = {
+                bearingDeg: jamming.bearingDeg,
+                jammerSignal: jam,
+                echoSignal: signal,
+                jammed: hits.length === 0 && rawHits.length > 0,
+                spoofBearingDeg: null,
+            };
         }
 
         // Lock illumination: any ship in the beam detects a locked (red) RWR
@@ -782,6 +825,9 @@ export class Radar {
         // patch of sky — see beamGain in data/signalPath.ts — which is why a
         // lock holds through conditions a search sweep would have lost the
         // contact in.
+        // STT stares, so the receiver video refreshes every frame rather than
+        // once a sweep — and is not printed, which would be 60 lines a second.
+        this.receiverVideoRenderer?.update(this.receiver.measure(rawHits, ownerPos, this.range, sttGain), contest);
         const returns = this.receiver.processHits(hits, ownerPos, this.range, sttGain);
         // STT updates every frame, so every timescale differs from search. A high
         // maxMissedScans keeps the lock alive through brief dropouts without
@@ -966,7 +1012,7 @@ export class Radar {
         targets: Entity[],
         lines: Phaser.Geom.Line[],
         ownerPos: { x: number; y: number },
-    ): { error: JammerError; range: number } | null {
+    ): { error: JammerError; range: number; bearingDeg: number } | null {
         for (const entity of targets) {
             if (!('radar' in entity)) continue;
             const tgt = entity as PlayerShip | Target;
@@ -980,6 +1026,9 @@ export class Radar {
                     error: tgt.radar.jammer.getError(),
                     range: Phaser.Math.Distance.Between(
                         ownerPos.x, ownerPos.y, tgt.getPosition().x, tgt.getPosition().y,
+                    ),
+                    bearingDeg: Phaser.Math.RadToDeg(
+                        Math.atan2(tgt.getPosition().y - ownerPos.y, tgt.getPosition().x - ownerPos.x),
                     ),
                 };
             }
@@ -1119,7 +1168,11 @@ export class Radar {
     // ── External API ──────────────────────────────────────────────────────
 
     start(): void {}
-    stop(): void {}
+    // A stopped radar's receiver goes dark: take the video ring's labels with it.
+    stop(): void {
+        this.receiverVideoRenderer?.destroy();
+        this.receiverVideoRenderer = null;
+    }
 
     // The owner as a firing ship, or null when the radar is mounted on something
     // that has no weapons (the fixed dish station). Only ships fire.

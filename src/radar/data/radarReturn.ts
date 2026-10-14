@@ -12,6 +12,16 @@ export type BeamHit = {
   transmission: number;
 }
 
+// What the receiver measured for one reflection, before any detection
+// decision: the bearing and range it came from and the energy it carried,
+// as a ratio to the noise floor (1 = exactly the floor). This is the raw
+// receiver video — every echo, the ones too faint to count included.
+export type ReceivedSignal = {
+  bearingDeg: number;
+  rangePx: number;
+  signal: number;
+}
+
 // A reflection that made it through the receiver: this is what the tracking
 // computer gets to see. `signal` is the effective signal ratio the group of
 // hits was detected on (after non-coherent integration, scintillation and

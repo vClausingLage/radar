@@ -401,6 +401,30 @@ export const RADAR_TRACK_HISTORY_DOT_RADIUS_PX = 1.5;
 // Length of the perpendicular caps on the selected missile max-range indicator.
 export const MISSILE_RANGE_CAP_LENGTH_PX = 12;
 
+// ── Receiver video ring (renderer/receiverVideoRenderer.ts) ────────────────
+// The receiver's raw output drawn as a ring around the ship: bearing around
+// the circle, received power (S/N in dB) as how far the trace swings off it.
+
+// Radius of the ring's base circle — the 0 dB line, where received power
+// equals the noise floor.
+export const RECEIVER_VIDEO_RADIUS_PX = 140;
+
+// Angular width of one sample on the ring.
+export const RECEIVER_VIDEO_BIN_DEG = 2;
+
+// Radial deflection per dB of received power.
+export const RECEIVER_VIDEO_PX_PER_DB = 2.5;
+
+// Power range the trace can show, in dB relative to the noise floor. Below
+// the floor is noise dipping under its mean; the top is a contact close in.
+export const RECEIVER_VIDEO_MIN_DB = -10;
+export const RECEIVER_VIDEO_MAX_DB = 40;
+
+// Phosphor persistence: the fraction of last frame's noise that carries over
+// into this frame's, so the noise reads as grass instead of flicker. 0 =
+// a fresh draw every frame.
+export const RECEIVER_VIDEO_PERSISTENCE = 0.75;
+
 // ── Radar HUD renderer (renderer/interfaceRenderer.ts) ─────────────────────
 
 // Desired RWR screen image height in fixed-screen HUD pixels.

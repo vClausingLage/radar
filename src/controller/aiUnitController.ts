@@ -16,11 +16,45 @@ enum AIState {
     EVADE,       // Being locked by an enemy — defend the shot
 }
 
+export type TacticalStateName = keyof typeof AIState;
+
 type Personality = 'aggressive' | 'defensive';
 
 // Whether the unit is under way. An 'inactive' unit is a stationary emplacement:
 // it holds position and heading, but its radar, jammer and weapons work normally.
 export type UnitActivity = 'active' | 'inactive';
+
+// The tactical judgement a controller can defer to in place of its scripted
+// state rules: JevTactician, or a stub in the tests. Asked every frame; null
+// means "no opinion this frame", and the scripted doctrine decides.
+export interface Tactician {
+    advise(picture: TacticalPicture, legal: TacticalStateName[]): TacticalStateName | null;
+    getDebugLabel(): string;
+    destroy(): void;
+}
+
+// What the unit knows, in words, for a JevTactician to judge. Ranges and angles
+// are banded here because Jev reasons over categories, not coordinates. Built
+// only from our own radar, RWR and stores — never from the entity list — so a
+// Jev-flown ship is exactly as blind as a scripted one.
+export type TacticalPicture = {
+    currentState: TacticalStateName;
+    personality: Personality;
+    radarMode: string;
+    contact: 'none' | 'new track' | 'mature track';
+    contactRange: 'no contact' | 'inside missile range' | 'outside missile range';
+    contactBearing: 'no contact' | 'on the nose' | 'off the nose' | 'behind us';
+    firingSolution: boolean;
+    selectedWeapon: 'VIM-220 fire-and-forget' | 'VIM-177 semi-active, needs our lock held' | 'none left';
+    missilesLeft: number;
+    ourMissileInFlight: boolean;
+    skate: 'not skating' | 'still opening range' | 'range opened';
+    rwr: 'silent' | 'searched by enemy radar' | 'locked by enemy fire-control radar';
+    missileInbound: boolean;
+    chaffLeft: number;
+    jammerReady: boolean;
+    nearWorldEdge: boolean;
+};
 
 // ── Tunables ───────────────────────────────────────────────────────────────
 const FIRE_COOLDOWN_MS = 2500;
@@ -75,6 +109,9 @@ export class AiUnitController {
         private readonly radar: Radar | null = null,
         private readonly id: number | null = null,
         private readonly activity: UnitActivity = 'active',
+        // Optional tactical judgement in place of the scripted state rules.
+        // Without one (haulers, production builds) the doctrine below decides.
+        private readonly tactician: Tactician | null = null,
     ) {
         // Cargo is always defensive; cruisers get a coin-flip personality so both
         // aggressive and defensive behaviours show up in a scene.
@@ -99,6 +136,7 @@ export class AiUnitController {
     destroy(): void {
         this.debugText?.destroy();
         this.debugText = undefined;
+        this.tactician?.destroy();
     }
 
     public getTurnRate(): number {
@@ -142,8 +180,9 @@ export class AiUnitController {
         const w220 = this.radar?.getWeaponLoad('VIM-220') ?? 0;
         const w177 = this.radar?.getWeaponLoad('VIM-177') ?? 0;
         const activity = this.activity === 'inactive' ? ' STATIC' : '';
+        const jev = this.tactician ? `\n${this.tactician.getDebugLabel()}` : '';
         this.debugText.setText(
-            `AI ${this.id} ${this.personality[0].toUpperCase()}${activity} [${stateNames[this.state]}] ${lock} D:${this.ship.getRemainingDecoys()} M:${w220}/${w177}`,
+            `AI ${this.id} ${this.personality[0].toUpperCase()}${activity} [${stateNames[this.state]}] ${lock} D:${this.ship.getRemainingDecoys()} M:${w220}/${w177}${jev}`,
         );
         this.debugText.setPosition(this.ship.x, this.ship.y - 24);
     }
@@ -151,8 +190,7 @@ export class AiUnitController {
     // Called every frame.
     updateContinuous(): void {
         if (!this.ship.active || !this.ship.body) {
-            this.debugText?.destroy();
-            this.debugText = undefined;
+            this.destroy();
             return;
         }
 
@@ -207,48 +245,133 @@ export class AiUnitController {
         return (this.radar?.getWeaponLoad('VIM-220') ?? 0) > 0 ? 'VIM-220' : 'VIM-177';
     }
 
+    // Pick the next state. With a tactician attached, its answer wins whenever
+    // it has a usable one; the scripted doctrine covers every other frame.
     private updateState(
         track: Track | undefined,
         weapon: 'VIM-220' | 'VIM-177',
         engagementTrack: Track | null,
     ): void {
-        const now = this.scene.time.now;
-        const isCargo = this.ship.shipType === 'cargo';
+        const readyToEngage = this.isReadyToEngage(weapon, engagementTrack);
+        const legal = this.legalStates(track, readyToEngage, engagementTrack);
+        const advice = this.tactician?.advise(this.buildPicture(track, weapon, readyToEngage), legal) ?? null;
+        // Whatever the tactician says, it cannot talk the ship into a state the
+        // situation does not allow — that check is the controller's, not its.
+        const advised = advice !== null && legal.includes(advice) ? advice : null;
 
-        // Highest priority: an enemy has a fire-control lock on us → defend.
-        if (this.sttTracked) {
-            this.enter(AIState.EVADE);
-            return;
-        }
+        const next = advised !== null
+            ? AIState[advised]
+            : this.scriptedState(track, readyToEngage, engagementTrack);
+        if (next !== null) this.enter(next);
+    }
 
-        // Cargo never prosecutes an attack; it just flies its route (evade above
-        // still applies).
-        if (isCargo) {
-            this.enter(AIState.PATROL);
-            return;
-        }
-
-        // Post-shot maneuvers run to completion before re-evaluating.
-        if (this.state === AIState.SKATE && now < this.skateUntil) return;
-        if (this.state === AIState.CRANK) {
-            // Keep cranking while the window is open and the engagement source
-            // (STT lock / TWS track) survives; otherwise bug out.
-            if (now < this.crankUntil && engagementTrack) return;
-            this.enter(AIState.SKATE);
-            return;
-        }
-
-        // Ready to shoot? The 177 needs its STT lock; the 220 just needs a
-        // matured TWS track (radar mode is set up during INVESTIGATE).
-        const readyToEngage = weapon === 'VIM-220'
+    // Ready to shoot? The 177 needs its STT lock; the 220 just needs a matured
+    // TWS track (radar mode is set up during INVESTIGATE).
+    private isReadyToEngage(weapon: 'VIM-220' | 'VIM-177', engagementTrack: Track | null): boolean {
+        return weapon === 'VIM-220'
             ? engagementTrack !== null
                 && engagementTrack.age >= INVESTIGATE_STT_MIN_AGE
                 && this.radar?.getMode() === 'tws'
             : engagementTrack !== null;
+    }
 
-        if (readyToEngage) this.enter(AIState.ENGAGE);
-        else if (track) this.enter(AIState.INVESTIGATE);
-        else this.enter(AIState.PATROL);
+    // The hand-written doctrine (decision_tree.md). Null means carry on: a
+    // post-shot manoeuvre is still running.
+    private scriptedState(
+        track: Track | undefined,
+        readyToEngage: boolean,
+        engagementTrack: Track | null,
+    ): AIState | null {
+        const now = this.scene.time.now;
+
+        // Highest priority: an enemy has a fire-control lock on us → defend.
+        if (this.sttTracked) return AIState.EVADE;
+
+        // Cargo never prosecutes an attack; it just flies its route (evade above
+        // still applies).
+        if (this.ship.shipType === 'cargo') return AIState.PATROL;
+
+        // Post-shot maneuvers run to completion before re-evaluating.
+        if (this.state === AIState.SKATE && now < this.skateUntil) return null;
+        if (this.state === AIState.CRANK) {
+            // Keep cranking while the window is open and the engagement source
+            // (STT lock / TWS track) survives; otherwise bug out.
+            if (now < this.crankUntil && engagementTrack) return null;
+            return AIState.SKATE;
+        }
+
+        if (readyToEngage) return AIState.ENGAGE;
+        if (track) return AIState.INVESTIGATE;
+        return AIState.PATROL;
+    }
+
+    // ── Tactician interface ────────────────────────────────────────────────
+
+    // The states that make physical sense right now — the only ones a
+    // tactician is offered. Code rules on what is possible; the tactician
+    // only judges what is wise among those.
+    private legalStates(
+        track: Track | undefined,
+        readyToEngage: boolean,
+        engagementTrack: Track | null,
+    ): TacticalStateName[] {
+        const rwr = this.radar?.rwrReceiver;
+        const legal: TacticalStateName[] = ['PATROL'];
+        if (track) legal.push('INVESTIGATE');
+        if (readyToEngage && this.missilesLeft() > 0) legal.push('ENGAGE');
+        // Cranking supports a shot already in the air, so it needs one.
+        if (engagementTrack && this.scene.time.now < this.crankUntil) legal.push('CRANK');
+        if (this.lastTargetPos) legal.push('SKATE');
+        if (rwr && rwr.getRwrSignals().length > 0) legal.push('EVADE');
+        return legal;
+    }
+
+    private buildPicture(
+        track: Track | undefined,
+        weapon: 'VIM-220' | 'VIM-177',
+        readyToEngage: boolean,
+    ): TacticalPicture {
+        const radar = this.radar;
+        const rwr = radar?.rwrReceiver.getPrimaryRwrContact();
+        const weaponRange = radar?.getMissileRange(weapon) ?? 0;
+        const offNoseDeg = track
+            ? Math.abs(Phaser.Math.Angle.WrapDegrees(this.bearingTo(track.pos) - this.ship.angle))
+            : 0;
+        const margin = world.BORDER_MARGIN;
+        const { x, y } = this.ship;
+
+        return {
+            currentState: AIState[this.state] as TacticalStateName,
+            personality: this.personality,
+            radarMode: radar?.getMode() ?? 'none',
+            contact: !track ? 'none' : track.age >= INVESTIGATE_STT_MIN_AGE ? 'mature track' : 'new track',
+            contactRange: !track ? 'no contact'
+                : track.dist <= weaponRange ? 'inside missile range' : 'outside missile range',
+            contactBearing: !track ? 'no contact'
+                : offNoseDeg <= 30 ? 'on the nose' : offNoseDeg <= 100 ? 'off the nose' : 'behind us',
+            firingSolution: readyToEngage,
+            selectedWeapon: this.missilesLeft() === 0 ? 'none left'
+                : weapon === 'VIM-220' ? 'VIM-220 fire-and-forget' : 'VIM-177 semi-active, needs our lock held',
+            missilesLeft: this.missilesLeft(),
+            // The crank window opens on a shot; it is the AI's own estimate of
+            // how long a missile it fired needs supporting.
+            ourMissileInFlight: this.scene.time.now < this.crankUntil,
+            // The skate runs on the personality's clock (skateDurationMs); Jev
+            // is no clock, so it is told where in the run we are.
+            skate: this.state !== AIState.SKATE ? 'not skating'
+                : this.scene.time.now < this.skateUntil ? 'still opening range' : 'range opened',
+            rwr: !rwr ? 'silent' : rwr.isLocked ? 'locked by enemy fire-control radar' : 'searched by enemy radar',
+            // A missile seeker reports on its own 'missile-N' key: hearing one is
+            // the RWR telling us a weapon has gone active against us.
+            missileInbound: radar?.rwrReceiver.getRwrSources().some(k => k.startsWith('missile-')) ?? false,
+            chaffLeft: this.ship.getRemainingDecoys(),
+            jammerReady: radar?.isJammerReady() ?? false,
+            nearWorldEdge: x < margin || y < margin || x > world.WIDTH - margin || y > world.HEIGHT - margin,
+        };
+    }
+
+    private missilesLeft(): number {
+        return (this.radar?.getWeaponLoad('VIM-220') ?? 0) + (this.radar?.getWeaponLoad('VIM-177') ?? 0);
     }
 
     // Transition with logging + entry side effects.
@@ -259,6 +382,11 @@ export class AiUnitController {
         }
         if (state === AIState.EVADE) {
             this.evadeSide = Phaser.Math.Between(0, 1) === 0 ? 1 : -1;
+        }
+        // A shot enters CRANK directly (executeEngage) with its side picked;
+        // a tactician choosing it later picks the side the same way.
+        if (state === AIState.CRANK && this.lastTargetPos) {
+            this.crankSide = this.sideTowardCenter(this.lastTargetPos);
         }
         this.state = state;
     }

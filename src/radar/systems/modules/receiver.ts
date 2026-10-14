@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { BeamHit, RadarReturn } from '../../data/radarReturn';
+import { BeamHit, RadarReturn, ReceivedSignal } from '../../data/radarReturn';
 import { Vector2 } from '../../../types';
 import {
   RADAR_BEAM_WIDTH_DEG,
@@ -41,6 +41,27 @@ export class Receiver {
     gasVolumes: GasVolume[],
   ): boolean {
     return Math.random() > this.gasRoundTrip(from, to, gasVolumes);
+  }
+
+  // The energy each reflection brought back, one entry per hit, measured
+  // before integration, scintillation, CFAR or the detection roll touch it —
+  // the same per-hit returnSignal processHits sums, without the decision.
+  measure(
+    hits: BeamHit[],
+    ownerPos: Vector2,
+    ratedRange: number,
+    gain: number = 1,
+  ): ReceivedSignal[] {
+    return hits.map(hit => {
+      const dx = hit.point.x - ownerPos.x;
+      const dy = hit.point.y - ownerPos.y;
+      const rangePx = Math.hypot(dx, dy);
+      return {
+        bearingDeg: Phaser.Math.RadToDeg(Math.atan2(dy, dx)),
+        rangePx,
+        signal: returnSignal(rangePx, ratedRange, hit.crossSection, hit.transmission, gain),
+      };
+    });
   }
 
   // The signal strength a dwell's worth of hits represents for the J/S

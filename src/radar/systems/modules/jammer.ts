@@ -12,6 +12,21 @@ import {
 // A single bearing/range offset applied to every spoofed return in a sweep.
 export type JammerError = { angle: number; distance: number };
 
+// The energy contest a victim radar runs against a jammer covering it: the
+// burst's power J at the receiver against the echo S of the contact it is
+// hiding, both as ratios to the noise floor. `jammed` is the outcome — the
+// jammer won and its false picture replaced the real one; otherwise the echo
+// burned through. `spoofBearingDeg` is where a winning deception put the
+// false contact, or null when nothing was spoofed (a lost contest, or STT,
+// where a winning burst swallows returns rather than displacing them).
+export type JammingContest = {
+  bearingDeg: number;
+  jammerSignal: number;
+  echoSignal: number;
+  jammed: boolean;
+  spoofBearingDeg: number | null;
+};
+
 // HUD-ready status line for the radar cone readout.
 export type JammerHudStatus = { label: string; color: string };
 

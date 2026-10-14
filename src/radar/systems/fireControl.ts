@@ -274,7 +274,11 @@ export class FireControl {
 
     // Max range (px) of the currently selected weapon, for the range indicator.
     getActiveMissileRange(): number | null {
-        const type = this.loadoutManager.getActiveType();
+        return this.getMissileRange(this.loadoutManager.getActiveType());
+    }
+
+    // Max range (px) of a weapon type: the distance it covers under motor burn.
+    getMissileRange(type: string): number | null {
         const flight = (MISSILE_FLIGHT as Record<string, { speed: number; burnTime: number }>)[type];
         return flight ? flight.speed * PHYSICS_FPS * flight.burnTime : null;
     }
