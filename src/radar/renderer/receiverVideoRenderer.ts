@@ -5,10 +5,13 @@ import { JammingContest } from "../systems/modules/jammer";
 import { beamPattern } from "../data/signalPath";
 import {
   RADAR_BEAM_WIDTH_DEG,
+  RADAR_INTEGRATION_GAIN_EXPONENT,
   RADAR_PFA,
   RECEIVER_VIDEO_BIN_DEG,
+  RECEIVER_VIDEO_ECHO_GAIN_DB,
   RECEIVER_VIDEO_MAX_DB,
   RECEIVER_VIDEO_MIN_DB,
+  RECEIVER_VIDEO_OFF_SECTOR_ALPHA,
   RECEIVER_VIDEO_PERSISTENCE,
   RECEIVER_VIDEO_PX_PER_DB,
   RECEIVER_VIDEO_RADIUS_PX,
@@ -43,6 +46,8 @@ const EVEN_ODDS_SIGNAL = Math.log(RADAR_PFA) / Math.log(0.5) - 1;
 export class ReceiverVideoRenderer {
   // Echo power per bin from the latest sweep (ratio to the noise floor).
   private echo = new Float32Array(BIN_COUNT);
+  // Pulses integrated into each bin's echo this sweep.
+  private pulses = new Float32Array(BIN_COUNT);
   // Jammer burst power per bin from the latest contest, 0 where none.
   private jam = new Float32Array(BIN_COUNT);
   private contest: JammingContest | null = null;
@@ -63,8 +68,20 @@ export class ReceiverVideoRenderer {
   // Replace the picture with what the receiver measured this sweep (or this
   // frame, in STT), and the jamming contest if one was run.
   update(signals: ReceivedSignal[], contest: JammingContest | null = null): void {
+    // A search sweep paints a contact with several pulses as the beam slides
+    // across it, and the detector integrates them (sum / N^exponent — the √N
+    // law in Receiver.processHits). Drawing that integrated power rather than
+    // one pulse shows the evidence the detector actually weighed. STT puts
+    // one pulse per frame on the target, so there N = 1 and nothing changes.
+    // The echo gain on top is display-only — see RECEIVER_VIDEO_ECHO_GAIN_DB.
     this.echo.fill(0);
-    for (const s of signals) ReceiverVideoRenderer.spread(this.echo, s.bearingDeg, s.signal);
+    this.pulses.fill(0);
+    for (const s of signals) ReceiverVideoRenderer.integrate(this.echo, this.pulses, s.bearingDeg, s.signal);
+    const gain = Math.pow(10, RECEIVER_VIDEO_ECHO_GAIN_DB / 10);
+    for (let bin = 0; bin < BIN_COUNT; bin++) {
+      if (this.pulses[bin] === 0) continue;
+      this.echo[bin] *= gain / Math.pow(this.pulses[bin], RADAR_INTEGRATION_GAIN_EXPONENT);
+    }
     this.jam.fill(0);
     this.contest = contest;
     if (contest) ReceiverVideoRenderer.spread(this.jam, contest.bearingDeg, contest.jammerSignal);
@@ -92,7 +109,14 @@ export class ReceiverVideoRenderer {
     );
   }
 
-  render(graphics: Phaser.GameObjects.Graphics, ownerPos: Vector2): void {
+  // `listening` is the sector the antenna can look into; null = nowhere.
+  // Echoes can only arrive from inside it, so the trace is drawn bright
+  // there and only as faint receiver noise round the rest of the ring.
+  render(
+    graphics: Phaser.GameObjects.Graphics,
+    ownerPos: Vector2,
+    listening: { centreDeg: number; widthDeg: number } | null = null,
+  ): void {
     // Reference circles: the noise floor and the even-odds detection level.
     const evenOddsRadius = ReceiverVideoRenderer.radiusAt(ReceiverVideoRenderer.toDb(EVEN_ODDS_SIGNAL));
     graphics.lineStyle(1, 0x00ff00, 0.2);
@@ -109,8 +133,14 @@ export class ReceiverVideoRenderer {
       const r = ReceiverVideoRenderer.radiusAt(ReceiverVideoRenderer.toDb(this.noise[bin] + this.echo[bin]));
       points.push(ReceiverVideoRenderer.pointAt(ownerPos, ReceiverVideoRenderer.binBearing(bin), r));
     }
-    graphics.lineStyle(1.5, 0x00ff00, 0.7);
+    graphics.lineStyle(1, 0x00ff00, RECEIVER_VIDEO_OFF_SECTOR_ALPHA);
     graphics.strokePoints(points, true, true);
+    const live = ReceiverVideoRenderer.sectorPoints(points, listening);
+    if (live.length > 1) {
+      graphics.lineStyle(1.5, 0x00ff00, 0.7);
+      const whole = live.length === BIN_COUNT;
+      graphics.strokePoints(live, whole, whole);
+    }
 
     this.renderContest(graphics, ownerPos);
 
@@ -154,7 +184,7 @@ export class ReceiverVideoRenderer {
       lobe.push(ReceiverVideoRenderer.pointAt(ownerPos, ReceiverVideoRenderer.binBearing(bin), r));
     }
     graphics.lineStyle(2, 0xff3030, 0.8);
-    graphics.strokePoints(lobe, false, true);
+    graphics.strokePoints(lobe, false, false);
 
     if (contest.spoofBearingDeg !== null) {
       const inner = ReceiverVideoRenderer.pointAt(ownerPos, contest.spoofBearingDeg, RECEIVER_VIDEO_RADIUS_PX - 12);
@@ -189,6 +219,37 @@ export class ReceiverVideoRenderer {
       ratio,
       verdict,
     ];
+  }
+
+  // The run of trace points inside the listening sector, in bearing order. A
+  // sector may straddle the 0°/360° seam, so it is walked from its start bin
+  // rather than filtered, keeping it one unbroken arc.
+  private static sectorPoints(
+    points: Phaser.Math.Vector2[],
+    listening: { centreDeg: number; widthDeg: number } | null,
+  ): Phaser.Math.Vector2[] {
+    if (!listening) return [];
+    if (listening.widthDeg >= 360) return points;
+    const startDeg = listening.centreDeg - listening.widthDeg / 2;
+    const first = Math.floor((((startDeg % 360) + 360) % 360) / RECEIVER_VIDEO_BIN_DEG);
+    const count = Math.ceil(listening.widthDeg / RECEIVER_VIDEO_BIN_DEG) + 1;
+    const run: Phaser.Math.Vector2[] = [];
+    for (let i = 0; i < count; i++) run.push(points[(first + i) % BIN_COUNT]);
+    return run;
+  }
+
+  // Add one pulse's power into the bins around its bearing, shaped by the
+  // beam pattern, counting the pulses each bin collects so update() can
+  // apply the integration law. The echo is summed, unlike the jammer burst.
+  private static integrate(sums: Float32Array, counts: Float32Array, bearingDeg: number, power: number): void {
+    const spreadBins = Math.ceil(2 * RADAR_BEAM_WIDTH_DEG / RECEIVER_VIDEO_BIN_DEG);
+    const centre = Math.floor((((bearingDeg % 360) + 360) % 360) / RECEIVER_VIDEO_BIN_DEG) % BIN_COUNT;
+    for (let k = -spreadBins; k <= spreadBins; k++) {
+      const bin = (centre + k + BIN_COUNT) % BIN_COUNT;
+      const offAxis = Phaser.Math.Angle.WrapDegrees(ReceiverVideoRenderer.binBearing(bin) - bearingDeg);
+      sums[bin] += power * beamPattern(offAxis, RADAR_BEAM_WIDTH_DEG);
+      counts[bin]++;
+    }
   }
 
   // Lay one source's power onto the bins around its bearing, shaped by the

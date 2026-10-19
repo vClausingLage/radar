@@ -420,6 +420,20 @@ export const RECEIVER_VIDEO_PX_PER_DB = 2.5;
 export const RECEIVER_VIDEO_MIN_DB = -10;
 export const RECEIVER_VIDEO_MAX_DB = 40;
 
+// Display-only boost applied to the echo (not to the noise) before it is
+// drawn, in dB. Not physics: the detector never sees it. A search-mode echo
+// near the ring sits a few dB under the floor per pulse, and adding 0.4 to a
+// noise mean of 1 moves the trace barely a pixel or two — real, but lost in
+// the grass. This is the scope's "video gain" knob turned up so the lesson
+// (an echo pushes the trace out at its bearing, harder as it closes) reads
+// in RWS/TWS too. 0 = the honest picture.
+export const RECEIVER_VIDEO_ECHO_GAIN_DB = 10;
+
+// Opacity of the trace outside the sector the antenna can look into. No echo
+// can arrive from there, so it is shown as faint receiver noise only — kept
+// rather than cut so the ring still reads as a ring. 0 = crop it entirely.
+export const RECEIVER_VIDEO_OFF_SECTOR_ALPHA = 0.2;
+
 // Phosphor persistence: the fraction of last frame's noise that carries over
 // into this frame's, so the noise reads as grass instead of flicker. 0 =
 // a fresh draw every frame.
@@ -618,6 +632,12 @@ export const decoySettings = {
     // rule terrain competes under. Sized against the biggest hulls so fresh
     // chaff out-reflects most ships, which is the point of throwing it.
     CROSS_SECTION: 3.5,
+    // px of clear space between the hull's edge and the near edge of a fresh
+    // cloud. Chaff is ejected aft and blooms behind the dispenser; a cloud
+    // laid over the ship would wrap the antenna, and every pulse would echo
+    // off it at point-blank range before reaching anything — the ship blinding
+    // its own forward radar. Turning back into the cloud still does that.
+    SPAWN_CLEARANCE_PX: 10,
 }
 
 // ── Gas clouds (entities/gasCloud.ts, data/signalPath.ts) ────────────────────

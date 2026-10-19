@@ -28,7 +28,7 @@ export default class OneOnOne extends Game {
 
     protected buildScenario(): void {
         this.targets.push(this.add.target({
-            x: this.world.width - world.BORDER_MARGIN,
+            x: this.world.width - 1200,
             y: this.world.height / 2,
             direction: 180,
             speed: .1,

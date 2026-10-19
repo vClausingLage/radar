@@ -439,7 +439,13 @@ export class Radar {
 
         // Paint the ground-mapping picture (persisted, decaying terrain returns).
         this.terrainMapper.render(graphics, ownerPos, this.range, this.scene.time.now);
-        this.receiverVideoRenderer?.render(graphics, ownerPos);
+        // The receiver only listens where the antenna can point: the search
+        // sector (STT stares inside the RWS cone it can gimbal across). With
+        // the transmitter off there is no sector — noise only, all round.
+        const listening = this.mode === 'emcon'
+            ? null
+            : { centreDeg: shipDirection, widthDeg: this.antenna.getAzimuth(this.mode === 'stt' ? 'rws' : this.mode) };
+        this.receiverVideoRenderer?.render(graphics, ownerPos, listening);
     }
 
     // ── RWS sweep ─────────────────────────────────────────────────────────

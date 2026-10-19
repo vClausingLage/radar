@@ -211,6 +211,7 @@ const jevGatesItsAnswers: GameTest = {
             ourMissileInFlight: false,
             skate: 'not skating',
             rwr: 'locked by enemy fire-control radar',
+            emitterHeard: 'heard just now',
             missileInbound: false,
             chaffLeft: 5,
             jammerReady: true,
@@ -247,6 +248,53 @@ const jevGatesItsAnswers: GameTest = {
         const counting = new JevTactician(async (_request: JevRequest) => { asked++; return canned('PATROL', 1)(); });
         await adviceAfterAnswer(counting, ['PATROL']);
         ctx.check('a single-option picture is never asked', asked === 0, `${asked} requests`);
+
+        // No fight: nothing on the scope, no lock, no missile, only a radar
+        // heard somewhere. PATROL or HUNT is the doctrine's call, not Jev's.
+        asked = 0;
+        const calm: TacticalPicture = { ...picture, rwr: 'searched by enemy radar' };
+        counting.advise(calm, ['PATROL', 'HUNT']);
+        await ctx.frames(3);
+        counting.advise(calm, ['PATROL', 'HUNT']);
+        ctx.check('outside a fight Jev is never asked', asked === 0, `${asked} requests`);
+    },
+};
+
+// (e) An RWR warning is a lead, not a passing scare. The player's search beam
+// sweeps a drone whose nose points away — its own radar cannot see the player,
+// only its RWR hears him. Then the player goes silent: the RWR contact ages
+// out, but the drone keeps hunting down the bearing it heard instead of
+// dropping back into its patrol.
+const rwrBearingIsHunted: GameTest = {
+    name: 'A heard radar is hunted after the warning fades',
+    description: 'A drone facing away from the player hears his search radar and hunts; after the player '
+        + 'goes to EMCON and the RWR falls silent, it is still hunting that bearing.',
+    async run(ctx) {
+        const boresight = ctx.player.getDirection();
+        const drone = ctx.scene.spawnDrone({
+            bearingDeg: boresight,
+            rangePx: DRONE_RANGE_PX,
+            facingDeg: boresight,
+            emitting: true,
+        });
+        // 'active' so the hunt is allowed; at speed 0 and turn rate 0 the
+        // drone still cannot move or turn, so its radar never finds the player.
+        drone.controller?.destroy();
+        const stub = new RecordingTactician(() => null);
+        drone.controller = new AiUnitController(
+            ctx.scene, drone, 0, false, drone.radar, drone.id, 'active', stub,
+        );
+
+        const hunting = await ctx.waitUntil(() => stub.lastState() === 'HUNT', FRAMES_PER_SWEEP * 6);
+        ctx.check('hearing the player, the drone hunts', hunting, `last state ${stub.lastState() ?? 'none'}`);
+
+        ctx.player.radar.enterEmcon();
+        const silent = await ctx.waitUntil(() => drone.radar.rwrReceiver.getRwrSignals().length === 0, 400);
+        await ctx.frames(30);
+        ctx.check('the RWR has gone silent', silent);
+        ctx.check('it is still hunting the bearing', stub.lastState() === 'HUNT',
+            `last state ${stub.lastState() ?? 'none'}`);
+        ctx.player.radar.enterRws();
     },
 };
 
@@ -255,4 +303,5 @@ export const tacticianTests: GameTest[] = [
     pictureIsOwnSensorsOnly,
     legalAdviceOverridesDoctrine,
     jevGatesItsAnswers,
+    rwrBearingIsHunted,
 ];

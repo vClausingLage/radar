@@ -38,8 +38,8 @@ const BACKOFF_MAX_MS = 30000;
 // The question carries the shape of the fight — the engagement cycle and what
 // personality means — so the per-state criteria only have to say when.
 const QUESTION = 'You are the tactical judgement of a hostile space fighter in a radar duel. '
-    + 'The engagement cycle is INVESTIGATE, ENGAGE, CRANK, then SKATE; EVADE interrupts it only when '
-    + 'we are locked or a missile is inbound. An aggressive pilot presses the attack, a defensive one '
+    + 'The engagement cycle is INVESTIGATE, ENGAGE, CRANK, then SKATE, and a HUNT down the bearing of a '
+    + 'heard radar can lead into it; EVADE interrupts it only when we are locked or a missile is inbound. An aggressive pilot presses the attack, a defensive one '
     + 'takes fewer risks. Given what its own radar and radar warning receiver report, which tactical '
     + 'state should it be in now?';
 
@@ -49,9 +49,11 @@ const QUESTION = 'You are the tactical judgement of a hostile space fighter in a
 // state does alone left Jev agreeing with doctrine on a third of the recorded
 // pictures and dropping chaff against radars that were only searching.
 const STATE_CRITERIA: Record<TacticalStateName, string> = {
-    PATROL: 'Fly the search pattern with the radar in wide search. Choose when we hold no radar contact and no enemy '
-        + 'radar has locked us. Being merely searched is no reason to leave patrol: patrol already turns a defensive '
-        + 'pilot away from a searching radar and an aggressive one toward it.',
+    PATROL: 'Fly the search pattern with the radar in wide search. Choose when we hold no radar contact, no enemy '
+        + 'radar has locked us, and no enemy radar has been heard worth hunting.',
+    HUNT: 'Fly down the bearing an enemy radar was heard on, to bring it inside our own radar\'s reach: its emission '
+        + 'is heard much further out than our radar can see it. A defensive pilot approaches with its own radar '
+        + 'silent at first. Choose when an enemy radar was heard, we hold no contact, and we are not locked.',
     INVESTIGATE: 'Close on the radar contact we hold to mature its track and set up a missile shot. Choose when we '
         + 'hold a contact but have no firing solution yet, and we are not locked.',
     ENGAGE: 'Fire the selected missile at the contact. Choose when we have a firing solution and the contact is '
@@ -109,6 +111,8 @@ export class JevTactician implements Tactician {
     // a response landing between frames can replace before the label is drawn.
     private applied: Answer | null = null;
     private destroyed = false;
+    // No fight on the last advise(): Jev was not consulted.
+    private idle = false;
 
     constructor(private readonly transport: JevTransport = viaDevProxy) {}
 
@@ -118,8 +122,10 @@ export class JevTactician implements Tactician {
     // time: the wait is a network round trip, whatever the sim clock is doing.
     advise(picture: TacticalPicture, legal: TacticalStateName[]): TacticalStateName | null {
         const now = performance.now();
-        // One legal option is no decision: leave it to the script, and save the call.
-        if (legal.length < 2) {
+        // One legal option is no decision, and outside a fight the doctrine's
+        // answer is the obvious one: leave both to the script, and save the call.
+        this.idle = !JevTactician.isFight(picture);
+        if (legal.length < 2 || this.idle) {
             this.applied = null;
             return null;
         }
@@ -127,6 +133,20 @@ export class JevTactician implements Tactician {
 
         this.applied = this.isUsable(this.answer, picture, legal, now) ? this.answer : null;
         return this.applied?.state ?? null;
+    }
+
+    // Jev is asked only where judgement changes the outcome: from the moment
+    // our radar holds something, a shot is in the air, we are running from one,
+    // or an enemy has locked us. Patrolling, and hunting down a bearing the RWR
+    // heard, are routine the doctrine flies as well as Jev would — and they
+    // are most of a sortie, so most of the calls this saves.
+    static isFight(picture: TacticalPicture): boolean {
+        return picture.contact !== 'none'
+            || picture.ourMissileInFlight
+            || picture.skate !== 'not skating'
+            || picture.rwr === 'locked by enemy fire-control radar'
+            || picture.missileInbound
+            || picture.currentState === 'EVADE';
     }
 
     private isUsable(
@@ -193,6 +213,7 @@ export class JevTactician implements Tactician {
 
     // DEV label: whether Jev is flying this frame, how sure it was, how long it took.
     getDebugLabel(): string {
+        if (!this.applied && !this.inFlight && this.idle) return 'JEV idle (no fight)';
         const shown = this.applied ?? this.answer;
         if (!shown) return 'JEV --';
         const pct = Math.round(shown.confidence * 100);

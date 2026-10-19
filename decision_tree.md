@@ -24,14 +24,19 @@ Patrol -> radar set mode RWS -> track ?
 							-> skate/banzai
 
 Patrol -> rwr warning ?
-	-> turn to rwr warning direction
-	-> Patrol
+	-> Hunt: remember the warning's bearing (20 s after it was last heard) and
+	   fly down it. An RWR gives a bearing, never a range, and hears an enemy
+	   radar far beyond the range our radar can paint it at (emission ~ range²,
+	   echo ~ range⁴), so the warning is a lead worth following, not a scare.
+		-> aggressive: radar searching (RWS) all the way in
+		-> defensive: radar silent (EMCON) for the first 8 s, listening only,
+		   then radiate. Only a hunt begun from patrol opens silent; one resumed
+		   after losing a contact keeps radiating.
 		-> track ?
-			-> fly in direction of track
-			-> fly in direction of warning
-				-> track ?
-					-> lock and shoot (see above)
-					-> wait for track
+			-> investigate -> lock and shoot (see above)
+		-> bearing not heard again for 20 s -> Patrol
+	(Missile seekers are not hunted — their bearing points at the weapon.
+	 Radar cannot tell sides, so a friendly's radar is hunted too.)
 
 Patrol -> rwr lock warning ?
 	-> deploy decoy -> go in flanking direction (evade missile)
@@ -58,11 +63,15 @@ and returns a probability per option plus a confidence.
 Split of responsibility
 - Code decides what is POSSIBLE: the controller offers only the legal states
   (ENGAGE needs a firing solution and missiles, CRANK a shot in the air, SKATE
-  a last known target, EVADE an RWR contact) and refuses anything else.
+  a last known target, EVADE an RWR contact, HUNT a remembered emitter bearing) and refuses anything else.
 - Jev decides what is WISE among those.
 - The scripted doctrine flies every frame Jev has no usable answer for:
   none yet, stale (> 2.5 s), unsure (< 50 % confidence), not on offer, or a
   failed request. Only one legal option = no question asked.
+- Jev is only asked in a fight (`JevTactician.isFight`): a contact on our
+  scope, our missile in the air, a skate running, an enemy lock, a missile
+  inbound, or already evading. Patrol and hunt are routine the doctrine flies
+  as well as Jev would, and they are most of a sortie — so most of the calls.
 
 The picture (what Jev is told)
 - Only the ship's own radar, RWR and stores — never the entity list.

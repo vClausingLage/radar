@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { GameTest, TestContext } from './testHarness';
-import { RADAR_DEFAULT_RANGE_PX } from '../radar/data/radarGameSettings';
+import { decoySettings, RADAR_DEFAULT_RANGE_PX } from '../radar/data/radarGameSettings';
 import { Target } from '../entities/ship';
 
 // In-game tests for the player radar's signal path: how far the emission
@@ -481,14 +481,18 @@ const chaffShowsAsContactAndMasks: GameTest = {
 
         ctx.check('the radar holds a contact through the cloud', trackedFrames > samples * 0.8,
             `tracked ${((trackedFrames / samples) * 100).toFixed(0)}% of the run`);
-        // The contact sits on the cloud (20-90px off the hull), never back on
-        // it — the hull behind the cloud has stopped being sampled. Before the
-        // chaff, the same tracking sat within ~10px of the hull.
+        // The cloud is laid just clear of the tail (Ship.deployDecoy), so the
+        // contact sits somewhere on it — past the hull's edge, never back on
+        // the hull, which behind the cloud has stopped being sampled. Before
+        // the chaff, the same tracking sat within ~10px of the hull.
+        const hullRadius = drone.getCircle().radius;
+        const cloudCentre = hullRadius + decoySettings.RADIUS + decoySettings.SPAWN_CLEARANCE_PX;
         ctx.check('the contact is on the cloud, not the hull',
-            Number.isFinite(minOffset) && minOffset > 20 && maxOffset < 90,
+            Number.isFinite(minOffset) && minOffset > hullRadius
+                && maxOffset < cloudCentre + decoySettings.RADIUS,
             `track ranged ${formatOffset(minOffset)}-${formatOffset(maxOffset)} from the hull`);
         ctx.check('the cloud is where the track should be',
-            Phaser.Math.Distance.Between(cloud.x, cloud.y, drone.x, drone.y) < 120);
+            Math.abs(Phaser.Math.Distance.Between(cloud.x, cloud.y, drone.x, drone.y) - cloudCentre) < 1);
     },
 };
 

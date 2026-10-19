@@ -135,10 +135,11 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
     private decoys: Decoy[] = [];
     private remainingDecoys = decoySettings.COUNT;
 
-    // Deploy a chaff cloud slightly behind the ship. No-op once depleted.
+    // Deploy a chaff cloud just clear of the ship's tail, so it never wraps
+    // the ship's own antenna. No-op once depleted.
     deployDecoy(): void {
         if (this.remainingDecoys <= 0) return;
-        const spawnDistance = this.getCircle().radius;
+        const spawnDistance = this.getCircle().radius + decoySettings.RADIUS + decoySettings.SPAWN_CLEARANCE_PX;
         const rearDirectionRad = Phaser.Math.DegToRad(this.getDirection() + 180);
         const decoyX = this.x + Math.cos(rearDirectionRad) * spawnDistance;
         const decoyY = this.y + Math.sin(rearDirectionRad) * spawnDistance;

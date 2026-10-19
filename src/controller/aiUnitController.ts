@@ -5,7 +5,7 @@ import { Track } from '../radar/data/track';
 import { world } from '../settings';
 
 // Behaviour states. The engagement flow is a cycle rather than a single state:
-//   INVESTIGATE → ENGAGE (shoot) → CRANK (support + open range) → SKATE (bug out)
+//   (HUNT →) INVESTIGATE → ENGAGE (shoot) → CRANK (support + open range) → SKATE (bug out)
 // EVADE pre-empts everything the moment an enemy fire-control lock is detected.
 enum AIState {
     PATROL,      // No contacts — flying a search ladder
@@ -14,6 +14,7 @@ enum AIState {
     CRANK,       // Just fired: turn target to the cone edge to open range (F-pole)
     SKATE,       // Missile away/spent: break lock and run
     EVADE,       // Being locked by an enemy — defend the shot
+    HUNT,        // No contact, but an enemy radar was heard — fly down its bearing
 }
 
 export type TacticalStateName = keyof typeof AIState;
@@ -50,6 +51,9 @@ export type TacticalPicture = {
     ourMissileInFlight: boolean;
     skate: 'not skating' | 'still opening range' | 'range opened';
     rwr: 'silent' | 'searched by enemy radar' | 'locked by enemy fire-control radar';
+    // The bearing an enemy radar was last heard on, kept after the RWR
+    // contact itself has aged out — what HUNT flies down.
+    emitterHeard: 'never' | 'heard just now' | 'heard a while ago';
     missileInbound: boolean;
     chaffLeft: number;
     jammerReady: boolean;
@@ -70,6 +74,16 @@ const PATROL_LEG_PX = 500;            // straight leg of the search ladder
 const PATROL_STEP_PX = 150;           // sideways step between legs
 const PATROL_MARGIN_PX = 300;         // keep the ladder this far off the world edge
 const ROUTE_ARRIVAL_PX = 60;          // a fixed route's destination counts as reached this close
+// An RWR gives a bearing, never a range, and hears an enemy radar far beyond
+// the range our own radar can paint it at (emission falls with range², the
+// echo with range⁴ — data/signalPath.ts). So a heard emitter is remembered as
+// a bearing line, flown down for this long after the last time it was heard.
+const HUNT_MEMORY_MS = 20000;
+const HUNT_RECENT_MS = 4000;          // heard within this = "heard just now" in the picture
+// A defensive hunter approaches with its transmitter off — listening is
+// silent, radiating would give it away — and only turns its radar on this
+// long into the hunt, hopefully close enough to paint what it heard.
+const HUNT_PASSIVE_MS = 8000;
 
 export class AiUnitController {
     private state: AIState = AIState.PATROL;
@@ -90,6 +104,10 @@ export class AiUnitController {
     // the lock (and thus the live track) is gone.
     private lastTargetPos: { x: number; y: number } | null = null;
     private nextDecoyAt = 0;
+
+    // Last enemy platform radar the RWR heard: its bearing and when.
+    private heardEmitter: { bearingDeg: number; heardAt: number } | null = null;
+    private huntStartedAt = 0;
 
     // Patrol search ladder.
     private patrolRoute: { x: number; y: number }[] = [];
@@ -173,7 +191,7 @@ export class AiUnitController {
 
     private updateDebugText(): void {
         if (!this.debugText) return;
-        const stateNames = ['PATROL', 'INVESTIGATE', 'ENGAGE', 'CRANK', 'SKATE', 'EVADE'];
+        const stateNames = ['PATROL', 'INVESTIGATE', 'ENGAGE', 'CRANK', 'SKATE', 'EVADE', 'HUNT'];
         const lock = this.sttLockAcquiredAt !== null
             ? `L:${Math.floor((this.scene.time.now - this.sttLockAcquiredAt) / 1000)}s`
             : 'L:--';
@@ -212,6 +230,8 @@ export class AiUnitController {
 
         // Are we being locked by an enemy fire-control radar? (from our RWR)
         this.sttTracked = radar?.rwrReceiver.getPrimaryRwrContact()?.isLocked ?? false;
+        const platform = radar?.rwrReceiver.getPlatformContact();
+        if (platform) this.heardEmitter = { bearingDeg: platform.bearingDeg, heardAt: this.scene.time.now };
 
         this.updateSttLockTracking(sttTrack?.id ?? null);
         this.updateState(preferredTrack, weapon, engagementTrack);
@@ -222,6 +242,7 @@ export class AiUnitController {
             case AIState.CRANK: this.executeCrank(weapon, engagementTrack); break;
             case AIState.ENGAGE: this.executeEngage(weapon, engagementTrack); break;
             case AIState.INVESTIGATE: this.executeInvestigate(preferredTrack, weapon); break;
+            case AIState.HUNT: this.executeHunt(); break;
             case AIState.PATROL: this.executePatrol(); break;
         }
 
@@ -302,7 +323,17 @@ export class AiUnitController {
 
         if (readyToEngage) return AIState.ENGAGE;
         if (track) return AIState.INVESTIGATE;
+        if (this.canHunt()) return AIState.HUNT;
         return AIState.PATROL;
+    }
+
+    // A remembered emitter bearing is worth flying down — by a warship, not
+    // by cargo, and not by an emplacement that cannot move.
+    private canHunt(): boolean {
+        return this.ship.shipType !== 'cargo'
+            && this.activity === 'active'
+            && this.heardEmitter !== null
+            && this.scene.time.now - this.heardEmitter.heardAt < HUNT_MEMORY_MS;
     }
 
     // ── Tactician interface ────────────────────────────────────────────────
@@ -318,6 +349,7 @@ export class AiUnitController {
         const rwr = this.radar?.rwrReceiver;
         const legal: TacticalStateName[] = ['PATROL'];
         if (track) legal.push('INVESTIGATE');
+        if (this.canHunt()) legal.push('HUNT');
         if (readyToEngage && this.missilesLeft() > 0) legal.push('ENGAGE');
         // Cranking supports a shot already in the air, so it needs one.
         if (engagementTrack && this.scene.time.now < this.crankUntil) legal.push('CRANK');
@@ -361,6 +393,8 @@ export class AiUnitController {
             skate: this.state !== AIState.SKATE ? 'not skating'
                 : this.scene.time.now < this.skateUntil ? 'still opening range' : 'range opened',
             rwr: !rwr ? 'silent' : rwr.isLocked ? 'locked by enemy fire-control radar' : 'searched by enemy radar',
+            emitterHeard: !this.heardEmitter ? 'never'
+                : this.scene.time.now - this.heardEmitter.heardAt < HUNT_RECENT_MS ? 'heard just now' : 'heard a while ago',
             // A missile seeker reports on its own 'missile-N' key: hearing one is
             // the RWR telling us a weapon has gone active against us.
             missileInbound: radar?.rwrReceiver.getRwrSources().some(k => k.startsWith('missile-')) ?? false,
@@ -379,6 +413,14 @@ export class AiUnitController {
         if (this.state === state) return;
         if (state === AIState.SKATE) {
             this.skateUntil = this.scene.time.now + this.skateDurationMs();
+        }
+        // Only a hunt begun from patrol opens silent. One resumed after losing
+        // a contact keeps radiating: the enemy already knows we are there,
+        // and going quiet would only throw away the picture.
+        if (state === AIState.HUNT) {
+            this.huntStartedAt = this.state === AIState.PATROL
+                ? this.scene.time.now
+                : this.scene.time.now - HUNT_PASSIVE_MS;
         }
         if (state === AIState.EVADE) {
             this.evadeSide = Phaser.Math.Between(0, 1) === 0 ? 1 : -1;
@@ -417,15 +459,6 @@ export class AiUnitController {
             return;
         }
 
-        // React to being painted (unlocked RWR contact) before we have a track:
-        // aggressive turns toward the emitter to acquire, defensive turns away.
-        const rwr = this.radar?.rwrReceiver.getPrimaryRwrContact();
-        if (rwr) {
-            const heading = this.personality === 'aggressive' ? rwr.bearingDeg : rwr.bearingDeg + 180;
-            this.turnTowardAngle(heading);
-            return;
-        }
-
         // A raider handed an ingress route flies it instead of a search ladder:
         // the route is its search. Whatever its radar finds on the way pulls it
         // off into the engagement cycle, and it rejoins the route afterwards.
@@ -435,6 +468,23 @@ export class AiUnitController {
         }
 
         this.followPatrolLadder();
+    }
+
+    // Fly down the bearing an enemy radar was heard on, to bring it inside our
+    // own radar's reach — the RWR heard it far beyond that. The aggressive
+    // pilot searches all the way in; the defensive one listens in EMCON
+    // first, so the hunted ship's RWR has nothing to hear, then radiates.
+    // A track turns the hunt into INVESTIGATE (scriptedState).
+    private executeHunt(): void {
+        if (!this.heardEmitter) return;
+        const passive = this.personality === 'defensive'
+            && this.scene.time.now - this.huntStartedAt < HUNT_PASSIVE_MS;
+        if (passive) {
+            if (this.radar?.getMode() !== 'emcon') this.radar?.enterEmcon();
+        } else if (this.radar?.getMode() !== 'rws') {
+            this.radar?.enterRws();
+        }
+        this.turnTowardAngle(this.heardEmitter.bearingDeg);
     }
 
     private executeInvestigate(track: Track | undefined, weapon: 'VIM-220' | 'VIM-177'): void {

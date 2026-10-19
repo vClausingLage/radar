@@ -53,6 +53,18 @@ export class RwrReceiver {
     return Array.from(this.contacts.keys());
   }
 
+  // The loudest platform — a ship radar, not a missile seeker — locked first.
+  // A seeker's bearing points at the weapon, which is something to defend
+  // against, never something to fly toward; a platform is worth hunting.
+  getPlatformContact(): RwrContact | null {
+    let best: RwrContact | null = null;
+    for (const [key, contact] of this.contacts) {
+      if (key.startsWith('missile-')) continue;
+      if (!best || (contact.isLocked && !best.isLocked)) best = contact;
+    }
+    return best;
+  }
+
   getPrimaryRwrContact(): RwrContact | null {
     const all = this.getRwrSignals();
     if (all.length === 0) return null;
