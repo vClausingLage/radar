@@ -10,16 +10,16 @@
     "preview": "vite preview"
   },
   "devDependencies": {
-    "@elevenlabs/elevenlabs-js": "^2.59.0",
+    "@elevenlabs/elevenlabs-js": "^2.74.0",
     "@eslint/js": "^10.0.1",
-    "@types/node": "^26.1.1",
-    "@typescript-eslint/eslint-plugin": "^8.69.0",
-    "@typescript-eslint/parser": "^8.69.0",
-    "eslint": "^10.9.1",
-    "globals": "^17.8.0",
+    "@types/node": "^26.6.5",
+    "@typescript-eslint/eslint-plugin": "^8.72.0",
+    "@typescript-eslint/parser": "^8.72.0",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
     "openai": "^6.49.0",
     "typescript": "~6.0.3",
-    "vite": "^8.1.5"
+    "vite": "^8.3.5"
   },
   "dependencies": {
     "phaser": "^4.2.1"
