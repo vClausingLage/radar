@@ -410,10 +410,15 @@ const mtiMasksStationaryContact: GameTest = {
             rangePx: 340,
             // Flying inward, away from its rock: the hull flies the gap open
             // rather than nose-first into it, and its closing rate is still
-            // the radial rate the notch asks about.
+            // the radial rate the notch asks about. Three times cruise: a
+            // cargo hull glints ~30px in range while parked, and at cruise
+            // (6px a sweep, 18px across the four-sweep baseline) it never
+            // outruns that, so a scan-to-scan MTI cannot tell it from the
+            // parked one — it used to pass only when the glint happened to
+            // fall its way. Running in at 18px a sweep it clearly does.
             facingDeg: boresight + 25 + 180,
             hull: 'cargo',
-            speed: 0.1,
+            speed: 0.3,
         });
 
         let parkedEverConfirmed = false;

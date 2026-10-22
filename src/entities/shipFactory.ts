@@ -5,6 +5,7 @@ import { Radar } from '../radar/systems/radar';
 import { InterfaceRenderer } from '../radar/renderer/interfaceRenderer';
 import { RadarRenderer } from '../radar/renderer/radarRenderer';
 import { TerrainRenderer } from '../radar/renderer/terrainRenderer';
+import { ReceiverVideoRenderer } from '../radar/renderer/receiverVideoRenderer';
 import { AiUnitController, UnitActivity } from '../controller/aiUnitController';
 import { JevTactician } from '../controller/jevTactician';
 import { PlayerController } from '../controller/playerController';
@@ -17,10 +18,11 @@ import { targetShipSettings } from '../settings';
 // radar, jammer and weapons keep working. `side` defaults to hostile. `route`
 // hands a cargo ship a fixed itinerary — a flight from A to B with a
 // destination — instead of the endless loop it otherwise flies. `brain` picks
-// who makes the tactical calls: the scripted doctrine (default) or Jev, the
-// decision model behind the dev server's /api/jev proxy. Jev is DEV-only — a
-// production build has no proxy to hold the key — and cruiser-only: cargo
-// never fights, so it has nothing to decide.
+// who makes the tactical calls: the scripted doctrine or Jev, the decision
+// model behind the dev server's /api/jev proxy; unset, it is
+// targetShipSettings.CRUISER_BRAIN. Jev is DEV-only — a production build has
+// no proxy to hold the key — and cruiser-only: cargo never fights, so it has
+// nothing to decide.
 export type TargetParams = {
   x: number;
   y: number;
@@ -69,6 +71,9 @@ export const createPlayerShipFactory = () => {
     ship.radar.setRadarRenderer(radarRenderer);
     // Ground-mapping display for terrain returns (player-only, like above).
     ship.radar.setTerrainRenderer(new TerrainRenderer());
+    // Receiver video ring: the raw echo and jamming power around the ship,
+    // before the detector has judged it (player-only, like above).
+    ship.radar.setReceiverVideoRenderer(new ReceiverVideoRenderer(this.scene));
 
     const interfaceRenderer = new InterfaceRenderer(this.scene, ship);
     interfaceRenderer.createInterface(ship);
@@ -98,7 +103,8 @@ export const createPlayerShipFactory = () => {
     target.setMissileNoCollideGroup(targetMissileNoCollideGroup);
     target.addToDisplayList();
     target.addToUpdateList();
-    const useJev = params.brain === 'jev' && params.type === 'cruiser' && import.meta.env.DEV;
+    const brain = params.brain ?? targetShipSettings.CRUISER_BRAIN;
+    const useJev = brain === 'jev' && params.type === 'cruiser' && import.meta.env.DEV;
     const controller = new AiUnitController(
       this.scene, target, 0, false, target.radar, target.id, params.activity ?? 'active',
       useJev ? new JevTactician() : null,

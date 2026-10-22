@@ -125,10 +125,13 @@ export class ReceiverVideoRenderer {
     graphics.strokeCircle(ownerPos.x, ownerPos.y, evenOddsRadius);
 
     // The trace. Receiver noise power is exponentially distributed about the
-    // floor (mean 1); the echo's power adds on top of it.
+    // floor (mean 1); the echo's power adds on top of it. The noise here is
+    // display only, so it is drawn from Phaser's own generator rather than
+    // Math.random: the detector's dice must not depend on whether a ring is
+    // being drawn (the test harness seeds Math.random to replay them).
     const points: Phaser.Math.Vector2[] = [];
     for (let bin = 0; bin < BIN_COUNT; bin++) {
-      const draw = -Math.log(Math.max(Number.EPSILON, Math.random()));
+      const draw = -Math.log(Math.max(Number.EPSILON, Phaser.Math.RND.frac()));
       this.noise[bin] = RECEIVER_VIDEO_PERSISTENCE * this.noise[bin] + (1 - RECEIVER_VIDEO_PERSISTENCE) * draw;
       const r = ReceiverVideoRenderer.radiusAt(ReceiverVideoRenderer.toDb(this.noise[bin] + this.echo[bin]));
       points.push(ReceiverVideoRenderer.pointAt(ownerPos, ReceiverVideoRenderer.binBearing(bin), r));

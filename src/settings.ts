@@ -96,4 +96,10 @@ export const targetShipSettings = {
     },
     TURN_RATE_CRUISER: 0.3,  // degrees per frame (at 60fps = 18°/sec)
     TURN_RATE_CARGO: 0.15,   // degrees per frame (at 60fps = 9°/sec)
+    // Who makes a cruiser's tactical calls unless a scenario says otherwise:
+    // Jev (DEV builds only, via the /api/jev proxy) or the scripted doctrine.
+    // Jev is only asked once a fight is on (JevTactician.isFight), so a
+    // patrolling cruiser costs no requests. 'scripted' takes every cruiser
+    // off the network at once.
+    CRUISER_BRAIN: 'jev' as 'scripted' | 'jev',
 }

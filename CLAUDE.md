@@ -74,7 +74,8 @@ src/radar/data/                   track.ts, radarReturn.ts, types.ts (Entity, Ra
                                   signalPath.ts (the energy budget every sensor asks),
                                   radarGameSettings.ts (all radar constants)
 src/radar/renderer/               radarRenderer (scope marks), interfaceRenderer (HUD),
-                                  terrainRenderer (ground map)
+                                  terrainRenderer (ground map), receiverVideoRenderer (raw
+                                  echo/jamming power ring around the ship)
 src/physics/                      ray.ts (raycast against Matter vertices), bodyShape.ts (fit a
                                   body to a traced outline), landing.ts (touchdown rules:
                                   slow + tail-first on ground = landed, else crash), collisionRegistrar

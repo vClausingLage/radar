@@ -580,9 +580,10 @@ export const CFAR_THRESHOLD_FACTOR = 1.0;
 //
 // What it buys, on top of CFAR's amplitude threshold: a contact parked in
 // significant clutter is rejected as clutter itself — no radial rate, no
-// acceptance, and it never holds a stable track — while the same hull under
-// way lifts out of the same clutter, because its echo carries the radial rate
-// the static clutter lacks. A contact crossing tangentially sits in the
+// acceptance, and it never holds a stable track — while the same hull running
+// in or out fast enough to outrun its own glint (MTI_RANGE_GLINT_PX) lifts
+// out of the same clutter, because its echo carries the radial rate the
+// static clutter lacks. A contact crossing tangentially sits in the
 // notch too: that is a real MTI's blind speed, not a bug, and it is the
 // radar-relative geometry the gate is honestly allowed to know.
 
@@ -605,6 +606,23 @@ export const MTI_ACTIVATION_DENSITY = 0.1;
 // course's minimum detectable velocity (TRACK_MIN_COURSE_SPEED_PX, scaled by
 // range the way reportCourse scales it) — one threshold doing both jobs, the
 // way a real set's MDS serves both the display and the MTI filter.
+//
+// Range glint, in px: how far a motionless hull's echo wanders along the line
+// of sight from sweep to sweep, and so how far a contact has to move across
+// the MTI baseline before a scan-to-scan comparison can call it moving. A real
+// notch is as wide as the clutter spectrum it has to swallow; here the spread
+// a motionless echo shows comes from the hull itself. A sweep catches a hull
+// on one or two of its scatterers, and which ones changes every sweep: a
+// cargo hull bow-on at ~340 px jumps between its nose (310) and its middle
+// (330-340). A least-squares line through four such samples can fit up to
+// 4/3 of that 30 px spread as displacement, so 40 px keeps the biggest hull
+// in the notch when parked. Divided by the baseline's span (three updates in
+// search) it puts the notch at ~13 px per sweep, against a blind speed of
+// ~1.5: a contact at cruise (~6 px per sweep) does not outrun its own glint
+// inside a four-sweep baseline and stays in the notch while it is in
+// clutter. That is the cost of measuring across scans — a real Doppler MTI,
+// which this engine cannot have, would lift it out on the first dwell.
+export const MTI_RANGE_GLINT_PX = 40;
 
 // ── Support dish radar (entities/dishRadarStation.ts) ──────────────────────
 // A stationary early-warning dish on an asteroid: it drives the standard Radar

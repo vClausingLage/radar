@@ -290,10 +290,15 @@ const rwrBearingIsHunted: GameTest = {
 
         ctx.player.radar.enterEmcon();
         const silent = await ctx.waitUntil(() => drone.radar.rwrReceiver.getRwrSignals().length === 0, 400);
+        const before = stub.pictures.length;
         await ctx.frames(30);
+        // The claim is "never back to PATROL", not "only HUNT": the drone may
+        // still chase a thermal false alarm (RADAR_FALSE_ALARM_RATE) into
+        // INVESTIGATE — that is the doctrine working, as in (a).
+        const after = [...new Set(stub.pictures.slice(before).map(p => p.currentState))];
         ctx.check('the RWR has gone silent', silent);
-        ctx.check('it is still hunting the bearing', stub.lastState() === 'HUNT',
-            `last state ${stub.lastState() ?? 'none'}`);
+        ctx.check('it keeps after the bearing instead of patrolling', !after.includes('PATROL'),
+            `states after the warning faded: ${after.join(', ')}`);
         ctx.player.radar.enterRws();
     },
 };

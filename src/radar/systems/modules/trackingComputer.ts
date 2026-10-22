@@ -5,6 +5,7 @@ import { Vector2 } from '../../../types';
 import { sameResolutionCell } from '../../data/signalPath';
 import {
   MTI_ACTIVATION_DENSITY,
+  MTI_RANGE_GLINT_PX,
   RADAR_TRACK_HISTORY_LENGTH,
   TRACK_COURSE_RANGE_EXPONENT,
   TRACK_COURSE_RANGE_REF_PX,
@@ -29,6 +30,15 @@ type TrackState = {
   // refreshed or coasted, so the spacing stays uniform in time and the fitted
   // slope stays a velocity.
   courseSamples: Vector2[];
+  // The raw echo centroids of the last few updates, tagged with the update
+  // they were measured on — what the MTI gate judges radial motion from.
+  // Raw, not filtered: a raw centroid always lies among the hull's own
+  // scatterers, so a parked hull's samples stay inside its glint and the
+  // gate's glint allowance is a hard bound on them; the α-β output carries
+  // a velocity state that can random-walk past any such bound. Only
+  // measured updates go in (a coast has no echo to judge), so the samples
+  // carry their update index and a gap stays a gap in time.
+  echoSamples: { scan: number; x: number; y: number }[];
 };
 
 // Mode-dependent knobs the owning radar sets per update. Defaults are the
@@ -54,7 +64,7 @@ type TrackingOptions = {
   courseFromMeasurements?: boolean;
   // Mean clutter density around a contact's position, reported by the
   // CfarDetector (search modes only). Given, a contact sitting in
-  // significant clutter whose fitted radial rate is below the blind speed
+  // significant clutter whose measured radial rate sits inside the notch
   // is rejected as clutter itself (MTI): the measurement still updates the
   // filter — the set keeps watching — but the echo is not accepted as
   // target evidence, so the track's confidence decays and, if the contact
@@ -65,6 +75,8 @@ type TrackingOptions = {
 export class TrackingComputer {
   private states: TrackState[] = [];
   private nextTrackId = 1;
+  // Updates run so far — the clock the MTI echo samples are stamped with.
+  private scan = 0;
 
   // Called on every sweep completion (RWS) or every frame (STT). An update is
   // one scan whichever mode called it, but a search sweep and an STT frame are
@@ -82,6 +94,7 @@ export class TrackingComputer {
       mtiClutterDensity,
     }: TrackingOptions = {},
   ): Track[] {
+    this.scan++;
     const centroids = this.cluster(returns);
     const matched = new Set<number>();
 
@@ -100,6 +113,7 @@ export class TrackingComputer {
 
       if (bestIdx >= 0) {
         matched.add(bestIdx);
+        this.pushEchoSample(this.states[bestIdx], centroid, courseWindow);
         this.refresh(this.states[bestIdx], centroid, {
           minCourseSpeed,
           courseWindow,
@@ -111,7 +125,7 @@ export class TrackingComputer {
           // establish velocity too), but confidence decays and the missed-
           // scan counter runs, aging a stationary contact out.
           accept: !this.isClutterLike(
-            this.states[bestIdx], centroid, ownerPos, minCourseSpeed, mtiClutterDensity,
+            this.states[bestIdx], centroid, ownerPos, minCourseSpeed, courseWindow, mtiClutterDensity,
           ),
         });
       } else {
@@ -258,37 +272,83 @@ export class TrackingComputer {
 
   // Whether this echo, matched to `state`, reads as clutter rather than a
   // target: it sits in significant clutter (per the CfarDetector's density
-  // map) and its fitted radial rate along the line of sight is below the
-  // blind speed. The blind speed is the reported course's minimum detectable
-  // velocity — the same number, scaled by range the same way reportCourse
-  // scales it — because one threshold serves both questions in a real set:
-  // how much motion the display will claim, and how much Doppler the MTI
-  // filter will believe. The radial projection uses the *reported* course and
-  // speed (the least-squares fit), not the α-β velocity state: the fit is
-  // the estimate the set is prepared to stand behind, it is range-aware
-  // already, and a fresh track reports zero — so it is gated until it has
-  // measured motion, exactly as an MTI filter is blind for its first pulses.
+  // map) and its radial rate along the line of sight sits inside the notch.
+  //
+  // The rate is a least-squares slope across the echo's own raw centroids
+  // over the course baseline, projected on the line of sight. Projecting in
+  // world space keeps own-ship motion out of it: the rock and a parked hull
+  // beside it stay put however the antenna platform moves, which is what a
+  // real airborne MTI has to compensate for before it can notch clutter.
+  //
+  // The notch is centred on zero — static clutter has no radial rate — and
+  // is as wide as the larger of two things. One is the blind speed: the
+  // reported course's minimum detectable velocity, scaled by range the way
+  // reportCourse scales it, because one threshold serves both questions in a
+  // real set — how much motion the display will claim, and how much the MTI
+  // filter will believe. The other is range glint, the clutter-spectrum
+  // width of this engine: a sweep catches a hull on only one or two of its
+  // scatterers, and which ones changes from sweep to sweep, so a big hull
+  // bow-on jumps between nose and middle — tens of px of range for no motion
+  // at all — and a four-sweep fit reads that as several px per sweep of
+  // "radial rate". A real Doppler filter is never fooled that way: every part
+  // of a parked hull has zero Doppler. A stand-in comparing scans is only as
+  // unfooled once the contact has moved further across the baseline than its
+  // echo glints while parked, which is the classic scan-to-scan MTI rule —
+  // a target has to leave its own cell before the comparison sees it move.
+  //
+  // Until a full baseline is in, the rate is unknown and the echo sits in
+  // the notch, exactly as an MTI filter is blind for its first pulses.
   private isClutterLike(
     state: TrackState,
     centroid: RadarReturn,
     ownerPos: Vector2,
     minCourseSpeed: number,
+    courseWindow: number,
     mtiClutterDensity?: (point: { x: number; y: number }) => number,
   ): boolean {
     if (!mtiClutterDensity) return false;
     if (mtiClutterDensity(centroid.point) < MTI_ACTIVATION_DENSITY) return false;
 
-    const dx = centroid.point.x - ownerPos.x;
-    const dy = centroid.point.y - ownerPos.y;
-    const bearing = Math.atan2(dy, dx);
-    const courseRad = Phaser.Math.DegToRad(state.track.dir);
-    const radial = state.track.speed * Math.cos(courseRad - bearing);
+    const samples = state.echoSamples;
+    if (samples.length < Math.max(2, courseWindow)) return true;
+    // Updates the baseline spans — more than its sample count less one when
+    // a coast left a gap in it.
+    const span = samples[samples.length - 1].scan - samples[0].scan;
+    if (span <= 0) return true;
+
+    const bearing = Math.atan2(centroid.point.y - ownerPos.y, centroid.point.x - ownerPos.x);
+    const ux = Math.cos(bearing);
+    const uy = Math.sin(bearing);
+    const along = samples.map(s => s.x * ux + s.y * uy);
+
+    const n = samples.length;
+    const meanScan = samples.reduce((sum, s) => sum + s.scan, 0) / n;
+    const meanAlong = along.reduce((sum, a) => sum + a, 0) / n;
+    let scanVariance = 0;
+    let cov = 0;
+    for (let i = 0; i < n; i++) {
+      const dScan = samples[i].scan - meanScan;
+      scanVariance += dScan * dScan;
+      cov += dScan * (along[i] - meanAlong);
+    }
+    // px per update, positive opening.
+    const radial = cov / scanVariance;
 
     // Same range scaling reportCourse applies: wander is angular at heart
     // and spreads into more pixels the further out the contact sits.
     const blind = minCourseSpeed
-      * (state.track.dist / TRACK_COURSE_RANGE_REF_PX) ** TRACK_COURSE_RANGE_EXPONENT;
-    return Math.abs(radial) < blind;
+      * (centroid.range / TRACK_COURSE_RANGE_REF_PX) ** TRACK_COURSE_RANGE_EXPONENT;
+    // Glint is a spread in range, not in angle: it does not grow with range.
+    const glint = MTI_RANGE_GLINT_PX / span;
+    return Math.abs(radial) < Math.max(blind, glint);
+  }
+
+  // One raw echo centroid into the MTI baseline, and anything older than the
+  // baseline dropped — by update index, so a coasted update leaves a gap
+  // rather than a sample.
+  private pushEchoSample(state: TrackState, centroid: RadarReturn, courseWindow: number): void {
+    state.echoSamples.push({ scan: this.scan, x: centroid.point.x, y: centroid.point.y });
+    state.echoSamples = state.echoSamples.filter(s => s.scan > this.scan - courseWindow);
   }
 
   // α-β filter update. The innovation (measurement minus prediction) corrects
@@ -417,6 +477,7 @@ export class TrackingComputer {
       velX: 0,
       velY: 0,
       courseSamples: [{ x: centroid.point.x, y: centroid.point.y }],
+      echoSamples: [{ scan: this.scan, x: centroid.point.x, y: centroid.point.y }],
       track: {
         id: this.nextTrackId++,
         pos: { x: centroid.point.x, y: centroid.point.y },
@@ -453,6 +514,7 @@ export class TrackingComputer {
       velX: 0,
       velY: 0,
       courseSamples: [t.pos],
+      echoSamples: [],
     }));
   }
 }
