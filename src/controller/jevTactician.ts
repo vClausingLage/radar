@@ -1,11 +1,18 @@
 import Phaser from 'phaser';
 import type { TacticalPicture, TacticalStateName, Tactician } from './aiUnitController';
+import type { FlightTactic } from './flight';
 
 // Jev — TypeSafe's "System One" decision model, reached through OpenRouter —
 // as the tactical judgement of an AI fighter. It does not fly the ship: the
 // AiUnitController still steers, locks, shoots and drops chaff. Jev answers the
 // question a pilot answers between those actions — *what am I doing now?* — by
 // picking one of the controller's states from the picture its own sensors hold.
+//
+// A flight's lead is asked a second question in the same request: which tactic
+// the pair should fly (FlightTactic). Same rules: only the tactics that are
+// possible are offered, the answer is used only while fresh, confident and
+// still on offer, and the scripted flight doctrine decides otherwise. The wing is
+// never asked.
 //
 // Jev is a calibrated classifier, not a chat model: it is handed a state and a
 // closed set of options, and returns a probability per option plus a
@@ -67,16 +74,39 @@ const STATE_CRITERIA: Record<TacticalStateName, string> = {
         + 'or a missile is inbound. Against a radar that is only searching, chaff is wasted.',
 };
 
+// The question the lead is asked about its flight. The shape of the fight again
+// goes in the question; the criteria below say when.
+const FLIGHT_QUESTION = 'You lead a two-ship flight of hostile space fighters against enemies on the radar link. '
+    + 'A flight opens with a bracket or a shooter and cover, and once missiles are away trades shots as a grinder. '
+    + 'Formation is flying on the lead with no target to work together. Given what the lead\'s radar, the link and '
+    + 'the wingman\'s status page report, which flight tactic should the pair fly now?';
+
+const TACTIC_CRITERIA: Record<FlightTactic, string> = {
+    formation: 'Fly on the lead with nothing to work together. Choose when no group is on the link that we both '
+        + 'can work, when neither of us has a missile worth a shot, or when the wingman is defending itself or lost.',
+    shooterCover: 'The wingman takes the shot in silence on our track while we keep radiating. Choose when we hold '
+        + 'a track on one group and the target should not hear a second radar, when the group is close, or when '
+        + 'only one of us still has missiles.',
+    bracket: 'Split to either side of the group and shoot from two bearings. Choose when we hold a track on one '
+        + 'group still outside missile range, both of us have missiles, nothing has been fired yet and there '
+        + 'is room to open out.',
+    grinder: 'Trade shots: the one who did not shoot last shoots, the other presses on. Choose once missiles '
+        + 'have been fired at the group, or when it is already too close to split, and both of us still have missiles.',
+};
+
 type JevChoiceAnswer = {
     type: 'choice';
     choice: string;
     probabilities: Record<string, number>;
     confidence: number;
 };
-export type JevResponse = { answers?: { next_state?: JevChoiceAnswer } };
+type JevQuestion = { type: 'choice'; instructions: string; criteria: Record<string, string> };
+export type JevResponse = { answers?: { next_state?: JevChoiceAnswer; next_tactic?: JevChoiceAnswer } };
+// One request, up to two questions: next_state when the controller has a real
+// choice of states, next_tactic when a flight lead has a real choice of tactics.
 export type JevRequest = {
     state: TacticalPicture;
-    questions: { next_state: { type: 'choice'; instructions: string; criteria: Record<string, string> } };
+    questions: { next_state?: JevQuestion; next_tactic?: JevQuestion };
 };
 
 // How an ask reaches Jev. The default goes through the dev server's proxy; the
@@ -94,22 +124,27 @@ const viaDevProxy: JevTransport = async (request, signal) => {
     return res.json() as Promise<JevResponse>;
 };
 
-type Answer = {
-    state: TacticalStateName;
+// An answer about the picture as it stood in `askedIn` (the controller's state,
+// or the flight's tactic, when the picture was taken).
+type Answer<T extends string> = {
+    choice: T;
     confidence: number;
-    askedInState: TacticalStateName; // the controller's state when the picture was taken
+    askedIn: T;
     askedAt: number;
 };
 
 export class JevTactician implements Tactician {
-    private answer: Answer | null = null;
+    private answer: Answer<TacticalStateName> | null = null;
+    private tacticAnswer: Answer<FlightTactic> | null = null;
     private inFlight: AbortController | null = null;
     private nextAskAt = 0;
     private backoffMs = BACKOFF_START_MS;
     private latencyMs: number | null = null;
-    // The answer applied on the last advise() — kept apart from `answer`, which
-    // a response landing between frames can replace before the label is drawn.
-    private applied: Answer | null = null;
+    // The answers applied on the last advise() — kept apart from the stored
+    // ones, which a response landing between frames can replace before the
+    // label is drawn.
+    private applied: Answer<TacticalStateName> | null = null;
+    private appliedTactic: Answer<FlightTactic> | null = null;
     private destroyed = false;
     // No fight on the last advise(): Jev was not consulted.
     private idle = false;
@@ -120,19 +155,42 @@ export class JevTactician implements Tactician {
     // for this picture — or null when there is no usable answer, in which case
     // the controller's scripted doctrine decides. Timing is wall-clock, not game
     // time: the wait is a network round trip, whatever the sim clock is doing.
-    advise(picture: TacticalPicture, legal: TacticalStateName[]): TacticalStateName | null {
+    //
+    // A flight lead also passes the tactics that are legal for its flight. One
+    // request carries every question that has a real choice behind it - the
+    // state, the tactic, or both - so the flight costs no extra calls; the
+    // tactic's answer is read back by adviseFlightTactic.
+    advise(
+        picture: TacticalPicture, legal: TacticalStateName[], legalTactics: FlightTactic[] = [],
+    ): TacticalStateName | null {
         const now = performance.now();
         // One legal option is no decision, and outside a fight the doctrine's
         // answer is the obvious one: leave both to the script, and save the call.
         this.idle = !JevTactician.isFight(picture);
-        if (legal.length < 2 || this.idle) {
+        const askState = legal.length >= 2;
+        const askTactic = legalTactics.length >= 2;
+        if (this.idle || (!askState && !askTactic)) {
             this.applied = null;
+            this.appliedTactic = null;
             return null;
         }
-        if (!this.inFlight && now >= this.nextAskAt) this.ask(picture, legal, now);
+        if (!this.inFlight && now >= this.nextAskAt) {
+            this.ask(picture, askState ? legal : [], askTactic ? legalTactics : [], now);
+        }
 
-        this.applied = this.isUsable(this.answer, picture, legal, now) ? this.answer : null;
-        return this.applied?.state ?? null;
+        this.applied = askState && this.isUsable(this.answer, picture.currentState, legal, now) ? this.answer : null;
+        return this.applied?.choice ?? null;
+    }
+
+    // Jev's flight tactic for this picture, under the same gate as its state:
+    // fresh, confident, still legal, and about the plan that is still in force.
+    // Null hands the plan back to the flight's scripted doctrine.
+    adviseFlightTactic(picture: TacticalPicture, legalTactics: FlightTactic[]): FlightTactic | null {
+        this.appliedTactic = legalTactics.length >= 2
+            && picture.flightTactic !== 'no flight'
+            && this.isUsable(this.tacticAnswer, picture.flightTactic, legalTactics, performance.now())
+            ? this.tacticAnswer : null;
+        return this.appliedTactic?.choice ?? null;
     }
 
     // Jev is asked only where judgement changes the outcome: from the moment
@@ -149,42 +207,49 @@ export class JevTactician implements Tactician {
             || picture.currentState === 'EVADE';
     }
 
-    private isUsable(
-        answer: Answer | null,
-        picture: TacticalPicture,
-        legal: TacticalStateName[],
+    private isUsable<T extends string>(
+        answer: Answer<T> | null,
+        current: T,
+        legal: T[],
         now: number,
     ): boolean {
         if (!answer || now - answer.askedAt > ANSWER_STALE_MS) return false;
-        if (answer.confidence < MIN_CONFIDENCE || !legal.includes(answer.state)) return false;
-        // The answer is about the picture as it stood in `askedInState`. If the
+        if (answer.confidence < MIN_CONFIDENCE || !legal.includes(answer.choice)) return false;
+        // The answer is about the picture as it stood in `askedIn`. If the
         // controller has since moved on by itself — a shot puts it straight into
-        // CRANK — the answer is about a situation that no longer exists.
-        return picture.currentState === answer.askedInState || picture.currentState === answer.state;
+        // CRANK, a flight's dwell settles on another plan — the answer is about
+        // a situation that no longer exists.
+        return current === answer.askedIn || current === answer.choice;
     }
 
-    private ask(picture: TacticalPicture, legal: TacticalStateName[], now: number): void {
+    private ask(
+        picture: TacticalPicture,
+        legal: TacticalStateName[],
+        legalTactics: FlightTactic[],
+        now: number,
+    ): void {
         const controller = new AbortController();
         this.inFlight = controller;
         const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-        const request: JevRequest = {
-            state: picture,
-            questions: {
-                next_state: { type: 'choice', instructions: QUESTION, criteria: this.criteriaFor(legal) },
-            },
-        };
+        const request: JevRequest = { state: picture, questions: {} };
+        if (legal.length) {
+            request.questions.next_state = { type: 'choice', instructions: QUESTION, criteria: this.criteriaFor(legal, STATE_CRITERIA) };
+        }
+        if (legalTactics.length) {
+            request.questions.next_tactic = {
+                type: 'choice', instructions: FLIGHT_QUESTION, criteria: this.criteriaFor(legalTactics, TACTIC_CRITERIA),
+            };
+        }
         this.transport(request, controller.signal)
             .then(body => {
-                const next = body.answers?.next_state;
-                const choice = legal.find(s => s === next?.choice);
-                if (!next || !choice) throw new Error('no usable next_state answer');
-                this.answer = {
-                    state: choice,
-                    confidence: next.confidence,
-                    askedInState: picture.currentState,
-                    askedAt: now,
-                };
+                const state = JevTactician.pick(legal, body.answers?.next_state, picture.currentState, now);
+                const tactic = picture.flightTactic !== 'no flight'
+                    ? JevTactician.pick(legalTactics, body.answers?.next_tactic, picture.flightTactic, now) : null;
+                // An ask is a failure only if every question in it went unanswered.
+                if (!state && !tactic) throw new Error('no usable answer');
+                if (state) this.answer = state;
+                if (tactic) this.tacticAnswer = tactic;
                 this.latencyMs = performance.now() - now;
                 this.backoffMs = BACKOFF_START_MS;
                 this.nextAskAt = now + DECISION_INTERVAL_MS;
@@ -201,24 +266,33 @@ export class JevTactician implements Tactician {
             });
     }
 
+    // One question's answer, if it named an option that was on offer.
+    private static pick<T extends string>(
+        legal: T[], answer: JevChoiceAnswer | undefined, askedIn: T, now: number,
+    ): Answer<T> | null {
+        const choice = legal.find(option => option === answer?.choice);
+        return answer && choice ? { choice, confidence: answer.confidence, askedIn, askedAt: now } : null;
+    }
+
     // Jev leans toward the first option it is shown, so the legal options are
-    // shuffled per ask rather than always listing PATROL first.
-    private criteriaFor(legal: TacticalStateName[]): Record<string, string> {
+    // shuffled per ask rather than always listing the same one first.
+    private criteriaFor<T extends string>(legal: T[], table: Record<T, string>): Record<string, string> {
         const criteria: Record<string, string> = {};
-        for (const state of Phaser.Utils.Array.Shuffle([...legal])) {
-            criteria[state] = STATE_CRITERIA[state];
+        for (const option of Phaser.Utils.Array.Shuffle([...legal])) {
+            criteria[option] = table[option];
         }
         return criteria;
     }
 
     // DEV label: whether Jev is flying this frame, how sure it was, how long it took.
     getDebugLabel(): string {
-        if (!this.applied && !this.inFlight && this.idle) return 'JEV idle (no fight)';
+        if (!this.applied && !this.appliedTactic && !this.inFlight && this.idle) return 'JEV idle (no fight)';
         const shown = this.applied ?? this.answer;
-        if (!shown) return 'JEV --';
+        const plan = this.appliedTactic ? ` | plan ${this.appliedTactic.choice} ${Math.round(this.appliedTactic.confidence * 100)}%` : '';
+        if (!shown) return `JEV --${plan}`;
         const pct = Math.round(shown.confidence * 100);
         const ms = this.latencyMs !== null ? ` ${Math.round(this.latencyMs)}ms` : '';
-        return `JEV ${this.applied ? 'ON' : 'off'} ${shown.state} ${pct}%${ms}`;
+        return `JEV ${this.applied ? 'ON' : 'off'} ${shown.choice} ${pct}%${ms}${plan}`;
     }
 
     destroy(): void {

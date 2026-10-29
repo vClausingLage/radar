@@ -3,6 +3,8 @@ import { TestScene } from '../scenes/testScene';
 import { runGameTests, TestReport } from './testHarness';
 import { radarTests } from './radarTests';
 import { tacticianTests } from './tacticianTests';
+import { flightTests } from './flightTests';
+import { iffTests } from './iffTests';
 
 // DEV-only wiring for the in-game tests: registers the test scene and hangs the
 // runner off the window, so a run can be started from the start menu, from the
@@ -33,7 +35,7 @@ function taskTurn(): Promise<void> {
 const START_MENU_BUTTON_MARGIN_PX = 16;
 
 type TestWindow = Window & {
-    runRadarTests?: (seed?: number) => Promise<TestReport>;
+    runRadarTests?: (seed?: number, nameFilter?: string) => Promise<TestReport>;
     stepGame?: (frames: number, deltaMs?: number) => Promise<void>;
     radarTestReport?: TestReport;
 };
@@ -43,8 +45,12 @@ export function installTestHooks(game: Phaser.Game): void {
 
     const testWindow = window as TestWindow;
 
-    testWindow.runRadarTests = async (seed?: number) => {
-        const report = await runGameTests(game, [...radarTests, ...tacticianTests], seed);
+    // `nameFilter` is a regex on test names, to run a few tests while working
+    // on them rather than the whole suite.
+    testWindow.runRadarTests = async (seed?: number, nameFilter?: string) => {
+        const all = [...radarTests, ...tacticianTests, ...flightTests, ...iffTests];
+        const tests = nameFilter ? all.filter(t => new RegExp(nameFilter, 'i').test(t.name)) : all;
+        const report = await runGameTests(game, tests, seed);
         testWindow.radarTestReport = report;
         return report;
     };

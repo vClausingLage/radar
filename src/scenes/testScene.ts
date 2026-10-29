@@ -3,6 +3,9 @@ import Game from './game';
 import { GasCloud } from '../entities/gasCloud';
 import { Asteroid } from '../entities/asteroid';
 import { PlayerShip, Target } from '../entities/ship';
+import { Flight } from '../controller/flight';
+import { AiUnitController } from '../controller/aiUnitController';
+import { targetShipSettings } from '../settings';
 
 // The scene the in-game radar tests run in.
 //
@@ -18,12 +21,20 @@ export class TestScene extends Game {
         super('Tests');
     }
 
+    // IFF is on, as in free play; a test that wants the world without it
+    // (the control run of an IFF test) switches it off here.
+    iffEnabled = true;
+    iffAvailable(): boolean {
+        return this.iffEnabled;
+    }
+
     // A test owns the whole world: no scenario ships, no briefing overlay.
     protected buildScenario(): void {}
     protected showBriefing(): void {}
 
     create(): void {
         super.create();
+        this.iffEnabled = true;
         // Every test states its geometry as a bearing and range from the player,
         // so the player holds station — under its own power it would drift a
         // tenth of a pixel per frame and slowly invalidate those ranges.
@@ -54,6 +65,9 @@ export class TestScene extends Game {
         // broadside, and no bigger than one bow-on �?" so any test about
         // detection range has to say which one it means.
         hull?: 'cruiser' | 'cargo';
+        // Whose side the hull is on, which sets the code its transponder
+        // answers to: hostile (code 1) unless the test says otherwise.
+        side?: 'hostile' | 'friendly';
     }): Target {
         const player = this.player;
         if (!player) throw new Error('TestScene: no player to place a drone against');
@@ -68,6 +82,7 @@ export class TestScene extends Game {
             speed: opts.speed ?? 0,
             type: opts.hull ?? 'cruiser',
             activity: 'inactive',
+            side: opts.side,
         });
 
         drone.controller?.destroy();
@@ -76,6 +91,69 @@ export class TestScene extends Game {
 
         this.targets.push(drone);
         return drone;
+    }
+
+    // A free-flying scripted cruiser at an absolute world position, with its
+    // brain on: it patrols, tracks, shoots. For tests about what AI ships do to
+    // each other. Scripted, never Jev.
+    spawnAiShip(opts: {
+        x: number;
+        y: number;
+        direction: number;
+        speed: number;
+        side?: 'hostile' | 'friendly';
+    }): Target {
+        const ship = this.add.target({ ...opts, type: 'cruiser', brain: 'scripted' });
+        this.targets.push(ship);
+        return ship;
+    }
+
+    // Place a two-ship flight at an absolute world position (a formation test
+    // wants room to manoeuvre, not a spot relative to the player). Scripted
+    // brains throughout: a test never reaches for the network. `inert` makes
+    // the pair props, like a drone: AI detached, radars in EMCON, holding
+    // station - for measuring how the flight looks to someone else's radar.
+    spawnFlight(opts: {
+        x: number;
+        y: number;
+        direction: number;
+        speed: number;
+        wingSide?: 1 | -1;
+        inert?: boolean;
+    }): Flight {
+        const flight = this.add.flight({
+            x: opts.x,
+            y: opts.y,
+            direction: opts.direction,
+            speed: opts.speed,
+            brain: 'scripted',
+            wingSide: opts.wingSide,
+        });
+        if (opts.inert) {
+            for (const ship of flight.members()) {
+                ship.controller?.destroy();
+                ship.controller = undefined;
+                ship.radar.setMode('emcon');
+                ship.setCurrentSpeed(0);
+            }
+        }
+        this.targets.push(...flight.members());
+        return flight;
+    }
+
+    // Give an inert flight its scripted brains back, mid-test. A flight spawned
+    // inert holds still with its radars where the test put them, so a picture
+    // can be built to the test's liking; arming it then starts the doctrine
+    // from that picture instead of racing it. Scripted, never Jev.
+    armFlight(flight: Flight): void {
+        const roles: [Target, 'lead' | 'wing'][] = [[flight.lead, 'lead'], [flight.wing, 'wing']];
+        for (const [ship, role] of roles) {
+            const controller = new AiUnitController(
+                this, ship, targetShipSettings.TURN_RATE_CRUISER, false, ship.radar, ship.id, 'active', null,
+            );
+            ship.setController(controller);
+            controller.joinFlight(flight, role);
+        }
     }
 
     // Place a solid rock at a bearing/range from the player, sized to the

@@ -1,12 +1,16 @@
+import Phaser from 'phaser';
 import { GameTest, TestContext } from './testHarness';
 import { Target } from '../entities/ship';
+import { ActiveRadarMissile } from '../entities/missiles';
 import {
     AiUnitController,
     TacticalPicture,
     TacticalStateName,
     Tactician,
 } from '../controller/aiUnitController';
+import { Flight, FlightTactic } from '../controller/flight';
 import { JevRequest, JevResponse, JevTactician } from '../controller/jevTactician';
+import { tacticSettings, targetShipSettings } from '../settings';
 
 // In-game tests for the seam between an AI ship and its tactical judgement
 // (a Tactician — Jev in play, a stub here). The judgement is allowed to choose;
@@ -26,7 +30,7 @@ const DRONE_RANGE_PX = 300;
 // The only numbers a tactical picture may carry: stores, counted. Any other
 // number would be geometry — a range, bearing or position — which is exactly
 // what the picture bands into words before a tactician sees it.
-const COUNTED_FIELDS = ['missilesLeft', 'chaffLeft'];
+const COUNTED_FIELDS = ['missilesLeft', 'chaffLeft', 'wingmanMissiles'];
 
 // A tactician that answers with a fixed rule and remembers every question.
 class RecordingTactician implements Tactician {
@@ -48,6 +52,33 @@ class RecordingTactician implements Tactician {
     }
 
     getDebugLabel(): string { return 'STUB'; }
+    destroy(): void {}
+}
+
+// A stub for the lead of a flight: answers the plan question with a fixed rule
+// and remembers what it was asked and what it was told.
+class FlightStub implements Tactician {
+    readonly pictures: TacticalPicture[] = [];
+    readonly offeredTactics: FlightTactic[][] = [];
+    // Every call, whether or not it had a flight to talk about.
+    asked = 0;
+    planCalls = 0;
+
+    constructor(private readonly rule: (legal: FlightTactic[]) => FlightTactic | null) {}
+
+    advise(picture: TacticalPicture, _legal: TacticalStateName[], legalTactics: FlightTactic[] = []): TacticalStateName | null {
+        this.asked++;
+        this.pictures.push(picture);
+        if (legalTactics.length) this.offeredTactics.push(legalTactics);
+        return null;
+    }
+
+    adviseFlightTactic(_picture: TacticalPicture, legalTactics: FlightTactic[]): FlightTactic | null {
+        this.planCalls++;
+        return this.rule(legalTactics);
+    }
+
+    getDebugLabel(): string { return 'FLIGHT STUB'; }
     destroy(): void {}
 }
 
@@ -205,6 +236,7 @@ const jevGatesItsAnswers: GameTest = {
             contact: 'none',
             contactRange: 'no contact',
             contactBearing: 'no contact',
+            contactIff: 'no contact',
             firingSolution: false,
             selectedWeapon: 'VIM-220 fire-and-forget',
             missilesLeft: 6,
@@ -216,6 +248,10 @@ const jevGatesItsAnswers: GameTest = {
             chaffLeft: 5,
             jammerReady: true,
             nearWorldEdge: false,
+            wingman: 'no wingman',
+            wingmanMissiles: 0,
+            flightTactic: 'no flight',
+            groupsOnLink: 'none',
         };
         const offered: TacticalStateName[] = ['PATROL', 'EVADE'];
         const canned = (choice: string, confidence: number) => async (): Promise<JevResponse> => ({
@@ -303,10 +339,265 @@ const rwrBearingIsHunted: GameTest = {
     },
 };
 
+// ── The lead's flight tactic ───────────────────────────────────────────────
+
+// A flight heading east from (1200, 1100), inert until the lead holds a drone
+// 400 px ahead on the link; then the lead gets `leadStub` and the wing `wingStub`
+// (the wing must never be asked, so a stub there is the test). The drone
+// cannot be hurt and swallows rounds that reach it, as in the tactic tests.
+// 400 px is inside the room a bracket needs, both members armed, so the legal
+// plans are formation, shooter/cover and grinder.
+async function leadWithTactician(
+    ctx: TestContext, leadStub: Tactician, wingStub: Tactician | null = null,
+): Promise<{ flight: Flight; drone: Target }> {
+    ctx.player.radar.enterEmcon();
+    const flight = ctx.scene.spawnFlight({ x: 1200, y: 1100, direction: 0, speed: 0.5, inert: true });
+    const drone = ctx.scene.spawnDrone({ bearingDeg: 0, rangePx: 1, facingDeg: 90, hull: 'cargo', side: 'friendly' });
+    drone.setPosition(1600, 1100);
+    drone.setCollidesWith(0);
+    flight.lead.radar.enterRws();
+    const leadHolds = (): boolean => {
+        const groups = flight.datalink.groups(ctx.scene.time.now);
+        return groups.length === 1 && groups[0].reports.some(r => r.sourceId === flight.lead.id);
+    };
+    let steady = 0;
+    for (let f = 0; f < 1500 && steady < 10; f++) {
+        await ctx.frames(1);
+        steady = leadHolds() ? steady + 1 : 0;
+    }
+    ctx.check('the lead holds the drone on the link before the brains start', steady >= 10);
+    const roles: [Target, 'lead' | 'wing', Tactician | null][] = [
+        [flight.lead, 'lead', leadStub], [flight.wing, 'wing', wingStub],
+    ];
+    for (const [ship, role, tactician] of roles) {
+        const controller = new AiUnitController(
+            ctx.scene, ship, targetShipSettings.TURN_RATE_CRUISER, false, ship.radar, ship.id, 'active', tactician,
+        );
+        ship.setController(controller);
+        controller.joinFlight(flight, role);
+    }
+    return { flight, drone };
+}
+
+// Run the flight, spent rounds at the drone absorbed, for up to `frames`, until
+// `until` holds. Returns the scene times at which the tactic changed.
+async function flyFlight(
+    ctx: TestContext, flight: Flight, drone: Target, frames: number, until: () => boolean = () => false,
+): Promise<{ at: number; tactic: FlightTactic }[]> {
+    const changes: { at: number; tactic: FlightTactic }[] = [{ at: ctx.scene.time.now, tactic: flight.tactic }];
+    for (let f = 0; f < frames && !until(); f++) {
+        await ctx.frames(1);
+        for (const o of ctx.scene.children.list) {
+            if (o instanceof ActiveRadarMissile && o.active
+                && Phaser.Math.Distance.Between(o.x, o.y, drone.x, drone.y) <= 40) o.destroy();
+        }
+        if (changes[changes.length - 1].tactic !== flight.tactic) changes.push({ at: ctx.scene.time.now, tactic: flight.tactic });
+    }
+    return changes;
+}
+
+// (f) Code decides what is possible. Bracket needs room to split, and at 400 px
+// there is none: it is not on offer, so a tactician that insists on it is
+// overruled and the doctrine's plan (the quiet shot) is flown.
+const illegalTacticRefused: GameTest = {
+    name: 'A tactician cannot pick a flight tactic the situation forbids',
+    description: 'A lead whose tactician answers "bracket" every time, with the drone too near to split. '
+        + 'Bracket is never offered and never flown; the doctrine\'s shooter/cover is.',
+    async run(ctx) {
+        const stub = new FlightStub(() => 'bracket');
+        const { flight, drone } = await leadWithTactician(ctx, stub);
+        const seen = new Set<string>();
+        await flyFlight(ctx, flight, drone, 900, () => { seen.add(flight.tactic); return false; });
+        ctx.check('the tactician was asked about the flight', stub.offeredTactics.length > 0,
+            `${stub.offeredTactics.length} offers`);
+        ctx.check('bracket was never on offer', !stub.offeredTactics.some(o => o.includes('bracket')),
+            `offered: ${[...new Set(stub.offeredTactics.flat())].join(', ')}`);
+        ctx.check('bracket was never flown', !seen.has('bracket'), `tactics flown: ${[...seen].join(', ')}`);
+        ctx.check('the doctrine\'s shooter/cover was', seen.has('shooterCover'), `tactics flown: ${[...seen].join(', ')}`);
+    },
+};
+
+// (g) And when the advice is legal, it is the advice that flies - after the
+// dwell, like the doctrine's own plan: the same picture, the doctrine's
+// shooter/cover, and a tactician that says grinder.
+const legalTacticOverridesDoctrine: GameTest = {
+    name: "A tactician's legal flight tactic overrides the doctrine, after the dwell",
+    description: 'The same picture, a tactician that answers "grinder" (legal, not what the doctrine would pick). '
+        + 'The flight changes to it, and not sooner than the dwell after the first time it was offered.',
+    async run(ctx) {
+        let firstOffered: number | null = null;
+        const stub = new FlightStub(legal => {
+            firstOffered ??= ctx.scene.time.now;
+            return legal.includes('grinder') ? 'grinder' : null;
+        });
+        const { flight, drone } = await leadWithTactician(ctx, stub);
+        const changes = await flyFlight(ctx, flight, drone, 900, () => flight.tactic === 'grinder');
+        const change = changes.find(c => c.tactic === 'grinder');
+        ctx.check('the flight went to the grinder', change !== undefined,
+            changes.map(c => c.tactic).join(' > '));
+        if (change && firstOffered !== null) {
+            const settled = change.at - firstOffered;
+            ctx.check('and not before the dwell had run', settled >= tacticSettings.DWELL_MS - 40,
+                `${Math.round(settled)} ms after first asked (dwell ${tacticSettings.DWELL_MS})`);
+        }
+    },
+};
+
+// (h) The doctrine covers every frame the tactician has no usable answer for.
+// At the flight level: no opinion at all. At Jev's own gate: an unsure answer,
+// an unoffered one, a failed request and a stale answer, driven through the
+// canned transport, plus the one-request rule.
+const unusableTacticAdviceFallsBack: GameTest = {
+    name: 'Low-confidence, stale or failed flight advice falls back to the doctrine',
+    description: 'A tactician with no opinion leaves the doctrine\'s shooter/cover in force. Canned Jev answers: a '
+        + 'confident legal plan is used; an unsure one, an unoffered one, a failed request and a stale answer '
+        + 'are not; one request carries both questions, and one legal tactic is never asked.',
+    async run(ctx) {
+        const silent = new FlightStub(() => null);
+        const { flight, drone } = await leadWithTactician(ctx, silent);
+        const changes = await flyFlight(ctx, flight, drone, 700);
+        ctx.check('with no opinion the doctrine opens with shooter/cover', changes[1]?.tactic === 'shooterCover',
+            changes.map(c => c.tactic).join(' > '));
+
+        const picture: TacticalPicture = {
+            currentState: 'INVESTIGATE', personality: 'aggressive', radarMode: 'tws',
+            contact: 'mature track', contactRange: 'inside missile range', contactBearing: 'on the nose', contactIff: 'no IFF reply',
+            firingSolution: false, selectedWeapon: 'VIM-220 fire-and-forget', missilesLeft: 4,
+            ourMissileInFlight: false, skate: 'not skating', rwr: 'silent', emitterHeard: 'never',
+            missileInbound: false, chaffLeft: 5, jammerReady: true, nearWorldEdge: false,
+            wingman: 'in formation', wingmanMissiles: 4, flightTactic: 'formation', groupsOnLink: 'one group',
+        };
+        const offered: FlightTactic[] = ['formation', 'shooterCover'];
+        const canned = (choice: string, confidence: number) => async (): Promise<JevResponse> => ({
+            answers: { next_tactic: { type: 'choice', choice, confidence, probabilities: {} } },
+        });
+        // A flight lead with one legal state is asked only the plan.
+        const adviceAfterAnswer = async (jev: JevTactician, tactics = offered, waitMs = 0) => {
+            jev.advise(picture, ['PATROL'], tactics);
+            await ctx.frames(3);
+            if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
+            jev.advise(picture, ['PATROL'], tactics);
+            const advice = jev.adviseFlightTactic(picture, tactics);
+            jev.destroy();
+            return advice;
+        };
+
+        const confident = await adviceAfterAnswer(new JevTactician(canned('shooterCover', 0.9)));
+        ctx.check('a confident, offered plan is used', confident === 'shooterCover', `advice ${confident}`);
+        const unsure = await adviceAfterAnswer(new JevTactician(canned('shooterCover', 0.3)));
+        ctx.check('an unsure one is not', unsure === null, `advice ${unsure}`);
+        const unoffered = await adviceAfterAnswer(new JevTactician(canned('bracket', 0.95)));
+        ctx.check('one that was not on offer is not', unoffered === null, `advice ${unoffered}`);
+        const failed = await adviceAfterAnswer(new JevTactician(async () => { throw new Error('canned failure'); }));
+        ctx.check('a failed request leaves no advice', failed === null, `advice ${failed}`);
+        const stale = await adviceAfterAnswer(new JevTactician(canned('shooterCover', 0.9)), offered, 2700);
+        ctx.check('a stale answer is not used', stale === null, `advice ${stale}`);
+
+        const requests: JevRequest[] = [];
+        const recording = new JevTactician(async (request: JevRequest) => { requests.push(request); return {}; });
+        recording.advise(picture, ['PATROL', 'INVESTIGATE'], offered);
+        recording.destroy();
+        ctx.check('one request carries both questions', requests.length === 1
+            && Boolean(requests[0].questions.next_state) && Boolean(requests[0].questions.next_tactic),
+            `${requests.length} requests, questions ${Object.keys(requests[0]?.questions ?? {}).join(', ')}`);
+        const criteria = Object.keys(requests[0]?.questions.next_tactic?.criteria ?? {});
+        ctx.check('the plan question offers exactly the legal tactics',
+            criteria.length === offered.length && offered.every(t => criteria.includes(t)), criteria.join(', '));
+
+        let asked = 0;
+        const counting = new JevTactician(async (_request: JevRequest) => { asked++; return {}; });
+        counting.advise(picture, ['PATROL'], ['formation']);
+        await ctx.frames(3);
+        counting.advise(picture, ['PATROL'], ['formation']);
+        counting.destroy();
+        ctx.check('one legal tactic and one legal state is never asked', asked === 0, `${asked} requests`);
+    },
+};
+
+// (i) The lead's picture carries the wingman as words, taken from the link, and
+// never from the entity list - the same standard as every other field. The
+// wing is alive and within sight of the lead but has no controller, so it puts
+// nothing on the link beyond its position: the lead is told "lost". Once it
+// flies, the link carries its status and the lead is told what it is doing.
+const flightPictureIsLinkOnly: GameTest = {
+    name: 'The lead\'s picture carries the wingman as link words, never from the entity list',
+    description: 'A wingman in plain sight but silent on the link reads "lost"; once it reports, it reads '
+        + '"in formation", with its missile count and the groups on the link taken from the link. '
+        + 'No geometry as numbers.',
+    async run(ctx) {
+        const stub = new FlightStub(() => null);
+        ctx.player.radar.enterEmcon();
+        const flight = ctx.scene.spawnFlight({ x: 1200, y: 1100, direction: 0, speed: 0.1, inert: true });
+        const drone = ctx.scene.spawnDrone({ bearingDeg: 0, rangePx: 1, facingDeg: 90, hull: 'cargo', side: 'friendly' });
+        drone.setPosition(1600, 1100);
+        drone.setCollidesWith(0);
+        flight.lead.radar.enterRws();
+        const lead = new AiUnitController(
+            ctx.scene, flight.lead, targetShipSettings.TURN_RATE_CRUISER, false, flight.lead.radar, flight.lead.id, 'active', stub);
+        flight.lead.setController(lead);
+        lead.joinFlight(flight, 'lead');
+
+        await ctx.frames(240);
+        const silent = stub.pictures.slice();
+        ctx.check('the lead was asked', silent.length > 0, `${silent.length} pictures`);
+        ctx.check('a wingman silent on the link reads "lost" although it is alive beside the lead',
+            flight.wing.active && silent.every(p => p.wingman === 'lost' && p.wingmanMissiles === 0),
+            [...new Set(silent.map(p => p.wingman))].join(', '));
+
+        const wing = new AiUnitController(
+            ctx.scene, flight.wing, targetShipSettings.TURN_RATE_CRUISER, false, flight.wing.radar, flight.wing.id, 'active', null);
+        flight.wing.setController(wing);
+        wing.joinFlight(flight, 'wing');
+        await ctx.frames(240);
+        const reporting = stub.pictures.slice(silent.length + 30);
+        const words = [...new Set(reporting.map(p => p.wingman))];
+        const rails = flight.wing.radar.getWeaponLoad('VIM-220') + flight.wing.radar.getWeaponLoad('VIM-177');
+        ctx.check('a wingman reporting on the link reads as what it is doing',
+            reporting.length > 0 && reporting.every(p => p.wingman !== 'lost' && p.wingman !== 'no wingman'), words.join(', '));
+        // (The page is a frame behind a launch, so a count may read one high.)
+        ctx.check('its missile count is the one on its status page',
+            reporting.every(p => p.wingmanMissiles === rails || p.wingmanMissiles === rails + 1),
+            `${[...new Set(reporting.map(p => p.wingmanMissiles))].join(', ')} vs ${rails}`);
+        ctx.check('the groups on the link are the link\'s',
+            reporting.every(p => p.groupsOnLink === 'one group' || p.groupsOnLink === 'none'),
+            [...new Set(reporting.map(p => p.groupsOnLink))].join(', '));
+        ctx.check('the plan in force is in the picture', reporting.every(p => p.flightTactic !== 'no flight'),
+            [...new Set(reporting.map(p => p.flightTactic))].join(', '));
+        const numericFields = [...new Set(stub.pictures.flatMap(p =>
+            Object.entries(p).filter(([, v]) => typeof v === 'number').map(([k]) => k)))];
+        const geometry = numericFields.filter(k => !COUNTED_FIELDS.includes(k));
+        ctx.check('no geometry as numbers', geometry.length === 0, `numeric fields: ${numericFields.join(', ')}`);
+    },
+};
+
+// (j) Only the lead is asked. Both controllers are handed a tactician; the
+// wing's is never consulted - not for its state, not for the flight.
+const wingIsNeverAsked: GameTest = {
+    name: 'The wing is never asked',
+    description: 'A tactician on each member of a flight working one drone: the lead\'s is asked every frame; '
+        + 'the wing\'s is never consulted, for a state or for a plan.',
+    async run(ctx) {
+        const leadStub = new FlightStub(() => null);
+        const wingStub = new FlightStub(() => 'grinder');
+        const { flight, drone } = await leadWithTactician(ctx, leadStub, wingStub);
+        await flyFlight(ctx, flight, drone, 600);
+        ctx.check('the lead\'s tactician was asked', leadStub.asked > 0, `${leadStub.asked} calls`);
+        ctx.check('the wing\'s was not, for a state', wingStub.asked === 0, `${wingStub.asked} calls`);
+        ctx.check('the lead\'s was asked for a plan', leadStub.planCalls > 0, `${leadStub.planCalls} calls`);
+        ctx.check('the wing\'s never was', wingStub.planCalls === 0 && wingStub.pictures.length === 0,
+            `${wingStub.planCalls} plan calls, ${wingStub.pictures.length} pictures`);
+    },
+};
+
 export const tacticianTests: GameTest[] = [
     illegalAdviceRefused,
     pictureIsOwnSensorsOnly,
     legalAdviceOverridesDoctrine,
     jevGatesItsAnswers,
     rwrBearingIsHunted,
+    illegalTacticRefused,
+    legalTacticOverridesDoctrine,
+    unusableTacticAdviceFallsBack,
+    flightPictureIsLinkOnly,
+    wingIsNeverAsked,
 ];

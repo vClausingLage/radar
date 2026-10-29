@@ -122,6 +122,9 @@ export const createPlayerShipFactory = () => {
     target.radar.setLoadout(targetShipSettings.LOADOUT);
     target.radar.attachTo(target);
     target.radar.start();
+    // An AI set runs its IFF by itself: it asks on a cadence and will not
+    // release on a track that answered friendly.
+    target.radar.setIffAutonomous(true);
     return target;
   });
 };

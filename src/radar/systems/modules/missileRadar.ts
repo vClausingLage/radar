@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { Vector2 } from '../../../types';
 import type { GasVolume, Terrain } from '../../data/types';
 import { Ray } from '../../../physics/ray';
+import { correlatesWithPpli, type Ppli } from './flightDatalink';
 import {
   MISSILE_RADAR_MAX_MISSED_LOCK_FRAMES,
   MISSILE_SEEKER_BEAM_DEG,
@@ -71,6 +72,12 @@ export class MissileRadar {
   private estPos: Vector2 | null = null;
   private estVel: Vector2 = { x: 0, y: 0 };
 
+  // The flight's PPLI as the launching ship last relayed it, and the clock of
+  // the last update (the age of that copy is judged against it). Empty for a
+  // missile with no flight behind it. See setFriendPicture().
+  private friends: Ppli[] = [];
+  private now = 0;
+
   constructor(
     private readonly range: number,            // detection range (px)
     private readonly searchAzimuthDeg: number, // forward search half-cone (deg)
@@ -87,6 +94,18 @@ export class MissileRadar {
   // cone once the radar is live.
   getRange(): number { return this.range; }
   getSearchAzimuth(): number { return this.searchAzimuthDeg; }
+
+  // The datalink uplink: the launching ship hands the seeker the PPLI of the
+  // flight mates it is on the net with. A return that correlates with one is a
+  // friend and is neither locked nor re-acquired - by geometry only, with the
+  // same rule the ship radars use (correlatesWithPpli). The copy is only as
+  // good as the link: the launcher refreshes it every frame, and one nobody
+  // refreshes (the shooter died) goes stale after PPLI_STALE_MS and protects no
+  // one. The wingman is still a hull in the world - it reflects and can be
+  // hit - the seeker just does not choose it.
+  setFriendPicture(friends: Ppli[]): void {
+    this.friends = friends;
+  }
 
   // The launching ship's radar tells the missile to bring its seeker online
   // (enters RWS search). No-op once already active.
@@ -112,6 +131,7 @@ export class MissileRadar {
     now = 0,
   ): GuidanceTarget | null {
     if (this.mode === 'off') return null;
+    this.now = now;
 
     // STT: keep the beam on the estimated position and see what comes back.
     if (this.mode === 'stt' && this.estPos !== null) {
@@ -223,6 +243,7 @@ export class MissileRadar {
       if (!t.active) continue;
       const d = Phaser.Math.Distance.Between(pos.x, pos.y, t.x, t.y);
       if (d > reach || d >= bestDist) continue;
+      if (correlatesWithPpli({ x: t.x, y: t.y }, this.friends, this.now)) continue;
       if (!this.inCone(pos, coneCentreDeg, t, coneHalfDeg)) continue;
       if (this.isMaskedByDecoy(pos, t, decoyCircles)) continue;
       if (this.returnStrength(pos, t, gasVolumes, terrain) < MISSILE_SEEKER_MIN_SIGNAL) continue;

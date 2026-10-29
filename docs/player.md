@@ -50,8 +50,18 @@ See [radar.md](radar.md) for how the simulation actually works under the hood.
 | **Space** | Fire the active weapon |
 | **T** | Deploy a decoy (chaff) |
 | **J** | Activate the jammer (10 s burst, 20 s cooldown) |
+| **I** | Interrogate (IFF) every track on the scope - needs at least one track |
 | **Shift + Click** | Place a VIM-220 mid-course waypoint (VIM-220 selected) |
 | **Mouse + / −** buttons | Zoom the camera |
+
+**IFF.** With at least one track held, `IFF [I]` shows beside the range readout.
+Press **I** and every track is asked who it is; a track that answers turns blue
+with a ring (friendly), one that does not gets an amber frame (unknown - treat as
+hostile). Your side is code 0, the enemy's 1, and a transponder only answers its
+own side's question. It reaches further than the range ring, but gas weakens it,
+the answer fades after about 8 s, and a friend flying inside an enemy's track
+makes the whole track read friendly. IFF never stops you firing - it is your
+call. (The story levels have no IFF.)
 
 **TWS** has no key binding — use its on-screen button. On-screen buttons next to
 the ship mirror the mode and fire controls, and the speed buttons (1/3, 2/3,

@@ -78,6 +78,17 @@ export class ActiveRadarMissile extends Phaser.Physics.Matter.Sprite implements 
     direction: { x: number; y: number; };
     targetId?: number;
     owner?: Ship;
+    // True when targetId is a track number on the flight datalink (the flight
+    // mate's own numbering), not one of the launching radar's tracks.
+    targetViaLink = false;
+    // Where the link last put that target: the missile is flown to it if the
+    // track drops off the link, and a track that reappears near it is the same
+    // target under a new number (see MissileGuidance).
+    linkAimPos?: { x: number; y: number };
+    // A renumbering is a one-off event (the mate's tracker re-formed); a missile
+    // that has already taken a new number does not go on hopping to whatever
+    // track is near it.
+    linkRebound = false;
     missileType = 'VIM-220' as const;
     missileGuidance = 'active' as const;
     missileBurnTime = MISSILE_FLIGHT['VIM-220'].burnTime;

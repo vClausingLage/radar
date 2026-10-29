@@ -297,9 +297,160 @@ for hundreds of frames would turn a rare sidelobe leak into a near-certainty).
 STT skips this test entirely: staring has no natural once-per-leg cadence to
 gate it on.
 
+### `modules/flightDatalink.ts` — `FlightDatalink` (PPLI)
+The intra-flight net of a two-ship `Flight`. Each member's terminal publishes its
+PPLI (Precise Participant Location and Identification: id, position, velocity)
+every frame from `Radar.update()`, independent of the radar mode — the link is
+not a radar emission, so a wingman in EMCON is still on it. This is the only
+thing that can say whose side a contact is on, and it is used two ways:
+
+- **Tracks.** After each update the radar tags a track `friendly` when it lies
+  within `PPLI_CORRELATION_PX` of a wingman's PPLI, widened by the distance the
+  wingman covers in `PPLI_SCAN_LAG_MS` (the track is a sweep or two old, the PPLI
+  is current). The track stays in the tracking computer — a real echo that
+  still shadows what is behind it — but `displayedTracks()` (everything fire
+  control, STT entry and missile guidance see) and `getHostileTracks()` (what
+  the AI chooses contacts from) leave it out.
+- **RWR.** `RwrReceiver.receive()` marks an emitter `friendly` when its bearing
+  is within `RWR_BEARING_ACCURACY_DEG` of a wingman's bearing (an RWR knows
+  bearing only). Friendly contacts are hidden from `getRwrSignals`,
+  `getPlatformContact`, `getPrimaryRwrContact` and `getRwrSources`, so a
+  wingman's search never triggers HUNT or EVADE. Locks and missile seekers
+  (`missile-N` keys) are never friendly: see the note under "Shared picture".
+
+Both correlations are deliberately generous and so deliberately blind in one
+place: a hostile inside the track gate of the wingman, or exactly behind its
+RWR bearing, is masked as well. A radar with no datalink (the player's) is
+unaffected.
+
+#### Shared picture, sort and launch on remote
+The same link carries each member's *hostile* surveillance tracks
+(`publishTracks()`, every frame from `Radar.update()`, after the friend tags).
+Only tracks matured to `LINK_TRACK_MIN_AGE_SCANS` go out (a one-scan track is as
+likely a false alarm as a ship); the report is a snapshot (position, velocity,
+age, confidence) stamped with the sender, and the radar's own numbering is
+meaningless off its own ship. A radar in EMCON holds no tracks and so sends none.
+A report older than `LINK_TRACK_STALE_MS` is not trusted: a member that is
+destroyed, goes silent or loses the track drops out of the picture within a few
+frames.
+
+`FlightDatalink.groups()` fuses every member's reports into one picture: two
+reports within `LINK_TRACK_CORRELATION_PX` (the tracking computer's own 200 px
+association gate, which also exceeds two radars' jitter and one sweep of
+target motion) are the same target, and a pair the tracker would have merged is
+one group to the flight too. The ordering is fixed (source, then track number),
+so every member asking gets the same answer.
+
+`Flight.assignmentFor()` is the **sort**: groups ordered by azimuth, the lead
+taking the left-most and the wing the right-most; with one group the lead takes
+it and the wing has nothing to sort. Azimuth is measured off the lead→picture
+axis, not the lead's nose, so a crank or skate turn does not swap left and
+right mid-shot. The AI uses it to confine each member to its own group
+(`contactSorted` confines a TWS shot to the track on it).
+
+**Launch on remote.** A wing with a sorted group but no track of its own on it
+may hold EMCON, close on the lead's report and fire a VIM-220 at it:
+`Radar.shootOnRemote(track)` → `FireControl.shootOnRemote()`. The missile needs
+no illumination from its shooter (ARH), so the shooter's transmitter can stay
+off — nothing on the target's RWR ever heard the wing. The ring still binds,
+and it is the shooter's: the report must be inside `RADAR_DEFAULT_RANGE_PX` of
+the *wing* (`Radar.remoteTracksInRing()`), fresh, and a round on the rail; the
+track is re-resolved against the link, so an old or invented one launches
+nothing. Mid-course the missile (`targetViaLink`) is guided from the same
+ring-gated remote list (`GuidanceContext.remoteTracks`) instead of the launching
+radar's tracks; when the lead loses the track the missile flies to the last
+position the link gave it, where its own seeker comes up (see Tactics below). `displayedTracks()` is untouched: ordinary TWS
+and STT firing still see only the ship's own picture. No VIM-177 remote option:
+SARH rides the shooter's own illumination.
+
+**Tactics** (decision_tree.md, "Flights") ride on all of this. `Flight.chooseTactic()`
+reads only the held shared picture and the members' stores: *shooter/cover* has the
+lead radiate and hold the track while the silent wing launches on remote (the
+target's RWR hears one emitter); *bracket* splits the pair 60 degrees either side
+of the axis so the target sees them more than the RWS half-azimuth apart;
+*grinder* alternates the shot between them. Radar-side consequences: the group a
+wing is cued onto comes from the link only; a *lead* may be pointed by the wing's
+link track (a cue to radiate and look - the lead still needs its own track to
+shoot); a remote-launched missile whose mate's track number changes (the lead's
+tracker re-formed, as after an STT lock is dropped) re-associates once with the
+link track nearest the target's last position, and flies to that position if none
+is near; and a missile carries the flight's PPLI so its seeker keeps off the flight
+mates (below), while the shooters check the line before they fire.
+
+**Seeker PPLI.** The flight mate's hull is in the seeker's world like any other
+(`Radar.update()` no longer hides it): it reflects, it can be hit. What keeps a
+missile that missed from choosing it is a friend picture the missile carries.
+While its launcher lives, `MissileGuidance` hands a live VIM-220's seeker the
+launcher's view of the net each frame - the other members' PPLI
+(`MissileRadar.setFriendPicture`, the datalink uplink; `GuidanceContext.datalink`).
+A return the seeker would lock or re-acquire that correlates with one of those
+PPLI is skipped, by geometry only, with the same rule the ship radars use
+(`correlatesWithPpli`: `PPLI_CORRELATION_PX` plus the member's sweep of travel).
+The copy is only as good as the link: nothing but the launcher refreshes it, and
+it is trusted for `PPLI_STALE_MS` - a shooter that dies leaves its missiles with a
+picture that ages out in half a second, after which the seeker will lock a flight
+mate like anything else. Not protected: a wingman within the gate of the real
+target (masked together), and a missile that physically arrives at a mate.
+
+**Shooter deconfliction.** A seeker that refuses a friend is the last line, not the
+licence. Before any member fires (own track or on remote, `AiUnitController.
+tryShoot`/`isReadyToEngage` ask `Flight.clearToFire`) it checks the target against
+the other member's PPLI and holds fire when the mate is inside the target's
+correlation gate, or inside the cone a VIM-220 coming off the shooter's line would
+search (from `ACTIVE_RADAR_ACTIVATION_RANGE` short of the target, `ACTIVE_RADAR_AZIMUTH`
+either side, out to `ACTIVE_RADAR_RANGE`). The bracket's split and the cover's
+station keep the mate out of that cone in the ordinary course; if one drifts in,
+the shot waits. A round that nonetheless meets a mate is friendly fire - realistic,
+and not guarded against.
+
+
+### `modules/iffInterrogator.ts` — `IffInterrogator` (IFF)
+Radar cannot tell friend from enemy: a track is geometry. The interrogator rides
+on the radar antenna and *asks*. The **transponder** is not in this module - it is
+the host ship's (`Ship.iffCode`, from `Ship.side`: the player's side is code 0,
+the enemy's 1).
+
+- **Interrogation.** One beam is steered at each track (at least
+  `IFF_BEAM_WIDTH_DEG`, wider close in so it covers the whole reply gate). A
+  transponder inside any beam hears the question if the one-way signal
+  (`emissionSignal`, range squared, gas on the path priced in) clears
+  `IFF_DECODE_SIGNAL`. It answers only if its code equals the interrogator's.
+- **Reply.** The second leg is one-way as well. Both legs at power 1 reach about
+  1.7x the rated range, so IFF works well past the scope's ring (and past the
+  range a hull's echo is any use) and fails beyond the one-way horizon or behind
+  thick gas. A coded reply is decoded, not detected against noise, so a leg is
+  heard or not: no Pd roll. The reply's range and bearing are jittered by
+  `measurementJitterPx` of its own signal.
+- **Correlation.** A reply is attached to a track by a range / cross-range gate
+  (`IFF_GATE_RANGE_PX`, `IFF_GATE_CROSS_RANGE_PX`), never by entity id; a real
+  interrogator does not know which hull it spoke to. A track with a reply in its
+  gate reads `friendly`; every other track asked reads `unknown` (no reply: not a
+  declaration of hostility - an out-of-range or gassed friend reads the same).
+  **The trap, kept on purpose:** a friend and a foe inside one gate are one track
+  and one answer, so the foe reads friendly. Tested.
+- **State and ageing.** `Track.iff` = `{state, at}`; absent is `not interrogated`
+  (`iffStateOf()` in `data/track.ts`). A result stands `IFF_STATE_VALID_MS`, then
+  the track reverts: it can split, swap hulls or lose a transponder unseen.
+- **Who asks.** The player on the **I** key (`Radar.interrogate()`, cooldown
+  `IFF_COOLDOWN_MS`, needs at least one track and a radiating radar; the scope's
+  range readout shows `IFF [I]` while that holds). Tracks are marked on the scope:
+  blue box and ring = friendly reply, amber frame = no reply. An AI radar is
+  *autonomous* (`setIffAutonomous`): it interrogates matured tracks the moment
+  they mature, re-asks every `IFF_AUTO_INTERVAL_MS`, never fires on a
+  friendly-reply track. (Known gap: a track younger than `IFF_AUTO_MIN_AGE_SCANS`
+  has not been asked yet, so a very young blip can still be shot at.) A lock that turns out friendly is dropped. The player's
+  trigger is *not* gated: a friendly reply is information, the shot is the
+  pilot's call.
+- **Availability.** `Game.iffAvailable()` (default true) is restated to every
+  radar each frame; `CampaignLevel` returns false, so the story levels (level 1
+  is visual identification) are unchanged.
+- Known simplifications: terrain does not block the exchange (only gas does), and
+  an interrogation is not heard by anyone's RWR.
+
 ### `modules/missileGuidance.ts` — `MissileGuidance`
 The seeker/autopilot for missiles in flight. Ages missiles once per second and
-steers each one per its type. Guidance phases:
+steers each one per its type. A live VIM-220's seeker is also handed the launcher's
+PPLI picture of its flight each frame (see *Seeker PPLI* above). Guidance phases:
 
 - **Boost (age < 2):** hold the launch heading (flies straight off the rail).
 - **VIM-177 (SARH):** rides the ship's STT illumination, and has no other

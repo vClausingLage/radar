@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { PlayerShip, Target } from "../../entities/ship";
+import { IffCode, PlayerShip, Target } from "../../entities/ship";
 
 import { Antenna } from "./modules/antenna";
 import { Emitter } from "./modules/emitter";
@@ -9,6 +9,8 @@ import { RwrReceiver } from "./modules/rwr";
 import { Jammer, JammerError, JammerHudStatus, JammingContest } from "./modules/jammer";
 import { TerrainMapper } from "./modules/terrainMapper";
 import { CfarDetector } from "./modules/cfarDetector";
+import { FlightDatalink } from "./modules/flightDatalink";
+import { IffInterrogator, Transponder } from "./modules/iffInterrogator";
 
 import { FireControl } from "./fireControl";
 
@@ -24,7 +26,7 @@ import {
     specularFactor,
     beamPattern,
 } from "../data/signalPath";
-import { Track } from "../data/track";
+import { Track, iffStateOf } from "../data/track";
 import { Entity, GasVolume, Loadout, Mode, RadarHost, Terrain } from "../data/types";
 
 import { InterfaceRenderer } from "../renderer/interfaceRenderer";
@@ -42,7 +44,10 @@ import {
     MAX_TWS_TRACKS,
     RADAR_BEAM_WIDTH_DEG,
     RADAR_DEFAULT_RANGE_PX,
+    IFF_MATE_PPLI_PX,
+    LINK_TRACK_MIN_AGE_SCANS,
     RADAR_FALSE_ALARM_RATE,
+    RWR_BEARING_ACCURACY_DEG,
     STT_ACQUISITION_BEAM_DEG,
     STT_ACQUISITION_FRAMES,
     STT_BEAM_DEG,
@@ -94,6 +99,24 @@ export class Radar {
 
     public rwrReceiver = new RwrReceiver();
     public jammer = new Jammer();
+
+    // The flight net this radar's host belongs to, if any. Gives the radar the
+    // one thing it cannot measure - whose side a contact is on - for the
+    // wingmen only: see setDatalink().
+    private datalink: FlightDatalink | null = null;
+
+    // IFF. The interrogator rides on this radar's antenna; the transponder it
+    // asks about is on the other ships (Ship.iffCode). `iffAvailable` is the
+    // scene's say - a story level may not have it - and `iffAutonomous` is an
+    // AI set's habit: it interrogates its picture on a cadence, and its fire
+    // control will not release on a track that answered friendly. The
+    // player's set is manual (the I key) and its trigger is its own call.
+    private iffInterrogator = new IffInterrogator();
+    private iffAvailable = true;
+    private iffAutonomous = false;
+    // The ships and gas the last update saw, kept for an interrogation asked
+    // between updates (the player's key press).
+    private iffWorld: { transponders: Transponder[]; gasVolumes: GasVolume[] } = { transponders: [], gasVolumes: [] };
 
     // Ground-mapping half of the radar: terrain returns bypass the tracking
     // pipeline entirely and are painted like a mapping radar's display.
@@ -157,6 +180,21 @@ export class Radar {
 
     attachTo(owner: RadarHost): void {
         this.owner = owner;
+    }
+
+    // Join a flight's datalink. From here on the host broadcasts its PPLI every
+    // frame, and both sensors can tell a wingman from a stranger: tracks that
+    // sit on a member's PPLI are tagged friendly (updateFriendTags), and an RWR
+    // emitter on a member's bearing is filtered out of the warning picture. A
+    // radar without a datalink - the player's - behaves exactly as before.
+    setDatalink(datalink: FlightDatalink | null): void {
+        this.datalink = datalink;
+        this.rwrReceiver.setFriendFilter(datalink
+            ? bearingDeg => this.owner !== null && datalink.matchesMemberBearing(
+                this.owner.getPosition(), this.owner.id, bearingDeg,
+                RWR_BEARING_ACCURACY_DEG, this.scene.time.now,
+            )
+            : null);
     }
 
     setMode(mode: Mode): void {
@@ -271,7 +309,7 @@ export class Radar {
     // is not drawing.
     private displayedSttTrack(): Track | null {
         const track = this.getSttTrack();
-        if (!track || !this.owner) return null;
+        if (!track || !this.owner || this.isFriendlyTrack(track)) return null;
         return this.withinDisplayRange(this.owner.getPosition(), track.pos) ? track : null;
     }
 
@@ -280,11 +318,186 @@ export class Radar {
     // the energy budget, not the range ring, decides what it can hold — but a
     // contact the player cannot see is not one they get to shoot at, and the
     // same rule binds the AI, which drives the identical radar.
+    //
+    // A wingman's track is on the scope's list (it is a real echo, and shadows
+    // what is behind it) but never in this one: weapons are handed only
+    // hostile tracks, so a flight cannot lock, fire on or guide onto its own.
     private displayedTracks(): Track[] {
         if (!this.owner) return [];
         const ownerPos = this.owner.getPosition();
         return this.trackingComputer.getTracks()
-            .filter(track => this.withinDisplayRange(ownerPos, track.pos));
+            .filter(track => !this.isFriendlyTrack(track) && this.withinDisplayRange(ownerPos, track.pos));
+    }
+
+    // A track nothing may be fired at, locked or hunted on: a wingman (PPLI),
+    // or - for an autonomous AI set only - one that answered an interrogation
+    // as friendly. The player's trigger is deliberately not gated by IFF: a
+    // friendly reply is information, the call to shoot is the pilot's.
+    private isFriendlyTrack(track: Track): boolean {
+        return Boolean(track.friendly) || (this.iffAutonomous && iffStateOf(track) === 'friendly');
+    }
+
+    // Every track not identified as a wingman, display range or not - what an
+    // AI pilot chooses a contact to investigate from.
+    getHostileTracks(): Track[] {
+        return this.trackingComputer.getTracks().filter(track => !this.isFriendlyTrack(track));
+    }
+
+    // The flight's shared picture as this radar may act on it: the tracks the
+    // *other* members report on the link, inside this ship's own display range.
+    // The ring binds the shooter - a lead's track out past the wingman's ring
+    // is a cue, not a firing solution - so the same range gate as
+    // displayedTracks() applies, measured from here.
+    //
+    // This is deliberately a separate list from displayedTracks(): it is never
+    // fed to the normal TWS/STT paths, only to the named launch-on-remote path
+    // (shootOnRemote) and to guidance for the missiles launched that way.
+    private remoteTracksInRing(): Track[] {
+        if (!this.datalink || !this.owner) return [];
+        const ownerPos = this.owner.getPosition();
+        return this.datalink.remoteTracks(this.owner.id, this.scene.time.now)
+            .map(report => report.track)
+            .filter(track => this.withinDisplayRange(ownerPos, track.pos))
+            .map(track => ({ ...track, dist: Phaser.Math.Distance.Between(ownerPos.x, ownerPos.y, track.pos.x, track.pos.y) }));
+    }
+
+    // Could a VIM-220 be launched on this datalinked track right now? It must be
+    // a fresh report from another member, inside this ship's ring, and a round
+    // must be on the rail. Matched by track number: the source numbers its own
+    // tracks, and a two-ship flight has exactly one other source.
+    canShootOnRemote(track: Track): boolean {
+        return this.getWeaponLoad('VIM-220') > 0 && this.remoteTracksInRing().some(t => t.id === track.id);
+    }
+
+    // Tag each track that correlates with a wingman's PPLI. Run every frame
+    // after the sweep so a track born this frame is already identified by the
+    // time the pilot or fire control looks at it, and a hostile that drifts
+    // away from the wingman's position loses the tag again.
+    private updateFriendTags(): void {
+        if (!this.datalink || !this.owner) return;
+        const now = this.scene.time.now;
+        for (const track of this.trackingComputer.getTracks()) {
+            track.friendly = this.datalink.correlatesWithMember(track.pos, this.owner.id, now);
+        }
+    }
+
+    // Put this radar's matured hostile tracks on the flight's link. Run after
+    // the friend tags, so a wingman is never reported as a target; with the
+    // transmitter off the radar holds no tracks and so sends none - the net
+    // carries only what some member is actually looking at.
+    private publishSharedTracks(): void {
+        if (!this.datalink || !this.owner) return;
+        this.datalink.publishTracks(
+            this.owner.id,
+            this.getHostileTracks().filter(track => track.age >= LINK_TRACK_MIN_AGE_SCANS),
+            this.scene.time.now,
+        );
+    }
+
+    // ── IFF ────────────────────────────────────────────────────────────────
+
+    // The scene decides whether IFF exists at all (Game.iffAvailable); the
+    // game loop restates it every frame.
+    setIffAvailable(available: boolean): void {
+        this.iffAvailable = available;
+    }
+
+    // An AI set: interrogates on a cadence and holds fire on a friendly reply.
+    setIffAutonomous(autonomous: boolean): void {
+        this.iffAutonomous = autonomous;
+    }
+
+    // Could an interrogation be sent right now? IFF needs a track to point at,
+    // a transmitting radar to ride on and an interrogator that has finished its
+    // last cycle - the scope indicator follows hasIffTracks.
+    canInterrogate(): boolean {
+        return this.hasIffTracks() && this.iffInterrogator.isReady(this.scene.time.now);
+    }
+
+    // Is IFF something this radar has to offer right now: available, radiating
+    // (an interrogation is an emission, so EMCON has none) and holding at
+    // least one track to ask about. What the HUD indicator is shown on.
+    hasIffTracks(): boolean {
+        return this.iffAvailable && this.mode !== 'emcon' && this.ownerCode() !== null
+            && this.trackingComputer.getTracks().length > 0;
+    }
+
+    // Ask every track in the picture who it is (the player's I key). Returns
+    // whether a question went out. The answer arrives as track.iff.
+    interrogate(): boolean {
+        if (!this.canInterrogate()) return false;
+        this.sendInterrogation(this.trackingComputer.getTracks());
+        return true;
+    }
+
+    // Is the IFF indicator on the scope's range readout (for the tests)?
+    iffIndicatorShown(): boolean {
+        return this.radarRenderer?.isIffHintShown() ?? false;
+    }
+
+    private ownerCode(): IffCode | null {
+        const ship = this.ownerShip();
+        return ship ? ship.iffCode : null;
+    }
+
+    private sendInterrogation(tracks: Track[]): void {
+        const code = this.ownerCode();
+        if (!this.owner || code === null) return;
+        this.iffInterrogator.interrogate({
+            ownerPos: this.owner.getPosition(),
+            ownerCode: code,
+            ratedRangePx: this.range,
+            tracks,
+            transponders: this.iffWorld.transponders,
+            gasVolumes: this.iffWorld.gasVolumes,
+            now: this.scene.time.now,
+        });
+    }
+
+    // Per-frame IFF upkeep, run after the sweep has updated the tracks: take
+    // stock of the transponders in the world, let old answers age out, and -
+    // for an autonomous set - interrogate on the cadence. A lock that turns
+    // out friendly is dropped, so an AI never goes on holding a wingman.
+    private updateIff(entities: Entity[], gasVolumes: GasVolume[]): void {
+        if (!this.owner) return;
+        const now = this.scene.time.now;
+        const tracks = this.trackingComputer.getTracks();
+        this.iffInterrogator.ageOut(tracks, now);
+        if (!this.iffAvailable) {
+            for (const track of tracks) delete track.iff;
+            return;
+        }
+
+        // A flight mate's reply is no evidence about a track: the datalink
+        // already says where the mate is (PPLI), and letting its answer vouch
+        // for whatever track lies in its gate would have a wingman closing on
+        // a target make the target read friendly to its own lead. The mate's
+        // transponder is recognised by where it is, as everything here is.
+        const mates = this.datalink?.wingmen(this.owner.id, now) ?? [];
+        this.iffWorld = {
+            transponders: entities
+                .filter((e): e is PlayerShip | Target =>
+                    e.id !== this.owner?.id && (e instanceof PlayerShip || e instanceof Target) && e.active && Boolean(e.body))
+                .map(e => ({ pos: e.getPosition(), code: e.iffCode }))
+                .filter(t => !mates.some(m => Phaser.Math.Distance.Between(m.pos.x, m.pos.y, t.pos.x, t.pos.y) <= IFF_MATE_PPLI_PX)),
+            gasVolumes,
+        };
+
+        // An autonomous set asks on its cadence, and at once about any matured
+        // track nobody has asked yet.
+        if (this.iffAutonomous && this.mode !== 'emcon') {
+            const candidates = IffInterrogator.autoCandidates(tracks);
+            const unasked = candidates.some(track => iffStateOf(track) === 'not interrogated');
+            if (candidates.length > 0 && (unasked || this.iffInterrogator.autoDue(now))) {
+                this.iffInterrogator.noteAutoInterrogation(now);
+                this.sendInterrogation(candidates);
+            }
+        }
+
+        if (this.mode === 'stt') {
+            const locked = this.getSttTrack();
+            if (locked && this.isFriendlyTrack(locked)) this.exitStt();
+        }
     }
 
     // ── Jammer ─────────────────────────────────────────────────────────────
@@ -358,12 +571,33 @@ export class Radar {
     // confirmed launch fires a 'missile-fired' event on this radar's own
     // emitter — only the player's radar has a listener (see Game.create()),
     // so AI ships firing the same weapons stay silent.
-    shoot(): void {
+    //
+    // `only` confines a TWS shot to that track: a flight member shooting its
+    // sorted group does not spend a round on the other member's.
+    shoot(only?: Track): void {
+        const tracks = this.displayedTracks();
         const fired = this.fireControl.shoot(this.mode, {
             ship: this.ownerShip(),
             sttTrack: this.displayedSttTrack(),
-            tracks: this.displayedTracks(),
+            tracks: only ? tracks.filter(t => t.id === only.id) : tracks,
         });
+        if (fired) {
+            this.eventEmitter.emitMissileFired(fired);
+        }
+    }
+
+    // Launch on remote: fire a VIM-220 at a track a flight mate holds and sent
+    // over the link, with this ship's own transmitter in whatever mode it is -
+    // EMCON included. The missile needs no illumination from the shooter: it
+    // flies the link's track to its activation range and finds the target with
+    // its own seeker. The track is re-resolved against the link, so a stale or
+    // invented one launches nothing; and it must be inside this ship's ring.
+    // Mid-course updates keep coming from the link while the lead holds the
+    // track (remoteTracksInRing in the guidance context below).
+    shootOnRemote(track: Track): void {
+        const remote = this.remoteTracksInRing().find(t => t.id === track.id);
+        if (!remote) return;
+        const fired = this.fireControl.shootOnRemote(this.ownerShip(), remote);
         if (fired) {
             this.eventEmitter.emitMissileFired(fired);
         }
@@ -396,6 +630,10 @@ export class Radar {
         const ownerPos = this.owner.getPosition();
         const shipDirection = this.owner.getDirection();
 
+        // Broadcast our PPLI first, so a wingman updating later this frame
+        // correlates against where we are now rather than where we were.
+        this.datalink?.publish(this.owner.id, ownerPos, this.scene.time.now);
+
         // Age out stale RWR contacts (incoming-emission warnings).
         this.rwrReceiver.tick(this.scene.time.now);
         // Advance jammer active/cooldown state before any isActive() check.
@@ -407,10 +645,15 @@ export class Radar {
         // radar supplies the track picture and live entities; FireControl runs
         // missile guidance, the waypoint fade and the seeker-cone rendering.
         // Live ship entities (excluding owner) for VIM-220 active-radar homing.
-        // Exclude destroyed ships (body becomes undefined when removed).
+        // Exclude destroyed ships (body becomes undefined when removed). A flight
+        // mate is NOT excluded: its hull is in the seeker's world like any
+        // other. Keeping missiles off it is the seeker's job, done from the
+        // PPLI the guidance hands it over the datalink (MissileRadar.
+        // setFriendPicture), and the shooters' job before they fire.
         const targetShips = entities.filter(
             (e): e is PlayerShip | Target =>
-                e.id !== this.owner?.id && 'getDirection' in e && e.active && Boolean(e.body),
+                e.id !== this.owner?.id
+                && 'getDirection' in e && e.active && Boolean(e.body),
         );
         // Guidance is fed the same gated picture as the trigger: a missile in
         // flight rides the track the scope is showing, so a contact that runs
@@ -419,10 +662,12 @@ export class Radar {
         this.fireControl.update(delta, {
             sttTrack: this.displayedSttTrack(),
             tracks: this.displayedTracks(),
+            remoteTracks: this.remoteTracksInRing(),
             targets: targetShips,
             decoyCircles,
             gasVolumes,
             terrain,
+            datalink: this.datalink,
             now: this.scene.time.now,
         }, graphics);
 
@@ -436,6 +681,9 @@ export class Radar {
         } else {
             this.updateRws(ownerPos, shipDirection, entities, graphics, decoyCircles, terrain, gasVolumes);
         }
+        this.updateFriendTags();
+        this.updateIff(entities, gasVolumes);
+        this.publishSharedTracks();
 
         // Paint the ground-mapping picture (persisted, decaying terrain returns).
         this.terrainMapper.render(graphics, ownerPos, this.range, this.scene.time.now);
@@ -477,6 +725,7 @@ export class Radar {
             [], this.fireControl.getLoadout(), this.fireControl.getWaypoints(), pulse, false,
             this.fireControl.getLastVim220TimeToActive(), this.fireControl.getActiveMissileRange(),
             this.getJammerHudStatus(), this.fireControl.getWaypointAlpha(),
+            false, this.hasIffTracks(),
         );
 
         // Render our own jamming cone while the jammer is running.
@@ -741,6 +990,7 @@ export class Radar {
             [], this.fireControl.getLoadout(), this.fireControl.getWaypoints(), pulse, true,
             this.fireControl.getLastVim220TimeToActive(), this.fireControl.getActiveMissileRange(),
             this.getJammerHudStatus(), this.fireControl.getWaypointAlpha(),
+            false, this.hasIffTracks(),
         );
 
         // Render our own jamming cone while the jammer is running.

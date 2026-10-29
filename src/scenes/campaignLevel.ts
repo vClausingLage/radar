@@ -154,6 +154,13 @@ export default abstract class CampaignLevel extends Game {
         return true;
     }
 
+    // The campaign is written around a radar that cannot tell friend from
+    // bogey (level 1 is visual identification, by voice): no interrogators, no
+    // transponders. Revisit per level when the story wants IFF.
+    iffAvailable(): boolean {
+        return false;
+    }
+
     preload() {
         super.preload();
         // Ground scenery, campaign-only — the practice scenarios are set in open space.

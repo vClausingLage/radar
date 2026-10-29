@@ -43,6 +43,13 @@ export class PlayerController {
     this.ship.radar.activateJammer();
   };
 
+  // I → interrogate (IFF) every track on the scope. Does nothing without a
+  // track to point at, or while the interrogator is still cycling.
+  private onKeyDownI = () => {
+    if (!this.ship.active || !this.ship.scene) return;
+    this.ship.radar.interrogate();
+  };
+
   // ── Weapons ───────────────────────────────────────────────────────────
   // Space → fire (VIM-177 requires STT lock)
   private onKeyDownSpace = () => {
@@ -83,6 +90,7 @@ export class PlayerController {
     kb?.on('keydown-ESC', this.onKeyDownEsc);
     kb?.on('keydown-Q', this.onKeyDownQ);
     kb?.on('keydown-J', this.onKeyDownJ);
+    kb?.on('keydown-I', this.onKeyDownI);
     kb?.on('keydown-SPACE', this.onKeyDownSpace);
     this.scene.input.on('pointerdown', this.onPointerDown);
     // Right-click clears the VIM-220 route (see onPointerDown) — don't let the
@@ -102,6 +110,7 @@ export class PlayerController {
     kb?.off('keydown-ESC', this.onKeyDownEsc);
     kb?.off('keydown-Q', this.onKeyDownQ);
     kb?.off('keydown-J', this.onKeyDownJ);
+    kb?.off('keydown-I', this.onKeyDownI);
     kb?.off('keydown-SPACE', this.onKeyDownSpace);
     this.scene.input.off('pointerdown', this.onPointerDown);
   }

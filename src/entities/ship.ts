@@ -92,6 +92,12 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
         return new Phaser.Geom.Circle(this.x, this.y, radius);
     }
     
+    // The transponder: every hull carries one, answering to its side's code.
+    // The player's side is 0; Target overrides this from its Side.
+    get iffCode(): IffCode {
+        return IFF_CODE_PLAYER_SIDE;
+    }
+
     getSpeed(): number {
         return this.speed;
     }
@@ -190,6 +196,18 @@ export class PlayerShip extends Ship {
 // which is what a mission's rules of engagement are built on.
 export type Side = 'hostile' | 'friendly';
 
+// The code a ship's IFF transponder answers to. One per group: 0 is the
+// player's side, 1 the enemy's. A transponder replies only to an interrogation
+// carrying its own code, so a ship never answers the other side's question -
+// and silence is all the other side learns.
+export type IffCode = 0 | 1;
+export const IFF_CODE_PLAYER_SIDE: IffCode = 0;
+export const IFF_CODE_ENEMY_SIDE: IffCode = 1;
+
+export function iffCodeOf(side: Side): IffCode {
+    return side === 'friendly' ? IFF_CODE_PLAYER_SIDE : IFF_CODE_ENEMY_SIDE;
+}
+
 export class Target extends Ship {
     public readonly shipType: 'cruiser' | 'cargo';
     public readonly side: Side;
@@ -214,6 +232,10 @@ export class Target extends Ship {
         this.side = params.side ?? 'hostile';
 
         this.setScale(.4);
+    }
+
+    get iffCode(): IffCode {
+        return iffCodeOf(this.side);
     }
 
     setController(controller: AiUnitController) {

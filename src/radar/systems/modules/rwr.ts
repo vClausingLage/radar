@@ -20,17 +20,37 @@ export type RwrContact = {
   // while the burst runs.
   isJammer?: boolean;
   lastSeenAt: number;    // Phaser.time.now for aging out stale contacts
+  // The emitter lies where a flight member's datalinked position says a
+  // wingman is - so it is the wingman's own radar. Kept on the contact (it
+  // still refreshes and ages like any other) but hidden from every reader:
+  // not displayed, not hunted. Only ever set on a search contact: a lock is
+  // never marked friendly (see receive).
+  friendly?: boolean;
 };
 
 export class RwrReceiver {
   private contacts: Map<string, RwrContact> = new Map();
+  // Supplied by a radar that shares a flight datalink: does an emitter heard
+  // on this bearing correspond to a wingman? An RWR measures only bearing, so
+  // that is all the question can be.
+  private friendFilter: ((bearingDeg: number) => boolean) | null = null;
+
+  setFriendFilter(filter: ((bearingDeg: number) => boolean) | null): void {
+    this.friendFilter = filter;
+  }
 
   // Called by the Radar when it detects an incoming emission from a known
   // bearing. `key` uniquely identifies the emitter (e.g. entity id or
   // missile id as a string) so contacts can be deduplicated; `isJammer`
   // marks a jamming strobe (registerJammingStrobes in systems/radar.ts).
   receive(key: string, bearingDeg: number, isLocked: boolean, now: number, isJammer = false): void {
-    this.contacts.set(key, { bearingDeg, isLocked, isJammer, lastSeenAt: now });
+    // A lock is never a friend's: a flight's fire control cannot lock a
+    // datalinked wingman (displayedTracks excludes them), so a lock on us is an
+    // enemy's however well its bearing lines up with the wingman's - and
+    // hiding it would blind EVADE exactly when an enemy shoots from behind
+    // the wingman. A missile seeker is never a friend either.
+    const friendly = !isLocked && !key.startsWith('missile-') && (this.friendFilter?.(bearingDeg) ?? false);
+    this.contacts.set(key, { bearingDeg, isLocked, isJammer, lastSeenAt: now, friendly });
   }
 
   // Purge contacts whose signal has not been refreshed within the TTL.
@@ -42,15 +62,22 @@ export class RwrReceiver {
     }
   }
 
+  // What the RWR reports to the pilot: everything except wingmen.
   getRwrSignals(): RwrContact[] {
-    return Array.from(this.contacts.values());
+    return Array.from(this.contacts.values()).filter(c => !c.friendly);
+  }
+
+  // The emitters heard that were identified as wingmen and hidden from the
+  // picture - for tests and debugging; nothing in play reads this.
+  getFriendlyContacts(): RwrContact[] {
+    return Array.from(this.contacts.values()).filter(c => c.friendly);
   }
 
   // The emitter key behind every live contact. Ship radars key on the emitting
   // ship's entity id, missile seekers on their own 'missile-N' key, so this is
   // what tells a search radar apart from an inbound seeker.
   getRwrSources(): string[] {
-    return Array.from(this.contacts.keys());
+    return Array.from(this.contacts.entries()).filter(([, c]) => !c.friendly).map(([k]) => k);
   }
 
   // The loudest platform — a ship radar, not a missile seeker — locked first.
@@ -59,7 +86,7 @@ export class RwrReceiver {
   getPlatformContact(): RwrContact | null {
     let best: RwrContact | null = null;
     for (const [key, contact] of this.contacts) {
-      if (key.startsWith('missile-')) continue;
+      if (key.startsWith('missile-') || contact.friendly) continue;
       if (!best || (contact.isLocked && !best.isLocked)) best = contact;
     }
     return best;

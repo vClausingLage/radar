@@ -339,6 +339,128 @@ export const VIM220_WAYPOINT_REACHED_DISTANCE_PX = 24;
 // How long (ms) to keep a contact alive without a refresh signal.
 export const RWR_CONTACT_TTL_MS = 2500;
 
+// How closely an RWR can say which way an emitter lies (deg). The simulated
+// receiver reports an exact bearing; a real direction-finding array is good to
+// a few degrees. Used only to decide whether a warning could be a flight
+// member's own radar: an emitter inside this cone of a wingman's datalinked
+// position is taken to be the wingman. A hostile hiding exactly behind the
+// wingman's bearing is masked by the same rule - the real limitation.
+export const RWR_BEARING_ACCURACY_DEG = 5;
+
+// ── Flight datalink (systems/modules/flightDatalink.ts) ────────────────────
+
+// A radar track is declared "friendly" when it lies within this distance of a
+// flight member's PPLI position (px), plus the ground that member has covered
+// since the track was last refreshed (PPLI_SCAN_LAG_MS). This base part
+// swallows everything between a member's true centre and where its track can
+// sit at one instant: the echo comes from the nearest hull surface (up to
+// ~14 px off centre) and the measurement jitters (up to
+// RADAR_MEASUREMENT_JITTER_MAX_PX = 55 px at the noise floor). A radius short
+// of that lets the odd outlying track slip through as a "hostile" sitting on
+// the wingman - which an AI would then lock and shoot. The price is that a
+// real hostile this close to the wingman is waved through as friend too.
+export const PPLI_CORRELATION_PX = 70;
+
+// A search track is refreshed once per sweep leg and smoothed by an alpha-beta
+// filter, so it describes where the member was up to a sweep or two ago
+// while the PPLI is current; the correlation gate widens by the member's
+// speed times this (ms). One RWS leg (a 60 degree cone stepped 1 degree a
+// frame is 60 frames, a second at 60 fps) for the refresh period, about as
+// much again for the filter's lag on a manoeuvring wingman.
+export const PPLI_SCAN_LAG_MS = 2000;
+
+// A PPLI report older than this is not trusted (ms): the member has been
+// destroyed or its terminal has gone quiet, and the last position it gave is
+// no longer where anything friendly is. A few frames of slack at 60 fps.
+export const PPLI_STALE_MS = 500;
+
+// A member shares a surveillance track on the link only once it has matured
+// (scans). A one-scan track is as likely a thermal false alarm as a ship, and
+// a flight that sorted its targets on false alarms would fly at noise. Matches
+// the age at which the AI trusts a track enough to lock or shoot it.
+export const LINK_TRACK_MIN_AGE_SCANS = 2;
+
+// A shared track older than this is dropped from the picture (ms). Every
+// member republishes each frame, so a track that stops being refreshed is one
+// its owner no longer holds (lost, destroyed, gone to EMCON): a launch on it
+// would be a launch on a ghost. A few frames of slack at 60 fps.
+export const LINK_TRACK_STALE_MS = 500;
+
+// Two shared tracks are one target when they lie within this distance (px) -
+// the same gate the tracking computer uses to merge returns into one track
+// (TRACK_GATE_RADIUS_PX). Two radars measuring one ship disagree by their
+// jitter (up to RADAR_MEASUREMENT_JITTER_MAX_PX each) plus the ground it covered
+// between their sweeps, which sits well inside the gate; and anything the gate
+// would have merged inside one radar is one group to the flight too, which is
+// what lets the sort treat a close pair as a single thing to shoot at.
+export const LINK_TRACK_CORRELATION_PX = TRACK_GATE_RADIUS_PX;
+
+// ── IFF (systems/modules/iffInterrogator.ts) ───────────────────────────────
+
+// Transmit strength of the interrogation and of the transponder's reply, each
+// on the one-way emission scale of data/signalPath.ts (emissionSignal's
+// `gain`; 1 is a plain search pulse). Both legs are one-way - the
+// interrogation only has to be heard by the transponder, the reply only by
+// the interrogator - which is why IFF reaches out further than the echo of
+// the very ship it is asking about.
+export const IFF_INTERROGATION_POWER = 1;
+export const IFF_REPLY_POWER = 1;
+
+// Signal ratio (1 = the receiver's floor) a leg must clear to be decoded. A
+// reply is a coded pulse train matched against a known code, not a spike to
+// be told apart from noise, so a leg is heard or not - there is no fading
+// detection probability to roll. With the powers above this puts the edge of
+// IFF at ~1.7x the rated range (the same horizon a search pulse is warned at),
+// well past the ring the scope draws.
+export const IFF_DECODE_SIGNAL = 1;
+
+// Narrowest the interrogation beam steered at a track gets (deg). A
+// transponder inside it hears the question, whichever ship that track really
+// is - the question goes at a bearing, not at a hull. Close in the beam widens
+// to cover the whole reply gate (IFF_GATE_CROSS_RANGE_PX) at the track's range.
+export const IFF_BEAM_WIDTH_DEG = 6;
+
+// Gate a reply must fall in to be attached to a track: this far in range and
+// this far across the line of sight (px both - a bearing error subtends more
+// ground the further out the track is, so the gate is quoted as the ground it
+// covers, not as an angle). Wide, like PPLI_CORRELATION_PX and for the same
+// reasons: a track is a filtered, up-to-a-sweep-old estimate of where the hull
+// was, off the hull's centre by the echo's own measurement jitter (up to
+// RADAR_MEASUREMENT_JITTER_MAX_PX = 55 px at the noise floor) and a hull's
+// half-length. A gate short of that mislays the reply of a perfectly good
+// friend. The price is the classic one: a reply is matched to a track by this
+// geometry alone, never by who sent it, so a friend inside the gate of a foe's
+// track makes that track read friendly.
+export const IFF_GATE_RANGE_PX = 100;
+export const IFF_GATE_CROSS_RANGE_PX = 100;
+
+// How long an interrogation result stands (ms) before the track goes back to
+// 'not interrogated'. A track can split, swap hulls or lose a transponder
+// without the radar noticing, so an old answer is not trusted: the next
+// interrogation has to renew it.
+export const IFF_STATE_VALID_MS = 8000;
+
+// Minimum gap (ms) between two interrogations by the player: the
+// interrogator's transmit/listen cycle.
+export const IFF_COOLDOWN_MS = 1500;
+
+// An AI radar interrogates its whole picture this often (ms), and only tracks
+// at least this old (scans): a one-scan track is as likely a thermal false
+// alarm as a ship and not worth a question.
+export const IFF_AUTO_INTERVAL_MS = 2000;
+export const IFF_AUTO_MIN_AGE_SCANS = 2;
+
+// A transponder this close (px) to a flight mate's PPLI position is that mate,
+// and its reply is not counted: the datalink already accounts for it.
+export const IFF_MATE_PPLI_PX = 5;
+
+// Scope marks (renderer/radarRenderer.ts): a
+// track that answered is drawn blue with a ring; one that was asked and did
+// not answer is framed amber - unknown, to be treated as hostile.
+export const IFF_FRIENDLY_COLOR = 0x4da6ff;
+export const IFF_UNKNOWN_COLOR = 0xffb000;
+export const IFF_MARK_RING_RADIUS_PX = 11;
+
 // ── Jammer (systems/modules/jammer.ts, renderer/radarRenderer.ts) ──────────
 
 // The jammer runs for JAMMER_DURATION_MS, then sits on cooldown until

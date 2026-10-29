@@ -1,12 +1,15 @@
 import Phaser from 'phaser';
 import { Radar } from '../radar/systems/radar';
 import { Target } from '../entities/ship';
-import { Track } from '../radar/data/track';
+import { Track, iffStateOf } from '../radar/data/track';
 import { world } from '../settings';
+import { Flight, FlightBriefing, FlightRole, FlightTactic, Orders } from './flight';
 
 // Behaviour states. The engagement flow is a cycle rather than a single state:
 //   (HUNT →) INVESTIGATE → ENGAGE (shoot) → CRANK (support + open range) → SKATE (bug out)
 // EVADE pre-empts everything the moment an enemy fire-control lock is detected.
+// A wingman has one more: FORMATION, flying on its lead instead of any of the
+// above (see decision_tree.md, "Flights").
 enum AIState {
     PATROL,      // No contacts — flying a search ladder
     INVESTIGATE, // Radar contact, closing to lock
@@ -15,9 +18,12 @@ enum AIState {
     SKATE,       // Missile away/spent: break lock and run
     EVADE,       // Being locked by an enemy — defend the shot
     HUNT,        // No contact, but an enemy radar was heard — fly down its bearing
+    FORMATION,   // Wingman: hold station on the flight lead
 }
 
-export type TacticalStateName = keyof typeof AIState;
+// What a tactician may choose between. FORMATION is the wingman's standing
+// order, not a judgement call: only the lead is ever asked.
+export type TacticalStateName = Exclude<keyof typeof AIState, 'FORMATION'>;
 
 type Personality = 'aggressive' | 'defensive';
 
@@ -28,8 +34,16 @@ export type UnitActivity = 'active' | 'inactive';
 // The tactical judgement a controller can defer to in place of its scripted
 // state rules: JevTactician, or a stub in the tests. Asked every frame; null
 // means "no opinion this frame", and the scripted doctrine decides.
+//
+// The lead of a flight is also offered the flight's plan: `legalTactics` are the
+// tactics that are possible now, and the answer comes back through
+// adviseFlightTactic - one request can carry both questions. Only a lead is ever
+// asked (see consulted()).
 export interface Tactician {
-    advise(picture: TacticalPicture, legal: TacticalStateName[]): TacticalStateName | null;
+    advise(
+        picture: TacticalPicture, legal: TacticalStateName[], legalTactics?: FlightTactic[],
+    ): TacticalStateName | null;
+    adviseFlightTactic?(picture: TacticalPicture, legalTactics: FlightTactic[]): FlightTactic | null;
     getDebugLabel(): string;
     destroy(): void;
 }
@@ -45,6 +59,12 @@ export type TacticalPicture = {
     contact: 'none' | 'new track' | 'mature track';
     contactRange: 'no contact' | 'inside missile range' | 'outside missile range';
     contactBearing: 'no contact' | 'on the nose' | 'off the nose' | 'behind us';
+    // What IFF has said about the contact. 'no IFF reply' is unknown, not a
+    // declaration of hostility: nothing answered the question. A friendly
+    // reply keeps a track out of the AI's contact list altogether, so that
+    // word is for completeness - a doctrine never has to be told not to
+    // shoot a friend.
+    contactIff: 'no contact' | 'not interrogated' | 'no IFF reply' | 'friendly IFF reply';
     firingSolution: boolean;
     selectedWeapon: 'VIM-220 fire-and-forget' | 'VIM-177 semi-active, needs our lock held' | 'none left';
     missilesLeft: number;
@@ -58,6 +78,14 @@ export type TacticalPicture = {
     chaffLeft: number;
     jammerReady: boolean;
     nearWorldEdge: boolean;
+    // The flight, for a lead: what its wingman reports on the link, the plan in
+    // force and how many groups the link shows. 'no wingman' / 'no flight' for a
+    // ship that flies alone. Words, as everything here: the wingman's position
+    // never reaches the tactician.
+    wingman: FlightBriefing['wingman'] | 'no wingman';
+    wingmanMissiles: number;
+    flightTactic: FlightTactic | 'no flight';
+    groupsOnLink: FlightBriefing['groupsOnLink'];
 };
 
 // ── Tunables ───────────────────────────────────────────────────────────────
@@ -99,6 +127,32 @@ export class AiUnitController {
     private crankSide = 1;             // +1/−1: which way to crank the nose
     private skateUntil = 0;
     private evadeSide = 1;
+
+    // The flight this ship belongs to, and which half of it. A wingman flies
+    // FORMATION on its lead for as long as the lead lives; if it dies the wing
+    // drops back to the ordinary doctrine as a single ship.
+    private flight: Flight | null = null;
+    private flightRole: FlightRole = 'lead';
+    private wasInFormation = false;
+    // Fraction of cruise speed the throttle is set to this frame (a wingman
+    // regaining or giving up station); 1 for everyone else.
+    private speedFactor = 1;
+    // This frame's chosen contact is the lead's datalinked track, not one of
+    // our own: we are cued onto it but hold nothing ourselves (a silent wing).
+    private contactViaLink = false;
+    // ... and this frame's contact is the one the flight's sort gave us, so
+    // our shots are confined to it: the other member's target is not ours to
+    // spend a round on, however near it sits.
+    private contactSorted = false;
+    // ... or the contact is the wing's track and only a cue: the lead is
+    // pointed at it to go and look, but holds no track of its own to shoot on.
+    private contactCueOnly = false;
+    // What the flight's tactic lets this ship do this frame (decision_tree.md,
+    // "Flights"). Outside a flight: no limits.
+    private orders: Orders = { tactic: 'formation', mayShoot: true, silent: false };
+    // The picture last handed to the tactician: the flight's plan is asked of it
+    // later in the frame (Flight.review), about the same moment.
+    private lastPicture: TacticalPicture | null = null;
 
     // Last known contact position, so SKATE/EVADE can flee a direction even after
     // the lock (and thus the live track) is gone.
@@ -157,6 +211,36 @@ export class AiUnitController {
         this.tactician?.destroy();
     }
 
+    // Fly as one half of a flight. Radar wiring (the datalink) is the
+    // factory's job; this only gives the controller its role.
+    public joinFlight(flight: Flight, role: FlightRole): void {
+        this.flight = flight;
+        this.flightRole = role;
+        // The lead's tactician can name the flight's plan; the wing has none.
+        if (role !== 'lead') return;
+        const tactician = this.consulted();
+        flight.setTacticAdvisor(tactician?.adviseFlightTactic
+            ? legal => this.lastPicture ? tactician.adviseFlightTactic?.(this.lastPicture, legal) ?? null : null
+            : null);
+    }
+
+    // The tactician this ship defers to: none for a wingman. A wing flies the
+    // lead's plan and the scripted doctrine; only the lead is ever asked.
+    private consulted(): Tactician | null {
+        return this.flight !== null && this.flightRole === 'wing' ? null : this.tactician;
+    }
+
+    // The state the controller is in, by name (tests and the DEV label).
+    public getStateName(): keyof typeof AIState {
+        return AIState[this.state] as keyof typeof AIState;
+    }
+
+    // A wingman with a living lead. Everything else - the lead, a lone ship,
+    // a wing whose lead has been shot down - flies the ordinary doctrine.
+    private inFormation(): boolean {
+        return this.flight !== null && this.flightRole === 'wing' && this.flight.leadAlive();
+    }
+
     public getTurnRate(): number {
         return this.turnRate;
     }
@@ -191,7 +275,7 @@ export class AiUnitController {
 
     private updateDebugText(): void {
         if (!this.debugText) return;
-        const stateNames = ['PATROL', 'INVESTIGATE', 'ENGAGE', 'CRANK', 'SKATE', 'EVADE', 'HUNT'];
+        const stateNames = ['PATROL', 'INVESTIGATE', 'ENGAGE', 'CRANK', 'SKATE', 'EVADE', 'HUNT', 'FORMATION'];
         const lock = this.sttLockAcquiredAt !== null
             ? `L:${Math.floor((this.scene.time.now - this.sttLockAcquiredAt) / 1000)}s`
             : 'L:--';
@@ -213,12 +297,18 @@ export class AiUnitController {
         }
 
         const radar = this.radar;
-        const tracks = radar?.getTracks() ?? [];
-        // Tracks are geometry-only (no entity id): engage the highest-confidence one.
-        const preferredTrack = tracks.reduce<Track | undefined>(
-            (best, t) => (!best || t.confidence > best.confidence ? t : best),
-            undefined,
-        );
+        this.speedFactor = 1;
+        // Losing the lead puts the wing back on its own: its old patrol ladder
+        // was laid out around the spawn point, so lay a fresh one from here.
+        const inFormation = this.inFormation();
+        if (this.wasInFormation && !inFormation) this.patrolRoute = [];
+        this.wasInFormation = inFormation;
+
+        const now = this.scene.time.now;
+        if (this.flight?.leadAlive()) this.orders = this.flight.ordersFor(this.ship, now);
+        else this.orders = { tactic: 'formation', mayShoot: true, silent: false };
+
+        const preferredTrack = this.selectContact(radar?.getHostileTracks() ?? []);
         const sttTrack = radar?.getSttTrack() ?? null;
 
         // Weapon doctrine: spend the fire-and-forget VIM-220s first (TWS shots,
@@ -244,7 +334,13 @@ export class AiUnitController {
             case AIState.INVESTIGATE: this.executeInvestigate(preferredTrack, weapon); break;
             case AIState.HUNT: this.executeHunt(); break;
             case AIState.PATROL: this.executePatrol(); break;
+            case AIState.FORMATION: this.executeFormation(); break;
         }
+        // Whatever the state, a wingman too close to its lead breaks away from
+        // it (Flight.guidance): EVADE or the border turn must not fly it into
+        // the lead either.
+        this.guardSeparation();
+        this.publishStatus();
 
         // Border avoidance overrides state steering at the world edge. A
         // stationary unit can never reach an edge, so it skips both — and so
@@ -256,6 +352,66 @@ export class AiUnitController {
             this.ship.setVelocity(0, 0);
         }
         this.updateDebugText();
+    }
+
+    // The contact this pilot works. A wingman's own track (tagged by the flight
+    // datalink) is never one: it is left out of what is investigated or engaged.
+    //
+    // Alone, tracks are geometry-only (no entity id): take the highest-confidence
+    // one. In a flight the shared picture is sorted (Flight.assignmentFor) and
+    // each member works its own group: the lead the left-most, the wing the
+    // right-most. The lead falls back to its best track if its group is not one
+    // it holds; the wing has no business beyond its group, so with none it
+    // stays on the lead. A wing with no track of its own on its group but the
+    // lead's report of it is cued onto that (contactViaLink), and holds EMCON
+    // while it closes.
+    private selectContact(tracks: Track[]): Track | undefined {
+        this.contactViaLink = false;
+        this.contactSorted = false;
+        this.contactCueOnly = false;
+        const best = tracks.reduce<Track | undefined>(
+            (top, t) => (!top || t.confidence > top.confidence ? t : top),
+            undefined,
+        );
+        if (!this.flight || !this.flight.leadAlive()) return best;
+
+        const assignment = this.flight.assignmentFor(this.ship, this.scene.time.now);
+        // A wing ordered silent works from the link alone; whatever it still
+        // holds of its own is a leftover of the last time it radiated.
+        const own = assignment && !(this.flightRole === 'wing' && this.orders.silent)
+            ? this.flight.ownTrackOn(assignment, tracks)
+            : undefined;
+        this.contactSorted = own !== undefined;
+        if (this.flightRole === 'lead') {
+            // Its own group is not on its radar (a dropout, a sweep not yet
+            // round): any other contact will do, but not the one the sort gave
+            // the wing - that would double up on one target and leave the
+            // lead's own unengaged.
+            const now = this.scene.time.now;
+            const fallback = own ? undefined : tracks.reduce<Track | undefined>(
+                (top, t) => this.flight!.onPartnersGroup(this.ship, t, now) ? top
+                    : (!top || t.confidence > top.confidence ? t : top),
+                undefined,
+            );
+            if (own ?? fallback) return own ?? fallback;
+            // Nothing of its own: the wing's track on the group is a cue to
+            // point the radar and go and look. It is never a firing solution -
+            // only the wing has launch-on-remote.
+            if (assignment?.remote) {
+                this.contactCueOnly = true;
+                return assignment.remote;
+            }
+            return undefined;
+        }
+
+        // A wing with empty rails has nothing to prosecute: it stays on the lead.
+        if (this.missilesLeft() === 0) return undefined;
+        if (own) return own;
+        if (assignment?.remote) {
+            this.contactViaLink = true;
+            return assignment.remote;
+        }
+        return undefined;
     }
 
     // ── State machine ──────────────────────────────────────────────────────
@@ -275,7 +431,12 @@ export class AiUnitController {
     ): void {
         const readyToEngage = this.isReadyToEngage(weapon, engagementTrack);
         const legal = this.legalStates(track, readyToEngage, engagementTrack);
-        const advice = this.tactician?.advise(this.buildPicture(track, weapon, readyToEngage), legal) ?? null;
+        const tactician = this.consulted();
+        const picture = tactician ? this.buildPicture(track, weapon, readyToEngage) : null;
+        this.lastPicture = picture;
+        const legalTactics = this.flightRole === 'lead' && this.flight?.leadAlive()
+            ? this.flight.legalTactics(this.scene.time.now) : [];
+        const advice = picture ? tactician?.advise(picture, legal, legalTactics) ?? null : null;
         // Whatever the tactician says, it cannot talk the ship into a state the
         // situation does not allow — that check is the controller's, not its.
         const advised = advice !== null && legal.includes(advice) ? advice : null;
@@ -288,12 +449,31 @@ export class AiUnitController {
 
     // Ready to shoot? The 177 needs its STT lock; the 220 just needs a matured
     // TWS track (radar mode is set up during INVESTIGATE).
+    // A cued wing needs no TWS track: a 220 on the lead's link track just needs
+    // that track fresh, inside our ring and a round on the rail. The 177 has no
+    // such option - it rides our own illumination - so it never counts here.
     private isReadyToEngage(weapon: 'VIM-220' | 'VIM-177', engagementTrack: Track | null): boolean {
+        // The tactic can hold fire (the cover, the bracket not yet formed, the
+        // grinder's member without the shot token), and a cue is no solution.
+        if (!this.orders.mayShoot || this.contactCueOnly) return false;
+        // ... and so can a flight mate standing where the round would look.
+        if (engagementTrack && !this.deconflicted(engagementTrack)) return false;
+        if (this.contactViaLink) {
+            return weapon === 'VIM-220' && engagementTrack !== null
+                && engagementTrack.age >= INVESTIGATE_STT_MIN_AGE
+                && Boolean(this.radar?.canShootOnRemote(engagementTrack));
+        }
         return weapon === 'VIM-220'
             ? engagementTrack !== null
                 && engagementTrack.age >= INVESTIGATE_STT_MIN_AGE
                 && this.radar?.getMode() === 'tws'
             : engagementTrack !== null;
+    }
+
+    // A shot at `track` is clear of the flight mate (Flight.clearToFire). Outside
+    // a flight there is no one to check.
+    private deconflicted(track: Track): boolean {
+        return !this.flight?.leadAlive() || this.flight.clearToFire(this.ship, track.pos, this.scene.time.now);
     }
 
     // The hand-written doctrine (decision_tree.md). Null means carry on: a
@@ -307,6 +487,11 @@ export class AiUnitController {
 
         // Highest priority: an enemy has a fire-control lock on us → defend.
         if (this.sttTracked) return AIState.EVADE;
+
+        // A wingman with nothing sorted to it stays on its lead - unless it is
+        // still working through a shot it took (crank, skate), which runs to
+        // completion before it rejoins.
+        if (this.inFormation() && !track && !this.finishingShot(now)) return AIState.FORMATION;
 
         // Cargo never prosecutes an attack; it just flies its route (evade above
         // still applies).
@@ -325,6 +510,10 @@ export class AiUnitController {
         if (track) return AIState.INVESTIGATE;
         if (this.canHunt()) return AIState.HUNT;
         return AIState.PATROL;
+    }
+
+    private finishingShot(now: number): boolean {
+        return this.state === AIState.CRANK || (this.state === AIState.SKATE && now < this.skateUntil);
     }
 
     // A remembered emitter bearing is worth flying down — by a warship, not
@@ -381,6 +570,9 @@ export class AiUnitController {
                 : track.dist <= weaponRange ? 'inside missile range' : 'outside missile range',
             contactBearing: !track ? 'no contact'
                 : offNoseDeg <= 30 ? 'on the nose' : offNoseDeg <= 100 ? 'off the nose' : 'behind us',
+            contactIff: !track ? 'no contact'
+                : iffStateOf(track) === 'friendly' ? 'friendly IFF reply'
+                : iffStateOf(track) === 'unknown' ? 'no IFF reply' : 'not interrogated',
             firingSolution: readyToEngage,
             selectedWeapon: this.missilesLeft() === 0 ? 'none left'
                 : weapon === 'VIM-220' ? 'VIM-220 fire-and-forget' : 'VIM-177 semi-active, needs our lock held',
@@ -401,7 +593,32 @@ export class AiUnitController {
             chaffLeft: this.ship.getRemainingDecoys(),
             jammerReady: radar?.isJammerReady() ?? false,
             nearWorldEdge: x < margin || y < margin || x > world.WIDTH - margin || y > world.HEIGHT - margin,
+            ...this.flightPicture(),
         };
+    }
+
+    // The flight part of the picture. Only a lead has one: its wingman's status
+    // comes off the link, never from the wingman itself.
+    private flightPicture(): Pick<TacticalPicture, 'wingman' | 'wingmanMissiles' | 'flightTactic' | 'groupsOnLink'> {
+        if (!this.flight || this.flightRole !== 'lead') {
+            return { wingman: 'no wingman', wingmanMissiles: 0, flightTactic: 'no flight', groupsOnLink: 'none' };
+        }
+        const briefing = this.flight.briefing(this.scene.time.now);
+        return {
+            wingman: briefing.wingman,
+            wingmanMissiles: briefing.wingmanMissiles,
+            flightTactic: briefing.flightTactic,
+            groupsOnLink: briefing.groupsOnLink,
+        };
+    }
+
+    // What this ship tells the flight about itself on the link, every frame: the
+    // wingman's status page that the lead's picture is read from.
+    private publishStatus(): void {
+        if (!this.flight) return;
+        const stance = this.state === AIState.EVADE ? 'defending'
+            : this.state === AIState.FORMATION || this.state === AIState.PATROL ? 'in formation' : 'engaged';
+        this.flight.datalink.publishStatus(this.ship.id, { stance, missiles: this.missilesLeft() }, this.scene.time.now);
     }
 
     private missilesLeft(): number {
@@ -428,7 +645,7 @@ export class AiUnitController {
         // A shot enters CRANK directly (executeEngage) with its side picked;
         // a tactician choosing it later picks the side the same way.
         if (state === AIState.CRANK && this.lastTargetPos) {
-            this.crankSide = this.sideTowardCenter(this.lastTargetPos);
+            this.crankSide = this.crankSideFor(this.lastTargetPos);
         }
         this.state = state;
     }
@@ -470,6 +687,31 @@ export class AiUnitController {
         this.followPatrolLadder();
     }
 
+    // Hold station on the flight lead. By default the wing keeps a search radar
+    // running (RWS) so the flight has a second pair of eyes; the flight can
+    // order it silent instead (Flight.wingRadar). The geometry - where the
+    // station is, how fast to close - is the Flight's.
+    private executeFormation(): void {
+        if (!this.flight) return;
+        const mode = this.flight.wingRadar === 'silent' || this.orders.silent ? 'emcon' : 'rws';
+        if (this.radar?.getMode() !== mode) {
+            if (mode === 'emcon') this.radar?.enterEmcon(); else this.radar?.enterRws();
+        }
+        const guidance = this.flight.guidance(this.ship);
+        this.speedFactor = guidance.speedFactor;
+        this.turnTowardAngle(guidance.headingDeg);
+    }
+
+    // The lead is never to be flown into, in any state: inside the break-away
+    // radius the wing overrides its steering and runs directly away from it.
+    private guardSeparation(): void {
+        if (this.flightRole !== 'wing' || !this.flight?.leadAlive()) return;
+        const guidance = this.flight.guidance(this.ship);
+        if (!guidance.breakaway) return;
+        this.speedFactor = guidance.speedFactor;
+        this.turnTowardAngle(guidance.headingDeg);
+    }
+
     // Fly down the bearing an enemy radar was heard on, to bring it inside our
     // own radar's reach — the RWR heard it far beyond that. The aggressive
     // pilot searches all the way in; the defensive one listens in EMCON
@@ -490,14 +732,39 @@ export class AiUnitController {
     private executeInvestigate(track: Track | undefined, weapon: 'VIM-220' | 'VIM-177'): void {
         if (!track) return;
         this.lastTargetPos = { x: track.pos.x, y: track.pos.y };
-        this.turnToward(track.pos);
+        this.closeOn(track.pos);
         this.tryJam(track.pos);
+
+        // A lead cued by the wing's track radiates to find the target itself.
+        if (this.contactCueOnly) {
+            if (this.radar?.getMode() === 'emcon') this.radar.enterRws();
+            return;
+        }
+
+        // Cued by the lead's link track, we hold nothing ourselves. With a 220
+        // we close in silence (a transmitter would only announce us) until the
+        // track is inside our ring and ENGAGE can launch on it; without one we
+        // must radiate to find the target ourselves.
+        if (this.contactViaLink) {
+            // ... unless the tactic has both radiate: a bracket (or grinder) is
+            // pressure on the target's scope, and its RWR is meant to hear two
+            // emitters on two bearings. Only the cover and the sort's own
+            // remote shots stay quiet.
+            const quiet = this.orders.tactic === 'formation' || this.orders.silent;
+            const wanted = weapon === 'VIM-220' && quiet ? 'emcon' : 'rws';
+            if (this.radar?.getMode() !== wanted) {
+                if (wanted === 'emcon') this.radar?.enterEmcon(); else this.radar?.enterRws();
+            }
+            return;
+        }
 
         // Wait until the track has matured (~2 scans), then set up the radar for
         // the chosen weapon: TWS for the fire-and-forget 220 (no lock needed),
         // STT lock for the SARH 177.
         if (track.age >= INVESTIGATE_STT_MIN_AGE && this.radar) {
-            if (weapon === 'VIM-220') {
+            // Holding fire (the cover) keeps the track in TWS, never the lock
+            // the 177 needs: STT would collapse the flight's picture.
+            if (weapon === 'VIM-220' || !this.orders.mayShoot) {
                 if (this.radar.getMode() !== 'tws') this.radar.enterTws();
             } else if (this.radar.getMode() !== 'stt') {
                 this.radar.enterStt();
@@ -508,7 +775,7 @@ export class AiUnitController {
     private executeEngage(weapon: 'VIM-220' | 'VIM-177', track: Track | null): void {
         if (!track) return;
         this.lastTargetPos = { x: track.pos.x, y: track.pos.y };
-        this.turnToward(track.pos);
+        this.closeOn(track.pos);
 
         this.tryJam(track.pos);
 
@@ -518,13 +785,13 @@ export class AiUnitController {
         const lockHeld = this.sttLockAcquiredAt !== null ? now - this.sttLockAcquiredAt : 0;
         const gateOpen = weapon === 'VIM-220' || lockHeld >= STT_LOCK_DELAY_MS;
 
-        if (gateOpen && now >= this.nextShotAt && this.tryShoot(weapon)) {
+        if (gateOpen && now >= this.nextShotAt && this.tryShoot(weapon, track)) {
             this.nextShotAt = now + FIRE_COOLDOWN_MS;
             this.tryDeployDecoy();
 
             // Enter the crank: pick the side that turns the nose toward open space
             // (world centre), so we open range without cornering ourselves.
-            this.crankSide = this.sideTowardCenter(track.pos);
+            this.crankSide = this.crankSideFor(track.pos);
             this.crankUntil = now + CRANK_DURATION_MS;
             this.state = AIState.CRANK;
         }
@@ -547,7 +814,7 @@ export class AiUnitController {
         // Follow-up shot while cranking — this is where the 220s get "spammed"
         // (fireVim220 walks outward across un-engaged tracks by itself).
         const now = this.scene.time.now;
-        if (now >= this.nextShotAt && this.tryShoot(weapon)) {
+        if (this.orders.mayShoot && now >= this.nextShotAt && this.tryShoot(weapon, track)) {
             this.nextShotAt = now + FIRE_COOLDOWN_MS;
             this.tryDeployDecoy();
         }
@@ -556,13 +823,18 @@ export class AiUnitController {
     // Select the weapon and pull the trigger. Returns true only if a missile
     // actually left the rail (detected via the load count), since shoot() can
     // silently refuse — e.g. all tracks already engaged, or wrong radar mode.
-    private tryShoot(weapon: 'VIM-220' | 'VIM-177'): boolean {
+    // A cued wing launches on the lead's link track (shootOnRemote); everyone
+    // else shoots from their own picture.
+    private tryShoot(weapon: 'VIM-220' | 'VIM-177', track: Track): boolean {
         if (!this.radar) return false;
         this.radar.selectWeapon(weapon);
         const before = this.radar.getWeaponLoad(weapon);
-        if (before <= 0) return false;
-        this.radar.shoot();
-        return this.radar.getWeaponLoad(weapon) < before;
+        if (before <= 0 || !this.deconflicted(track)) return false;
+        if (this.contactViaLink) this.radar.shootOnRemote(track);
+        else this.radar.shoot(this.contactSorted ? track : undefined);
+        const fired = this.radar.getWeaponLoad(weapon) < before;
+        if (fired) this.flight?.recordShot(this.ship);
+        return fired;
     }
 
     private executeSkate(): void {
@@ -708,6 +980,24 @@ export class AiUnitController {
         return delta >= 0 ? 1 : -1;
     }
 
+    // Close on a contact. Alone that is straight at it; in a flight the tactic
+    // shapes the approach (Flight.closing): the bracket's split, the cover's
+    // station. The geometry is the flight's, the throttle and turn are ours.
+    private closeOn(position: { x: number; y: number }): void {
+        const los = this.bearingTo(position);
+        if (!this.flight?.leadAlive() || this.contactCueOnly) { this.turnTowardAngle(los); return; }
+        const closing = this.flight.closing(this.ship, los, this.scene.time.now);
+        this.speedFactor = closing.speedFactor;
+        this.turnTowardAngle(closing.headingDeg);
+    }
+
+    // Which way to crank: in a flight, outboard - away from the partner - so a
+    // pair that fires together does not turn across each other. Alone, toward
+    // the world centre.
+    private crankSideFor(targetPos: { x: number; y: number }): number {
+        return this.flight?.leadAlive() ? this.flight.outboardSide(this.ship) : this.sideTowardCenter(targetPos);
+    }
+
     private turnToward(position: { x: number; y: number }): void {
         this.turnTowardAngle(this.bearingTo(position));
     }
@@ -728,10 +1018,8 @@ export class AiUnitController {
 
     private applyMovement(): void {
         const angleRad = Phaser.Math.DegToRad(this.ship.angle);
-        this.ship.setVelocity(
-            Math.cos(angleRad) * this.ship.getSpeed(),
-            Math.sin(angleRad) * this.ship.getSpeed(),
-        );
+        const speed = this.ship.getSpeed() * this.speedFactor;
+        this.ship.setVelocity(Math.cos(angleRad) * speed, Math.sin(angleRad) * speed);
     }
 
     private isNearPosition(pos: { x: number; y: number }, threshold: number): boolean {

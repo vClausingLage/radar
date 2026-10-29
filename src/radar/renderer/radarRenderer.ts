@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { Track } from "../../radar/data/track";
+import { Track, iffStateOf } from "../../radar/data/track";
 import { Asteroid } from "../../entities/asteroid";
 import { Missile } from "../../entities/missiles";
 import { Loadout } from "../data/types";
@@ -8,6 +8,9 @@ import { Pulse } from "../systems/modules/emitter";
 import { Vector2 } from "../../types";
 import {
   DATALINK_COLOR,
+  IFF_FRIENDLY_COLOR,
+  IFF_MARK_RING_RADIUS_PX,
+  IFF_UNKNOWN_COLOR,
   JAMMER_CONE_DEG,
   MISSILE_RANGE_CAP_LENGTH_PX,
   RADAR_CONTACT_MARKER_SIZE_PX,
@@ -21,6 +24,7 @@ import { JammerHudStatus } from "../systems/modules/jammer";
 export class RadarRenderer {
 
   private rangeText: Phaser.GameObjects.Text | undefined;
+  private iffHintShown = false;
   private activeLoadout: Phaser.GameObjects.Text | undefined;
   // Jammer status readout, pinned to the left (start-angle) edge of the cone.
   private jammerText: Phaser.GameObjects.Text | undefined;
@@ -50,7 +54,12 @@ export class RadarRenderer {
     );
   }
 
-  renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, activeMissiles: Missile[], loadout: Loadout, vim220Waypoints: Vector2[] = [], vim220TimeToActive: number | null = null, jammerStatus: JammerHudStatus | null = null, vim220WaypointAlpha = 1, emconStandby = false): void {
+  // Whether the IFF indicator is on the range readout right now.
+  isIffHintShown(): boolean {
+    return this.iffHintShown;
+  }
+
+  renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, activeMissiles: Missile[], loadout: Loadout, vim220Waypoints: Vector2[] = [], vim220TimeToActive: number | null = null, jammerStatus: JammerHudStatus | null = null, vim220WaypointAlpha = 1, emconStandby = false, iffHint = false): void {
     const endX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(endAngle));
     const endY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(endAngle));
 
@@ -64,11 +73,14 @@ export class RadarRenderer {
         // Transmitter off: the range readout doesn't mean anything, so it's
         // replaced by a standby indicator rather than a stale/zero range.
         if (emconStandby) {
+            this.iffHintShown = false;
             this.rangeText.setText('\n RDR STDBY');
             this.rangeText.setColor('#ffff00');
         } else {
             const missileAge = activeMissiles?.length && activeMissiles[0].missileAge > 0 ? activeMissiles[0].missileAge : '';
-            this.rangeText.setText(`\n ${radarRange}\n ${missileAge}`);
+            // IFF indicator: only while there is a track to ask about.
+            this.iffHintShown = iffHint;
+            this.rangeText.setText(`\n ${radarRange}\n ${missileAge}${iffHint ? '\n IFF [I]' : ''}`);
             this.rangeText.setColor('#00ff00');
         }
     }
@@ -219,21 +231,43 @@ export class RadarRenderer {
     }
   }
 
+  // The IFF mark round a contact, if it has been interrogated: a ring for a
+  // reply, an amber frame for silence. Nothing for a track nobody asked.
+  private renderIffMark(graphics: Phaser.GameObjects.Graphics, track: Track): void {
+    const { x, y } = track.pos;
+    const iff = iffStateOf(track);
+    if (iff === 'friendly') {
+      graphics.lineStyle(2, IFF_FRIENDLY_COLOR, 1);
+      graphics.strokeCircle(x, y, IFF_MARK_RING_RADIUS_PX);
+    } else if (iff === 'unknown') {
+      graphics.lineStyle(2, IFF_UNKNOWN_COLOR, 1);
+      graphics.strokeRect(x - IFF_MARK_RING_RADIUS_PX, y - IFF_MARK_RING_RADIUS_PX,
+        IFF_MARK_RING_RADIUS_PX * 2, IFF_MARK_RING_RADIUS_PX * 2);
+    }
+  }
+
   renderRwsContacts(graphics: Phaser.GameObjects.Graphics, track: Track): void {
     const { x, y } = track.pos;
     const halfMarker = RADAR_CONTACT_MARKER_SIZE_PX / 2;
 
-    // Fading dot trail of past positions, behind the current marker.
-    this.renderTrackHistory(graphics, track, 0x00ff00);
+    // An IFF answer recolours the contact: a track that replied is blue with a
+    // ring round it, one that was asked and did not is framed amber (unknown
+    // - treat as hostile). Un-interrogated stays the plain green search box.
+    const iff = iffStateOf(track);
+    const color = iff === 'friendly' ? IFF_FRIENDLY_COLOR : 0x00ff00;
 
-    // Green box at track position
-    graphics.fillStyle(0x00ff00, 0.7);
+    // Fading dot trail of past positions, behind the current marker.
+    this.renderTrackHistory(graphics, track, color);
+
+    // Box at track position
+    graphics.fillStyle(color, 0.7);
     graphics.fillRect(x - halfMarker, y - halfMarker, RADAR_CONTACT_MARKER_SIZE_PX, RADAR_CONTACT_MARKER_SIZE_PX);
+    this.renderIffMark(graphics, track);
 
     // Velocity vector line
     if (track.dir && track.speed > 0) {
       const rad = Phaser.Math.DegToRad(track.dir);
-      graphics.lineStyle(2, 0x00ff00, 1);
+      graphics.lineStyle(2, color, 1);
       graphics.lineBetween(x, y, x + Math.cos(rad) * RADAR_TRACK_VECTOR_LENGTH_PX, y + Math.sin(rad) * RADAR_TRACK_VECTOR_LENGTH_PX);
     }
   }
@@ -291,6 +325,7 @@ export class RadarRenderer {
     // Box at track position
     graphics.fillStyle(0xff0000, 0.7);
     graphics.fillRect(x - halfMarker, y - halfMarker, RADAR_CONTACT_MARKER_SIZE_PX, RADAR_CONTACT_MARKER_SIZE_PX);
+    this.renderIffMark(graphics, track);
 
     // Velocity vector line
     if (track.dir && track.speed > 0) {
@@ -337,6 +372,7 @@ export class RadarRenderer {
     jammerStatus: JammerHudStatus | null = null,
     vim220WaypointAlpha = 1,
     emconStandby = false,
+    iffHint = false,
   ): void {
     if (pulse) {
       this.renderPulse(graphics, pulse, radarRange, sttMode);
@@ -361,6 +397,7 @@ export class RadarRenderer {
       jammerStatus,
       vim220WaypointAlpha,
       emconStandby,
+      iffHint,
     );
   }
 

@@ -79,8 +79,8 @@ export default class StartMenu extends Phaser.Scene {
         }).setOrigin(0.5);
         CAMPAIGN.forEach((level, i) => this.createCampaignButton(cx, 470 + i * 44, level.label, level.key));
 
-        // One on one — its own scene, a single hostile closing head-on.
-        this.createCampaignButton(cx, 470 + CAMPAIGN.length * 44 + 16, 'ONE ON ONE', 'OneOnOne');
+        // One versus two — its own scene, a two-ship hostile flight closing head-on.
+        this.createCampaignButton(cx, 470 + CAMPAIGN.length * 44 + 16, 'ONE VERSUS TWO', 'OneOnOne');
 
         // Scenario selector (under Start)
         this.add.text(cx, 250, 'SCENARIO', {

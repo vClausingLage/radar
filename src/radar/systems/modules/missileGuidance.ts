@@ -3,9 +3,11 @@ import type { GasVolume, Terrain } from '../../data/types';
 import { Missile, SARHMissile, ActiveRadarMissile } from '../../../entities/missiles';
 import { Track } from '../../data/track';
 import type { GuidanceTarget } from './missileRadar';
+import type { FlightDatalink } from './flightDatalink';
 import {
   MISSILE_AGE_TICK_MS,
   MISSILE_BOOST_PHASE_MAX_AGE,
+  LINK_TRACK_CORRELATION_PX,
   MISSILE_DEBUG_LOG_INTERVAL_MS,
   VIM220_WAYPOINT_REACHED_DISTANCE_PX,
 } from '../../data/radarGameSettings';
@@ -21,6 +23,11 @@ export type { GuidanceTarget };
 export type GuidanceContext = {
   sttTrack: Track | null;
   tracks: Track[];
+  // Tracks a flight mate holds, on the datalink and inside the shooter's ring.
+  // Guides only the VIM-220s launched on remote (see ActiveRadarMissile.
+  // targetViaLink); a separate list so the ordinary tracks stay the only
+  // thing an ordinary shot can be guided onto.
+  remoteTracks: Track[];
   targets: GuidanceTarget[];
   decoyCircles: Phaser.Geom.Circle[];
   // Gas clouds in the world. A seeker is a radar like any other: the medium
@@ -29,6 +36,9 @@ export type GuidanceContext = {
   // Solid terrain, the same occluder list every radar in the scene is shadowed
   // by: a rock between the seeker and a hull stops the echo.
   terrain: Terrain[];
+  // The launching radar's flight net, if it has one: the uplink over which a
+  // VIM-220 is handed the flight's PPLI (see guideActiveRadar).
+  datalink: FlightDatalink | null;
   // Scene clock (scene.time.now) — timestamps the seeker's RWR illumination.
   now: number;
 };
@@ -152,9 +162,7 @@ export class MissileGuidance {
     if (toFirst) return toFirst;
 
     // Assigned mid-course track handed over by the launching ship.
-    const track = missile.targetId !== undefined
-      ? ctx.tracks.find(t => t.id === missile.targetId) ?? null
-      : null;
+    const track = this.assignedTrack(missile, ctx);
 
     // 2. Activate the seeker by proximity to the assigned target, or once the
     //    missile has passed its first waypoint.
@@ -168,6 +176,14 @@ export class MissileGuidance {
 
     // 3. Seeker live: run its RWS→STT loop and home on the locked target.
     if (missile.missileRadar.isActive()) {
+      // Uplink: while the launching ship lives and is on the net, it refreshes
+      // the seeker's friend picture every frame. If it is destroyed nothing
+      // does, and the copy ages out (PPLI_STALE_MS) - then the seeker has no
+      // idea who is a friend.
+      const launcher = missile.owner;
+      if (ctx.datalink && launcher && launcher.active && launcher.body) {
+        missile.missileRadar.setFriendPicture(ctx.datalink.wingmen(launcher.id, ctx.now));
+      }
       const headingDeg = Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x));
       const target = missile.missileRadar.update(
         from, headingDeg, delta, ctx.targets, ctx.decoyCircles, ctx.gasVolumes, ctx.terrain, ctx.now,
@@ -194,6 +210,44 @@ export class MissileGuidance {
       return this.pursue(from, track.pos);
     }
     return null;
+  }
+
+  // The track a VIM-220 is being steered onto this frame.
+  //
+  // A launch on remote is updated from the link, matched by the flight mate's
+  // track number. That number is not a lasting identity: the mate's radar
+  // renumbers when it leaves and re-enters STT (a VIM-177 lock collapses its
+  // picture to the one track) or drops and re-forms the track. So when the
+  // number is gone the missile re-associates, once, with the link track nearest
+  // where the target last was - the same distance gate the flight uses to say
+  // two reports are one target - and takes its new number. With nothing near, it
+  // flies to that last position rather than straight on: the seeker comes up
+  // there, as it would for a missile whose launching radar had gone quiet.
+  private assignedTrack(missile: ActiveRadarMissile, ctx: GuidanceContext): Track | null {
+    if (missile.targetId === undefined) return null;
+    if (!missile.targetViaLink) return ctx.tracks.find(t => t.id === missile.targetId) ?? null;
+
+    let track = ctx.remoteTracks.find(t => t.id === missile.targetId) ?? null;
+    if (!track && missile.linkAimPos && !missile.linkRebound) {
+      const aim = missile.linkAimPos;
+      let nearestPx = LINK_TRACK_CORRELATION_PX;
+      for (const candidate of ctx.remoteTracks) {
+        const px = Phaser.Math.Distance.Between(candidate.pos.x, candidate.pos.y, aim.x, aim.y);
+        if (px <= nearestPx) { track = candidate; nearestPx = px; }
+      }
+      if (track) {
+        missile.targetId = track.id;
+        missile.linkRebound = true;
+      }
+    }
+    if (track) {
+      missile.linkAimPos = { x: track.pos.x, y: track.pos.y };
+      return track;
+    }
+    // Lost on the link: a stand-in track at the last position, nothing more.
+    return missile.linkAimPos
+      ? { id: missile.targetId, pos: { ...missile.linkAimPos }, dist: 0, dir: 0, speed: 0, age: 0, lastUpdate: 0, confidence: 0, history: [] }
+      : null;
   }
 
   // Fly to the route's first waypoint. Flips `reachedFirst` on arrival (which

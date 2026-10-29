@@ -215,17 +215,17 @@ export class FireControl {
     private fireVim220(ctx: ShootContext): boolean {
         const ship = ctx.ship;
         if (!ship) return false;
-
-        if (this.loadoutManager.getActiveType() !== 'VIM-220') return false;
-        const loadout = this.loadoutManager.getLoadout();
-        if (!loadout['VIM-220'] || loadout['VIM-220'].load <= 0) return false;
+        if (!this.vim220Ready()) return false;
 
         const ownerPos = ship.getPosition();
 
         // Engage the nearest track not already assigned to a live missile, so
-        // successive shots walk outward from the closest contact.
+        // successive shots walk outward from the closest contact. (Missiles
+        // launched on remote carry the flight mate's track numbers, a different
+        // numbering, so they claim nothing here.)
         const engaged = new Set(
             this.activeMissiles
+                .filter(m => !(m instanceof ActiveRadarMissile && m.targetViaLink))
                 .map(m => m.targetId)
                 .filter((id): id is number => id !== undefined),
         );
@@ -238,6 +238,39 @@ export class FireControl {
         // and searches along the WP1→WP2 direction (maddog on the datalink).
         if (!target && !this.hasFullVim220Route()) return false;
 
+        this.launchVim220(ship, target?.id ?? null, false);
+        return true;
+    }
+
+    // Launch on remote: a VIM-220 at a track a flight mate holds on the
+    // datalink, with no track or illumination of our own. The one path by which
+    // fire control accepts a target it did not measure: the radar hands it the
+    // link track already screened (fresh, inside this ship's ring), and
+    // ordinary TWS firing never sees the link's tracks. Returns the weapon
+    // type launched, or null if the round did not leave the rail.
+    //
+    // A track already assigned to a live remote-launched missile is refused, the
+    // same as a track already engaged by an ordinary one.
+    shootOnRemote(ship: (PlayerShip | Target) | null, track: Track): string | null {
+        if (!ship || !this.vim220Ready()) return null;
+        const engaged = this.activeMissiles.some(m =>
+            m instanceof ActiveRadarMissile && m.targetViaLink && m.targetId === track.id);
+        if (engaged) return null;
+
+        this.launchVim220(ship, track.id, true);
+        if (this.lastVim220) this.lastVim220.linkAimPos = { x: track.pos.x, y: track.pos.y };
+        return 'VIM-220';
+    }
+
+    // A VIM-220 is selected and on the rail.
+    private vim220Ready(): boolean {
+        if (this.loadoutManager.getActiveType() !== 'VIM-220') return false;
+        const loadout = this.loadoutManager.getLoadout();
+        return Boolean(loadout['VIM-220']) && loadout['VIM-220'].load > 0;
+    }
+
+    private launchVim220(ship: PlayerShip | Target, targetId: number | null, viaLink: boolean): void {
+        const ownerPos = ship.getPosition();
         const rad = Phaser.Math.DegToRad(ship.getDirection());
 
         // Built via the factory so the shared missile collision category is
@@ -248,7 +281,8 @@ export class FireControl {
             dirX: Math.cos(rad),
             dirY: Math.sin(rad),
         });
-        if (target) missile.targetId = target.id;
+        if (targetId !== null) missile.targetId = targetId;
+        missile.targetViaLink = viaLink;
         missile.waypointRoute = this.buildVim220Route();
         this.armMissile(missile, ship);
 
@@ -261,7 +295,6 @@ export class FireControl {
             this.vim220WaypointsFadeStart = null;
         }
         this.loadoutManager.decrementLoad('VIM-220');
-        return true;
     }
 
     // Tag a freshly-spawned missile with its owner and the owner's no-collide

@@ -4,6 +4,7 @@ import { createPlayerShipFactory } from "../entities/shipFactory";
 import { createAsteroidFactory } from "../entities/asteroidFactory";
 import { createStructureFactory } from "../entities/structureFactory";
 import { createGasCloudFactory } from "../entities/gasCloudFactory";
+import { createFlightFactory } from "../entities/flightFactory";
 import { Terrain } from "../radar/data/types";
 import { GasCloud } from "../entities/gasCloud";
 import { PlayerShip, Target } from "../entities/ship";
@@ -157,6 +158,7 @@ export default class Game extends Phaser.Scene
     createAsteroidFactory();
     createStructureFactory();
     createGasCloudFactory();
+    createFlightFactory();
     createMissileFactory();
 
     // WORLD
@@ -223,6 +225,15 @@ export default class Game extends Phaser.Scene
       y: playerShipSettings.START_POSITION.y,
       direction: playerShipSettings.DIRECTION,
     };
+  }
+
+  // Whether the ships of this scene carry working IFF: an interrogator on every
+  // radar and a transponder on every hull. On in free play. A story level
+  // whose premise is that the radar cannot tell friend from bogey (level 1's
+  // visual identification) turns it off, which leaves that level exactly as it
+  // was written.
+  iffAvailable(): boolean {
+    return true;
   }
 
   // Static scenery under the ships. Free play is set in open space.
@@ -454,7 +465,9 @@ export default class Game extends Phaser.Scene
     // Terrain is NOT trackable: it goes in as occluders — it blocks the beam
     // and is painted by the ground-mapping display instead.
     const allShips = [player, ...this.targets];
+    const iffOn = this.iffAvailable();
     allShips.forEach(ship => {
+      ship.radar.setIffAvailable(iffOn);
       ship.radar.update(delta, ship.getDirection(), allShips, this.graphics!, decoyCircles, this.terrain, gasVolumes);
     });
 

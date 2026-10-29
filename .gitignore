@@ -24,3 +24,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Windows download markers (copied in from WSL)
+*:Zone.Identifier

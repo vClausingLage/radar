@@ -45,22 +45,30 @@ src/main.ts              Phaser config, scene list, matter debug, DEV window.gam
 src/scenes/game.ts       Base scene: world, factories, player, camera, colliders,
                          per-frame radar update loop, cold-start procedure. Levels
                          SUBCLASS it and override buildTerrain() / buildScenario() /
-                         briefingMessage() / requiresColdStart()
+                         briefingMessage() / requiresColdStart() / iffAvailable()
 src/scenes/campaignLevel.ts  Campaign base: the shared theatre (surface/pad, dish
                          "Disco" + datalink, gas band, pickets), cold start, VID,
                          RadioNet story traffic, verdicts, ENTER next/retry
 src/scenes/level1..3.ts  Mule Train (VID traffic) / Shepherd (tow a derelict,
                          raider) / Backdoor (raid through the gas). Story lines
                          live in src/audio/radioScript.json
+src/scenes/oneOnOne.ts   One versus two: the player against a two-ship hostile flight
 src/scenes/startMenu.ts  Menu, ScenarioKey ('duel' | 'occluded' | 'skirmish')
 src/controller/          playerController.ts (key bindings), aiUnitController.ts (intent:
                          flies the ship; which state it is in comes from the scripted
                          doctrine or a Tactician), jevTactician.ts (Jev decision model,
                          DEV-only, via the /api/jev proxy in vite.config.ts holding AI_KEY
                          from the gitignored .env). See decision_tree.md "Jev tactician"
+src/controller/flight.ts  Flight: a lead + wingman pair, their formation station, the
+                         intra-flight datalink, the target sort and the flight tactic
+                         (formation | shooterCover | bracket | grinder: doctrine, orders,
+                         bracket geometry, shot token); the controllers ask it for
+                         guidance, assignments and orders (decision_tree.md "Flights")
 src/entities/            Ship/PlayerShip/Target, missiles, asteroid, decoy, exhaust,
                          dishRadarStation, structure (static solid scenery: surface,
-                         launchpad) + *Factory.ts registering scene.add.* factories;
+                         launchpad) + *Factory.ts registering scene.add.* factories
+                         (flightFactory.ts: scene.add.flight, a two-ship flight with
+                         its datalink wired into both radars);
                          spriteOutlines.ts = sprite silhouettes as Matter polygons,
                          traced with tools/traceOutline.js (no shape editor in Phaser).
                          Terrain = Asteroid | Structure; Game.registerTerrain() feeds the
@@ -69,7 +77,13 @@ src/radar/systems/radar.ts        The centre. Owns mode state, sweep, STT lock, 
 src/radar/systems/fireControl.ts  Weapons: launch, guidance ticks, waypoints, seeker cones
 src/radar/systems/modules/        Signal path: antenna → emitter → receiver → trackingComputer
                                   plus rwr, jammer, missileRadar, missileGuidance,
-                                  terrainMapper, loadoutManager
+                                  terrainMapper, loadoutManager, iffInterrogator
+                                  (IFF: question and answer are one-way physics,
+                                  reply matched to a track by gate; the transponder is
+                                  the ship's, Ship.iffCode from Side), flightDatalink
+                                  (PPLI friend tagging of tracks and RWR emitters;
+                                  the shared track picture a flight sorts and
+                                  launches on remote from)
 src/radar/data/                   track.ts, radarReturn.ts, types.ts (Entity, RadarHost, Mode),
                                   signalPath.ts (the energy budget every sensor asks),
                                   radarGameSettings.ts (all radar constants)
@@ -116,7 +130,12 @@ TO_DO.md, decision_tree.md, cowork.md   Roadmap, AI behaviour spec, design inten
 7. Anything the beam touches *and can hear it* gets an RWR contact via
    `illuminateRwr()` — green for search, red + lock event for STT. Hearing is
    one-way, so it reaches much further than a return does.
-8. Renderers draw; `FireControl.update()` runs missiles every frame regardless
+8. `updateIff()` (after the sweep, before the shared picture is published): old
+   IFF answers age out; an AI radar interrogates its matured tracks
+   (`IffInterrogator`), the player does it with the I key. `Game.iffAvailable()`
+   switches it off (campaign). AI fire control gets no friendly-reply
+   track; the player's trigger is not gated.
+9. Renderers draw; `FireControl.update()` runs missiles every frame regardless
    of mode.
 
 Modes: RWS and TWS share the pipeline (azimuth + track cap + VIM-220 firing
@@ -143,7 +162,13 @@ well beyond either.
 The ring **is** a hard limit on weapons: fire control is handed only
 `Radar.displayedTracks()` / `displayedSttTrack()`, so an undisplayed track
 cannot be locked, shot at or guided onto — by the AI as much as by the player.
-When touching detection, put the physics in `signalPath.ts` and keep the ring a
+The one exception is **launch on remote**: a flight wingman may fire a VIM-220 on
+a track its lead sent over the datalink (`Radar.shootOnRemote()`, a named path
+through `FireControl.shootOnRemote()`; `displayedTracks()` is not widened). The
+ring still binds, and it is the *shooter's*: the remote track must lie within
+`RADAR_DEFAULT_RANGE_PX` of the wing, and mid-course updates for that missile
+come from the link only while the track is inside that ring and the lead still
+holds it. When touching detection, put the physics in `signalPath.ts` and keep the ring a
 display-and-weapons concern.
 
 ## Conventions
@@ -193,8 +218,9 @@ display-and-weapons concern.
 
 Package manager is **pnpm**; the deploy workflow builds
 on push to `main`, so a broken build ships. A test scene is in `src/scenes/testScene.ts` and a test suite in `src/tests/radarTests.ts`
-(signal path) plus `src/tests/tacticianTests.ts` (the AI's tactician seam — stubbed, no
-network); `window.runRadarTests()` runs both.
+(signal path), `src/tests/tacticianTests.ts` (the AI's tactician seam — stubbed, no
+network) and `src/tests/iffTests.ts` (IFF), `src/tests/flightTests.ts` (formation, PPLI friend tagging, shared picture, sort, launch on remote, tactics; all scripted);
+`window.runRadarTests(seed?, nameRegex?)` runs them all.
 
 ```bash
 npx tsc --noEmit
