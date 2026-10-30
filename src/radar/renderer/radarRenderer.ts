@@ -21,6 +21,28 @@ import {
 } from "../data/radarGameSettings";
 import { JammerHudStatus } from "../systems/modules/jammer";
 
+// Everything the scope draws in one frame. A params object rather than a
+// positional list: the mode arms in Radar build it from the same fire-control
+// and HUD readouts, and a field added here cannot slide its neighbours along.
+export type ScopeFrame = {
+  graphics: Phaser.GameObjects.Graphics;
+  radarPosition: Vector2;
+  radarRange: number;
+  scanStartAngle: number;
+  scanEndAngle: number;
+  activeMissiles: Missile[];
+  loadout: Loadout;
+  vim220Waypoints: Vector2[];
+  pulse?: Pulse;
+  sttMode?: boolean;
+  vim220TimeToActive: number | null;
+  missileRange: number | null;
+  jammerStatus: JammerHudStatus | null;
+  vim220WaypointAlpha: number;
+  emconStandby?: boolean;
+  iffHint?: boolean;
+};
+
 export class RadarRenderer {
 
   private rangeText: Phaser.GameObjects.Text | undefined;
@@ -59,7 +81,7 @@ export class RadarRenderer {
     return this.iffHintShown;
   }
 
-  renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, activeMissiles: Missile[], loadout: Loadout, vim220Waypoints: Vector2[] = [], vim220TimeToActive: number | null = null, jammerStatus: JammerHudStatus | null = null, vim220WaypointAlpha = 1, emconStandby = false, iffHint = false): void {
+  private renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, activeMissiles: Missile[], loadout: Loadout, vim220Waypoints: Vector2[] = [], vim220TimeToActive: number | null = null, jammerStatus: JammerHudStatus | null = null, vim220WaypointAlpha = 1, emconStandby = false, iffHint = false): void {
     const endX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(endAngle));
     const endY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(endAngle));
 
@@ -356,24 +378,13 @@ export class RadarRenderer {
     this.jammerText = undefined;
   }
 
-  update(
-    graphics: Phaser.GameObjects.Graphics,
-    radarPosition: Vector2,
-    radarRange: number,
-    scanStartAngle: number,
-    scanEndAngle: number,
-    activeMissiles: Missile[],
-    loadout: Loadout,
-    vim220Waypoints: Vector2[],
-    pulse?: Pulse,
-    sttMode = false,
-    vim220TimeToActive: number | null = null,
-    missileRange: number | null = null,
-    jammerStatus: JammerHudStatus | null = null,
-    vim220WaypointAlpha = 1,
-    emconStandby = false,
-    iffHint = false,
-  ): void {
+  update(frame: ScopeFrame): void {
+    const {
+      graphics, radarPosition, radarRange, scanStartAngle, scanEndAngle,
+      activeMissiles, loadout, vim220Waypoints, pulse, sttMode = false,
+      vim220TimeToActive, missileRange, jammerStatus, vim220WaypointAlpha,
+      emconStandby = false, iffHint = false,
+    } = frame;
     if (pulse) {
       this.renderPulse(graphics, pulse, radarRange, sttMode);
     }

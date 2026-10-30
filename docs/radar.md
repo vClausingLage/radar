@@ -22,8 +22,13 @@ nothing, so they can detect, track and shoot silently.
 ### `systems/radar.ts` — `Radar`
 The sensor and orchestrator. Holds the current mode, owns the signal-path
 subsystem instances, runs the per-frame `update()` and dispatches to
-`updateRws()` or `updateStt()`. Also owns STT lock management and the
-world-interrogation helpers (`nearestHit`, `illuminateRwr`, `detectJamming`).
+`updateRws()` or `updateStt()`. Also owns STT lock management, the raycast
+(`nearestHit`) and the nearest-wins arbitration between ship, terrain and
+chaff returns on each ray (`arbitrateRay`). What happens to a pulse after
+that belongs to the module for the hardware involved: RWR illumination of
+other ships is `illuminateRwrs` in `rwr.ts`, the jamming contest is in
+`jammer.ts`, and thermal false alarms and volume clutter are rolled by
+`CfarDetector`.
 
 Weapons are *not* its job — it delegates firing and missile concerns to
 `FireControl`, supplying it the track picture each frame (and per shot). The
@@ -215,25 +220,25 @@ only the player triggers it (key **J**). A burst runs for `JAMMER_DURATION_MS`,
 then sits on cooldown until `JAMMER_COOLDOWN_MS` have elapsed *from activation*.
 While active it projects a `JAMMER_CONE_DEG` cone ahead of the ship.
 
-The victim radar drives the effect, not the jammer: each frame `Radar.detectJamming()`
+The victim radar drives the effect, not the jammer: each frame `jammerOnBeam()` (in `jammer.ts`)
 checks every contact and a jammer "takes" if **(a)** the victim's beam actually
 paints the jamming ship and **(b)** the victim sits inside that jammer's cone
 (`Jammer.covers()`). Geometry only decides who is *in* the contest; the
 outcome is decided by energy (see the realism roadmap's jamming item):
 
 - **RWS/TWS** — the burst must first beat the sweep's own echo at the J/S
-  contest (`jammerSignal` vs `Receiver.dwellSignal`, the strongest
+  contest (`sweepContest`: `jammerSignal` vs `Receiver.dwellSignal`, the strongest
   integration group of the real hits). A winning burst routes the sweep
   through `Receiver.createFakeHits()` with the jammer's error, producing a
   ghost track offset from (and replacing) the real one; the error is rolled
   once per activation, so the ghost is stable. A burst that loses — burn-
   through: the echo grows as the fourth power of closing range while the
   burst only strengthens as the square — leaves the real returns untouched.
-- **STT** — the concentrated beam is *not* spoofed; each jammed frame may
+- **STT** (`sttContest`) — the concentrated beam is *not* spoofed; each jammed frame may
   have its return swallowed, feeding the existing missed-frame lock-break
   counter. The flat degrade chance is a ceiling scaled by `min(J/S, 1)`, so
   a lock with signal to burn shrugs the burst off.
-- **Either way, the victim hears it** (`registerJammingStrobes`) — a burst is
+- **Either way, the victim hears it** (`coveringJammers`, registered by `Radar.registerJammingStrobes`) — a burst is
   a loud one-way emission, and the victim's RWR marks the jammer as a strobe
   at its bearing (`RwrContact.isJammer`, yellow filled diamond), replacing
   that ship's plain search symbol while it transmits.
@@ -288,7 +293,7 @@ this ship it records an `RwrContact` (bearing, locked?, jammer?, timestamp).
 Contacts age out after `CONTACT_TTL_MS`. The HUD reads these for the threat display.
 
 A contact does not require standing in the exact instantaneous beam:
-`Radar.illuminateRwr()` also tests ships off to the side at
+`illuminateRwrs()` (in `rwr.ts`) also tests ships off to the side at
 `ANTENNA_SIDELOBE_LEVEL` times the beam's gain — real antennas leak in every
 direction, just far more weakly — always as a plain (green) search contact,
 never a lock, and rate-limited to once per sweep leg rather than every frame

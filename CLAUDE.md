@@ -73,7 +73,9 @@ src/entities/            Ship/PlayerShip/Target, missiles, asteroid, decoy, exha
                          traced with tools/traceOutline.js (no shape editor in Phaser).
                          Terrain = Asteroid | Structure; Game.registerTerrain() feeds the
                          one list every radar (the dish's too) is occluded by
-src/radar/systems/radar.ts        The centre. Owns mode state, sweep, STT lock, delegates
+src/radar/systems/radar.ts        The centre. Owns mode state, sweep, STT lock, ray arbitration;
+                                  delegates RWR illumination (rwr.ts), the jamming
+                                  contest (jammer.ts), false alarms (cfarDetector.ts)
 src/radar/systems/fireControl.ts  Weapons: launch, guidance ticks, waypoints, seeker cones
 src/radar/systems/modules/        Signal path: antenna → emitter → receiver → trackingComputer
                                   plus rwr, jammer, missileRadar, missileGuidance,
@@ -128,7 +130,7 @@ TO_DO.md, decision_tree.md, cowork.md   Roadmap, AI behaviour spec, design inten
 6. `TrackingComputer.update(returns, ownerPos, maxMissedScans, maxTracks)`
    forms/ages tracks. RWS is uncapped; TWS caps at `MAX_TWS_TRACKS`.
 7. Anything the beam touches *and can hear it* gets an RWR contact via
-   `illuminateRwr()` — green for search, red + lock event for STT. Hearing is
+   `illuminateRwrs()` in `rwr.ts` — green for search, red + lock event for STT. Hearing is
    one-way, so it reaches much further than a return does.
 8. `updateIff()` (after the sweep, before the shared picture is published): old
    IFF answers age out; an AI radar interrogates its matured tracks
@@ -211,8 +213,9 @@ display-and-weapons concern.
   the radar modules.
 - Comments explain the radar/physics reasoning ("chaff between the antenna and
   the target can swallow the return"), not the syntax. Match that density.
-- Existing `HACK:`/`TODO:` markers (e.g. the STT direct-entity reference) are
-  tracked in `TO_DO.md` — don't silently rewrite them as drive-bys.
+- Structural debt is tracked in `TO_DO.md` under "Code debt", not as
+  `HACK:`/`TODO:` markers in the code — don't silently rewrite listed items as
+  drive-bys, and add new debt there.
 
 ## Verification
 

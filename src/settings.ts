@@ -1,4 +1,3 @@
-import { Vector2 } from "./types"
 
 // GAME
 export const IMAGE_SCALE = 1
@@ -31,24 +30,6 @@ export const playerShipSettings = {
             active: false
         },
     }
-}
-
-// RADAR
-// How far an RWR hears a radar is not a number set here: it falls out of the
-// energy in the pulse (see radar/data/signalPath.ts and RWR_NOISE_FLOOR), which
-// is why the old RWR_RANGE_MULTIPLICATOR is gone rather than wired up. The
-// figure it named — about 1.7x the emitter's rated range — is what the current
-// noise floor happens to work out to.
-export const radarModule = {
-    RANGE: 600,
-    SCAN_SPEED: 0.04,
-}
-export const radarDefaultSettings = {
-    range: radarModule.RANGE,
-    position: { x: 0, y: 0 } as Vector2,
-    isScanning: true,
-    azimuth: 20,
-    scanSpeed: radarModule.SCAN_SPEED,
 }
 
 // VISUAL RANGE — limited eyesight: objects beyond this fade out of sight

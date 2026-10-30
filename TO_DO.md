@@ -124,3 +124,29 @@ assets load), and read the returned report rather than the on-screen one.
   - silent far outside the sweep                    (done)
   - missile seeker warning                          (done, and it now arrives as
     a search contact first and goes to a lock as the seeker closes)
+
+# Code debt
+
+The ledger for structural debt (the code carries no `HACK:`/`TODO:` markers;
+this is where it is tracked instead). Folded in from the old
+`src/radar/systems/TODO.md`.
+
+- ~~STT uses position of entity directly~~ (done: STT locks a track id, is
+  fed by beam-ray returns through `Receiver` and `TrackingComputer`, and aims
+  on `getPredictedPos`. The entity reads left in `illuminateRwr`,
+  `detectJamming` and `registerJammingStrobes` are the pulse arriving at
+  another ship's RWR or jammer — world physics, not the radar's picture)
+- ~~linting~~ (done: lint clean)
+- ~~loadout to manager~~ (done: `LoadoutManager`)
+- ~~VIM-220 wakeup near target~~ (done: `ACTIVE_RADAR_ACTIVATION_RANGE`)
+- loadout manager: make it more individual to ships
+- all constants to `radarGameSettings.ts` — still inline: terrainMapper
+  speckle numerics, and anything else turned up when touching a module
+- ~~clean up `radar.ts`~~ (done: RWR illumination moved to `rwr.ts`
+  (`illuminateRwrs`), the jamming contest to `jammer.ts`, false alarms and
+  volume clutter to `CfarDetector`, and RWS and STT share one
+  `arbitrateRay`. What is left in the centre is mode, sweep and lock logic)
+- duplicated cluster BFS and amplitude-weighted centroid in `receiver.ts` and
+  `trackingComputer.ts`
+- ~~RWR emitter keys are an unstated string protocol~~ (done:
+  `shipEmitterKey` / `seekerEmitterKey` / `isSeekerKey` in `rwr.ts`)

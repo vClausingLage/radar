@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { Radar } from '../radar/systems/radar';
+import { isSeekerKey } from '../radar/systems/modules/rwr';
 import { Target } from '../entities/ship';
 import { Track, iffStateOf } from '../radar/data/track';
 import { world } from '../settings';
@@ -208,6 +209,9 @@ export class AiUnitController {
     destroy(): void {
         this.debugText?.destroy();
         this.debugText = undefined;
+        // The lead's advisor closure reads this controller's picture; take it
+        // back so a flight that outlives its lead does not keep asking it.
+        if (this.flightRole === 'lead') this.flight?.setTacticAdvisor(null);
         this.tactician?.destroy();
     }
 
@@ -589,7 +593,7 @@ export class AiUnitController {
                 : this.scene.time.now - this.heardEmitter.heardAt < HUNT_RECENT_MS ? 'heard just now' : 'heard a while ago',
             // A missile seeker reports on its own 'missile-N' key: hearing one is
             // the RWR telling us a weapon has gone active against us.
-            missileInbound: radar?.rwrReceiver.getRwrSources().some(k => k.startsWith('missile-')) ?? false,
+            missileInbound: radar?.rwrReceiver.getRwrSources().some(isSeekerKey) ?? false,
             chaffLeft: this.ship.getRemainingDecoys(),
             jammerReady: radar?.isJammerReady() ?? false,
             nearWorldEdge: x < margin || y < margin || x > world.WIDTH - margin || y > world.HEIGHT - margin,

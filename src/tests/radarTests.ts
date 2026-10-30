@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { GameTest, TestContext } from './testHarness';
 import { decoySettings, RADAR_DEFAULT_RANGE_PX } from '../radar/data/radarGameSettings';
 import { Target } from '../entities/ship';
+import { isSeekerKey } from '../radar/systems/modules/rwr';
 
 // In-game tests for the player radar's signal path: how far the emission
 // carries, who gets warned by it, what comes back as a track, and what the
@@ -649,7 +650,7 @@ function formatOffset(offset: number): string {
 // A missile seeker keys its RWR contact by its own emitter id (see MissileRadar),
 // which is what separates it from the launching ship's search radar.
 function droneSeesMissileSeeker(drone: Target): boolean {
-    return drone.radar.rwrReceiver.getRwrSources().some(source => source.startsWith('missile-'));
+    return drone.radar.rwrReceiver.getRwrSources().some(isSeekerKey);
 }
 
 // RWR contacts age out after a couple of seconds, so "was it ever warned" has to

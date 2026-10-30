@@ -525,7 +525,6 @@ export default class Game extends Phaser.Scene
     this.player = undefined;
 
     // Clean up renderers
-    // this.interfaceRenderer?.destroy();
     this.graphics?.destroy();
 
     // Destroy targets and terrain

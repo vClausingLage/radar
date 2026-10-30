@@ -118,7 +118,7 @@ export function scanLossFactor(scanAngleDeg: number): number {
 // A pure Gaussian has no sidelobes at all, and real antennas do leak in
 // every direction, so the pattern is floored at ANTENNA_SIDELOBE_LEVEL —
 // one flat leak standing in for the whole lobe structure outside the main
-// lobe, the same simplification illuminateRwr has always made, now as the
+// lobe, the same simplification RWR illumination has always made, now as the
 // pattern's floor rather than a separate binary branch.
 export function beamPattern(offAxisDeg: number, beamWidthDeg: number): number {
     if (beamWidthDeg <= 0) return 1;

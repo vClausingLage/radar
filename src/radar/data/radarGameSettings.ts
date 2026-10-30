@@ -46,6 +46,13 @@ export const STT_ACQUISITION_FRAMES = 30;
 // Frames without a return before STT lock breaks (~0.75 s at 60 fps).
 export const STT_LOCK_BREAK_FRAMES = 45;
 
+// Frames the tracking computer coasts the locked track without a return. STT
+// updates every frame, so this has to be far longer than a search sweep's
+// missed-scan allowance to ride out brief dropouts; it is deliberately longer
+// than STT_LOCK_BREAK_FRAMES too, so it is the lock-break counter, not the
+// track's own aging, that decides when a starved lock is lost.
+export const TRACK_STT_MAX_MISSED_FRAMES = 90;
+
 // How long (ms) the placed VIM-220 waypoints take to fade out once the missile
 // carrying them has passed its first waypoint or been destroyed.
 export const VIM220_WAYPOINT_FADE_MS = 600;
@@ -234,6 +241,13 @@ export const TRACK_GATE_RADIUS_PX = 200;
 
 // Drop a track after this many consecutive scans with no return.
 export const TRACK_MAX_MISSED_SCANS = 4;
+
+// Confidence (0..1) a track gains per update that is believed, and loses per
+// update it coasts or is measured but rejected by MTI. Gaining faster than it
+// decays lets a real contact mature within a few sweeps while one it keeps
+// failing to confirm still fades out on the missed-scan clock.
+export const TRACK_CONFIDENCE_GAIN = 0.15;
+export const TRACK_CONFIDENCE_DECAY = 0.1;
 
 // Alpha-beta filter gains. Alpha smooths position, beta smooths velocity.
 // Lower alpha means smoother track with higher lag.

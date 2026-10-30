@@ -3,6 +3,7 @@ import type { Vector2 } from '../../../types';
 import type { GasVolume, Terrain } from '../../data/types';
 import { Ray } from '../../../physics/ray';
 import { correlatesWithPpli, type Ppli } from './flightDatalink';
+import { seekerEmitterKey } from './rwr';
 import {
   MISSILE_RADAR_MAX_MISSED_LOCK_FRAMES,
   MISSILE_SEEKER_BEAM_DEG,
@@ -57,7 +58,7 @@ export class MissileRadar {
   // Unique RWR emitter key per seeker, so each inbound missile shows up as its
   // own contact on a victim's warning receiver.
   private static nextEmitterId = 1;
-  private readonly emitterKey = `missile-${MissileRadar.nextEmitterId++}`;
+  private readonly emitterKey = seekerEmitterKey(MissileRadar.nextEmitterId++);
 
   private mode: MissileRadarMode = 'off';
   // What the seeker is currently seeing in its beam — a report, not the thing
