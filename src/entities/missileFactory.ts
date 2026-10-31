@@ -20,6 +20,13 @@ const configureMissileCollisionFilter = (scene: Phaser.Scene, missile: Phaser.Ph
   missile.setCollidesWith((~missileCategory) >>> 0);
 };
 
+// Emitted on the scene's event bus for every missile that leaves a rail, with
+// the missile as its argument. A missile is flown by its shooter's fire
+// control, but it is *seen* by the player's eyes like any other object, so
+// the scene needs the whole population — whoever launched it, and after the
+// launcher is gone.
+export const MISSILE_SPAWNED_EVENT = 'missile-spawned';
+
 /* eslint-disable @typescript-eslint/no-namespace */
 
 declare global {
@@ -42,6 +49,7 @@ export const createMissileFactory = () => {
     // Matter physics doesn't use onCollide flag like Arcade
     missile.addToDisplayList();
     missile.addToUpdateList();
+    this.scene.events.emit(MISSILE_SPAWNED_EVENT, missile);
     return missile;
   });
 
@@ -55,6 +63,7 @@ export const createMissileFactory = () => {
     // Matter physics doesn't use onCollide flag like Arcade
     missile.addToDisplayList();
     missile.addToUpdateList();
+    this.scene.events.emit(MISSILE_SPAWNED_EVENT, missile);
     return missile;
   });
 };

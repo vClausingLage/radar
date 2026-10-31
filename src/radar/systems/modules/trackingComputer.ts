@@ -7,6 +7,9 @@ import {
   MTI_ACTIVATION_DENSITY,
   MTI_RANGE_GLINT_PX,
   RADAR_TRACK_HISTORY_LENGTH,
+  TRACK_CONFIDENCE_DECAY,
+  TRACK_CONFIDENCE_GAIN,
+  TRACK_CONFIDENCE_INITIAL,
   TRACK_COURSE_RANGE_EXPONENT,
   TRACK_COURSE_RANGE_REF_PX,
   TRACK_COURSE_WINDOW_SCANS,
@@ -237,7 +240,7 @@ export class TrackingComputer {
   // up once it lost a frame.
   private coast(state: TrackState, minCourseSpeed: number, courseWindow: number): void {
     state.missedScans++;
-    state.track.confidence = Math.max(state.track.confidence - 0.1, 0);
+    state.track.confidence = Math.max(state.track.confidence - TRACK_CONFIDENCE_DECAY, 0);
 
     if (state.track.age <= 1) return;
 
@@ -389,13 +392,13 @@ export class TrackingComputer {
     state.track.age++;
     state.track.lastUpdate = 0;
     if (accept) {
-      state.track.confidence = Math.min(state.track.confidence + 0.15, 1.0);
+      state.track.confidence = Math.min(state.track.confidence + TRACK_CONFIDENCE_GAIN, 1.0);
       state.missedScans = 0;
     } else {
       // MTI-rejected: measured but not believed. The decay mirrors a coast
-      // (coast uses 0.1) so a contact the set refuses to believe ages out on
-      // the same clock an unmatched one would.
-      state.track.confidence = Math.max(state.track.confidence - 0.1, 0);
+      // (TRACK_CONFIDENCE_DECAY there too) so a contact the set refuses to
+      // believe ages out on the same clock an unmatched one would.
+      state.track.confidence = Math.max(state.track.confidence - TRACK_CONFIDENCE_DECAY, 0);
       state.missedScans++;
     }
   }
@@ -486,7 +489,7 @@ export class TrackingComputer {
         speed: 0,
         age: 0,
         lastUpdate: 0,
-        confidence: 0.3,
+        confidence: TRACK_CONFIDENCE_INITIAL,
         history: [],
       },
     };

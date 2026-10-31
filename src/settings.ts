@@ -1,5 +1,3 @@
-import { Vector2 } from "./types"
-
 // GAME
 export const IMAGE_SCALE = 1
 export const CAMERA_ZOOM = .8
@@ -39,17 +37,6 @@ export const playerShipSettings = {
 // is why the old RWR_RANGE_MULTIPLICATOR is gone rather than wired up. The
 // figure it named — about 1.7x the emitter's rated range — is what the current
 // noise floor happens to work out to.
-export const radarModule = {
-    RANGE: 600,
-    SCAN_SPEED: 0.04,
-}
-export const radarDefaultSettings = {
-    range: radarModule.RANGE,
-    position: { x: 0, y: 0 } as Vector2,
-    isScanning: true,
-    azimuth: 20,
-    scanSpeed: radarModule.SCAN_SPEED,
-}
 
 // VISUAL RANGE — limited eyesight: objects beyond this fade out of sight
 // rather than popping. Distinct from (and usually shorter than) radar

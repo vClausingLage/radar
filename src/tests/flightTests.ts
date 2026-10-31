@@ -1011,8 +1011,9 @@ const wingCuesLead: GameTest = {
         wing.radar.enterRws();
         lead.radar.enterRws();
         // Only the lead gets a brain: the wing is the instrument that sees.
-        const controller = new AiUnitController(
-            ctx.scene, lead, targetShipSettings.TURN_RATE_CRUISER, false, lead.radar, lead.id, 'active', null);
+        const controller = new AiUnitController({
+            scene: ctx.scene, ship: lead, turnRate: targetShipSettings.TURN_RATE_CRUISER, radar: lead.radar, activity: 'active',
+        });
         lead.setController(controller);
         controller.joinFlight(flight, 'lead');
 

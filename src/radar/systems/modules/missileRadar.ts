@@ -3,6 +3,7 @@ import type { Vector2 } from '../../../types';
 import type { GasVolume, Terrain } from '../../data/types';
 import { Ray } from '../../../physics/ray';
 import { correlatesWithPpli, type Ppli } from './flightDatalink';
+import { RWR_SEEKER_KEY_PREFIX } from './rwr';
 import {
   MISSILE_RADAR_MAX_MISSED_LOCK_FRAMES,
   MISSILE_SEEKER_BEAM_DEG,
@@ -55,9 +56,11 @@ type MissileRadarMode = 'off' | 'rws' | 'stt';
 // beam; a different ship that wanders into it gets locked instead.
 export class MissileRadar {
   // Unique RWR emitter key per seeker, so each inbound missile shows up as its
-  // own contact on a victim's warning receiver.
+  // own contact on a victim's warning receiver. The prefix is the RWR's own
+  // protocol token (RWR_SEEKER_KEY_PREFIX) — it is what tells a victim's
+  // warning receiver "inbound seeker" rather than "ship radar".
   private static nextEmitterId = 1;
-  private readonly emitterKey = `missile-${MissileRadar.nextEmitterId++}`;
+  private readonly emitterKey = `${RWR_SEEKER_KEY_PREFIX}${MissileRadar.nextEmitterId++}`;
 
   private mode: MissileRadarMode = 'off';
   // What the seeker is currently seeing in its beam — a report, not the thing

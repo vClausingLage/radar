@@ -56,6 +56,9 @@ export const createPlayerShipFactory = () => {
         scene: this.scene,
       }),
     });
+    // Display scale is wiring, so it lives here rather than in the entity:
+    // after the constructor's fitBodyToOutline, body and picture scale together.
+    ship.setScale(0.7);
     const controller = new PlayerController(this.scene, ship);
     ship.controller = controller;
     if (!ship.body) throw new Error('Ship body is undefined');
@@ -78,7 +81,6 @@ export const createPlayerShipFactory = () => {
     const interfaceRenderer = new InterfaceRenderer(this.scene, ship);
     interfaceRenderer.createInterface(ship);
     ship.radar.setInterfaceRenderer(interfaceRenderer);
-    (this.scene as Phaser.Scene & { interfaceRenderer?: InterfaceRenderer }).interfaceRenderer = interfaceRenderer;
 
     ship.addToDisplayList();
     ship.addToUpdateList();
@@ -98,6 +100,8 @@ export const createPlayerShipFactory = () => {
       shipType: params.type,
       side: params.side,
     });
+    // Display scale is wiring (see the player factory above).
+    target.setScale(0.4);
     if (!target.body) throw new Error('Target body is undefined');
     const targetMissileNoCollideGroup = this.scene.matter.world.nextGroup(true);
     target.setMissileNoCollideGroup(targetMissileNoCollideGroup);
@@ -105,16 +109,14 @@ export const createPlayerShipFactory = () => {
     target.addToUpdateList();
     const brain = params.brain ?? targetShipSettings.CRUISER_BRAIN;
     const useJev = brain === 'jev' && params.type === 'cruiser' && import.meta.env.DEV;
-    const controller = new AiUnitController(
-      this.scene, target, 0, false, target.radar, target.id, params.activity ?? 'active',
-      useJev ? new JevTactician() : null,
-    );
-    if (params.type === 'cargo') {
-      controller.setTurnRate(targetShipSettings.TURN_RATE_CARGO);
-    }
-    if (params.type === 'cruiser') {
-      controller.setTurnRate(targetShipSettings.TURN_RATE_CRUISER);
-    }
+    const controller = new AiUnitController({
+      scene: this.scene,
+      ship: target,
+      turnRate: params.type === 'cargo' ? targetShipSettings.TURN_RATE_CARGO : targetShipSettings.TURN_RATE_CRUISER,
+      radar: target.radar,
+      activity: params.activity ?? 'active',
+      tactician: useJev ? new JevTactician() : null,
+    });
     if (params.route) {
       controller.setRoute(params.route);
     }

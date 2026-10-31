@@ -21,6 +21,28 @@ import {
 } from "../data/radarGameSettings";
 import { JammerHudStatus } from "../systems/modules/jammer";
 
+// One frame of the scope's static picture: the cone, its readouts and the
+// weapons overlay the radar asks to be drawn around its returns. Optional
+// fields default to "nothing to show" (no pulse, no STT, no standby, ...).
+export type RadarRendererFrame = {
+  graphics: Phaser.GameObjects.Graphics;
+  radarPosition: Vector2;
+  radarRange: number;
+  scanStartAngle: number;
+  scanEndAngle: number;
+  activeMissiles: Missile[];
+  loadout: Loadout;
+  vim220Waypoints: Vector2[];
+  pulse?: Pulse;
+  sttMode?: boolean;
+  vim220TimeToActive?: number | null;
+  missileRange?: number | null;
+  jammerStatus?: JammerHudStatus | null;
+  vim220WaypointAlpha?: number;
+  emconStandby?: boolean;
+  iffHint?: boolean;
+};
+
 export class RadarRenderer {
 
   private rangeText: Phaser.GameObjects.Text | undefined;
@@ -59,7 +81,18 @@ export class RadarRenderer {
     return this.iffHintShown;
   }
 
-  renderRadarScanInterface(graphics: Phaser.GameObjects.Graphics, radarPosition: Vector2, radarRange: number, startAngle: number, endAngle: number, activeMissiles: Missile[], loadout: Loadout, vim220Waypoints: Vector2[] = [], vim220TimeToActive: number | null = null, jammerStatus: JammerHudStatus | null = null, vim220WaypointAlpha = 1, emconStandby = false, iffHint = false): void {
+  private renderRadarScanInterface(frame: RadarRendererFrame): void {
+    const {
+      graphics, radarPosition, radarRange,
+      scanStartAngle: startAngle, scanEndAngle: endAngle,
+      activeMissiles, loadout,
+      vim220Waypoints = [],
+      vim220TimeToActive = null,
+      jammerStatus = null,
+      vim220WaypointAlpha = 1,
+      emconStandby = false,
+      iffHint = false,
+    } = frame;
     const endX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(endAngle));
     const endY = radarPosition.y + radarRange * Math.sin(Phaser.Math.DegToRad(endAngle));
 
@@ -356,24 +389,12 @@ export class RadarRenderer {
     this.jammerText = undefined;
   }
 
-  update(
-    graphics: Phaser.GameObjects.Graphics,
-    radarPosition: Vector2,
-    radarRange: number,
-    scanStartAngle: number,
-    scanEndAngle: number,
-    activeMissiles: Missile[],
-    loadout: Loadout,
-    vim220Waypoints: Vector2[],
-    pulse?: Pulse,
-    sttMode = false,
-    vim220TimeToActive: number | null = null,
-    missileRange: number | null = null,
-    jammerStatus: JammerHudStatus | null = null,
-    vim220WaypointAlpha = 1,
-    emconStandby = false,
-    iffHint = false,
-  ): void {
+  update(frame: RadarRendererFrame): void {
+    const {
+      graphics, radarPosition, radarRange, scanStartAngle, scanEndAngle,
+      pulse, sttMode = false, missileRange = null,
+    } = frame;
+
     if (pulse) {
       this.renderPulse(graphics, pulse, radarRange, sttMode);
     }
@@ -384,21 +405,7 @@ export class RadarRenderer {
       this.renderMissileRange(graphics, radarPosition, facing, missileRange);
     }
 
-    this.renderRadarScanInterface(
-      graphics,
-      radarPosition,
-      radarRange,
-      scanStartAngle,
-      scanEndAngle,
-      activeMissiles,
-      loadout,
-      vim220Waypoints,
-      vim220TimeToActive,
-      jammerStatus,
-      vim220WaypointAlpha,
-      emconStandby,
-      iffHint,
-    );
+    this.renderRadarScanInterface(frame);
   }
 
   // Green line straight ahead of the ship marking the selected missile's max

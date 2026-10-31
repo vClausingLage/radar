@@ -87,9 +87,9 @@ class FlightStub implements Tactician {
 // geometry holds still while its radar, decisions and stores all run.
 function attachBrain(ctx: TestContext, drone: Target, tactician: Tactician): AiUnitController {
     drone.controller?.destroy();
-    const controller = new AiUnitController(
-        ctx.scene, drone, 0, false, drone.radar, drone.id, 'inactive', tactician,
-    );
+    const controller = new AiUnitController({
+        scene: ctx.scene, ship: drone, radar: drone.radar, activity: 'inactive', tactician,
+    });
     drone.controller = controller;
     return controller;
 }
@@ -317,9 +317,9 @@ const rwrBearingIsHunted: GameTest = {
         // drone still cannot move or turn, so its radar never finds the player.
         drone.controller?.destroy();
         const stub = new RecordingTactician(() => null);
-        drone.controller = new AiUnitController(
-            ctx.scene, drone, 0, false, drone.radar, drone.id, 'active', stub,
-        );
+        drone.controller = new AiUnitController({
+            scene: ctx.scene, ship: drone, radar: drone.radar, activity: 'active', tactician: stub,
+        });
 
         const hunting = await ctx.waitUntil(() => stub.lastState() === 'HUNT', FRAMES_PER_SWEEP * 6);
         ctx.check('hearing the player, the drone hunts', hunting, `last state ${stub.lastState() ?? 'none'}`);
@@ -370,9 +370,9 @@ async function leadWithTactician(
         [flight.lead, 'lead', leadStub], [flight.wing, 'wing', wingStub],
     ];
     for (const [ship, role, tactician] of roles) {
-        const controller = new AiUnitController(
-            ctx.scene, ship, targetShipSettings.TURN_RATE_CRUISER, false, ship.radar, ship.id, 'active', tactician,
-        );
+        const controller = new AiUnitController({
+            scene: ctx.scene, ship, turnRate: targetShipSettings.TURN_RATE_CRUISER, radar: ship.radar, activity: 'active', tactician,
+        });
         ship.setController(controller);
         controller.joinFlight(flight, role);
     }
@@ -532,8 +532,10 @@ const flightPictureIsLinkOnly: GameTest = {
         drone.setPosition(1600, 1100);
         drone.setCollidesWith(0);
         flight.lead.radar.enterRws();
-        const lead = new AiUnitController(
-            ctx.scene, flight.lead, targetShipSettings.TURN_RATE_CRUISER, false, flight.lead.radar, flight.lead.id, 'active', stub);
+        const lead = new AiUnitController({
+            scene: ctx.scene, ship: flight.lead, turnRate: targetShipSettings.TURN_RATE_CRUISER,
+            radar: flight.lead.radar, activity: 'active', tactician: stub,
+        });
         flight.lead.setController(lead);
         lead.joinFlight(flight, 'lead');
 
@@ -544,8 +546,10 @@ const flightPictureIsLinkOnly: GameTest = {
             flight.wing.active && silent.every(p => p.wingman === 'lost' && p.wingmanMissiles === 0),
             [...new Set(silent.map(p => p.wingman))].join(', '));
 
-        const wing = new AiUnitController(
-            ctx.scene, flight.wing, targetShipSettings.TURN_RATE_CRUISER, false, flight.wing.radar, flight.wing.id, 'active', null);
+        const wing = new AiUnitController({
+            scene: ctx.scene, ship: flight.wing, turnRate: targetShipSettings.TURN_RATE_CRUISER,
+            radar: flight.wing.radar, activity: 'active',
+        });
         flight.wing.setController(wing);
         wing.joinFlight(flight, 'wing');
         await ctx.frames(240);

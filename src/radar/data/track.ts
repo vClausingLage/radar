@@ -29,3 +29,14 @@ export type IffState = 'friendly' | 'unknown' | 'not interrogated';
 export function iffStateOf(track: Track): IffState {
     return track.iff?.state ?? 'not interrogated';
 }
+
+// The whole lifecycle of the IFF verdict on a track: the interrogator stamps
+// an answer, and it is cleared when the answer ages out or the scene switches
+// IFF off. Both ops live here so the write sites share one spelling.
+export function stampIff(track: Track, state: 'friendly' | 'unknown', at: number): void {
+    track.iff = { state, at };
+}
+
+export function clearIff(track: Track): void {
+    delete track.iff;
+}

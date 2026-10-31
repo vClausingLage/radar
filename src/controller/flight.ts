@@ -380,9 +380,11 @@ export class Flight {
         if (scripted === null) return;
         // The lead's tactician may name the plan among the legal ones. Its answer
         // goes through the same dwell as the doctrine's: a picture it changes its
-        // mind about every look cannot make the flight flicker.
+        // mind about every look cannot make the flight flicker. A dead lead's
+        // brain is never asked: its controller is gone with the ship, and the
+        // closure it registered here would otherwise keep firing requests.
         const legal = this.legalTactics(now);
-        const advised = this.advisor && legal.length >= 2 ? this.advisor(legal) : null;
+        const advised = this.advisor && this.leadAlive() && legal.length >= 2 ? this.advisor(legal) : null;
         const desired = advised !== null && legal.includes(advised) ? advised : scripted;
         if (desired === this.tactic) { this.pending = null; return; }
         if (this.pending?.tactic !== desired) this.pending = { tactic: desired, since: now };

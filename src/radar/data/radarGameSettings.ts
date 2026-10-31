@@ -140,24 +140,6 @@ export const RADAR_PFA = 0.008;
 // differently-shaped receiver rule.
 export const RADAR_INTEGRATION_GAIN_EXPONENT = 0.5;
 
-// Chance an empty cell the beam sweeps reports a contact anyway — receiver
-// noise alone crossing the threshold, at the same Pd(0) = RADAR_PFA the
-// detection curve above is built around applied to a *specific* cell rather
-// than to a real echo. Rolled once per ray, i.e. once per swept azimuth step,
-// deliberately its own tunable rate rather than RADAR_PFA reused directly:
-// this radar has one ray's worth of cell to offer per frame, not the many a
-// real set's Pfa is spread across (see the realism roadmap's sampling item),
-// so the two numbers are free to answer different questions — how readily a
-// real, if faint, echo is believed, versus how often the picture sparkles
-// with nothing there at all.
-export const RADAR_FALSE_ALARM_RATE = 0.0006;
-
-// A false alarm's range is drawn uniformly along the ray's traced reach —
-// unlike a real echo, receiver noise does not fall off with distance, so a
-// phantom contact is exactly as likely to appear at the far edge of the beam
-// as close in. That is the tell: a genuine return thins out with range, a
-// noise spike does not.
-
 // 1-sigma position jitter (px) applied to a detected return, at the noise
 // floor (signal = 1). A real set's measurement accuracy improves with SNR as
 // resolution / sqrt(2 * SNR) — accuracy, not resolution itself; the
@@ -287,6 +269,21 @@ export const TRACK_STT_MIN_COURSE_SPEED_PX = 0.02;
 // would put a moving vector on every distant contact.
 export const TRACK_COURSE_RANGE_REF_PX = 300;
 export const TRACK_COURSE_RANGE_EXPONENT = 2;
+
+// STT runs one update per frame rather than one per sweep, so its aging
+// timescale is its own: frames without a return before the track is dropped.
+// A high figure keeps the lock alive through brief dropouts without
+// conflicting with the sweep timescale.
+export const TRACK_STT_MAX_MISSED_FRAMES = 90;
+
+// The confidence ladder a track climbs and falls on. A fresh track starts
+// low — a single cluster is as likely a thermal false alarm as a contact —
+// gains on each accepted update, and decays on each missed or MTI-rejected
+// one, the same decay either way, so a contact the set refuses to believe
+// ages out on the same clock an unmatched one would.
+export const TRACK_CONFIDENCE_INITIAL = 0.3;
+export const TRACK_CONFIDENCE_GAIN = 0.15;
+export const TRACK_CONFIDENCE_DECAY = 0.1;
 
 // ── Missile radar / guidance (systems/modules/*missile*.ts) ────────────────
 
@@ -500,6 +497,14 @@ export const JAMMER_DISTANCE_ERROR_MAX_PX = 180;
 // the chance scales toward zero with the J/S ratio.
 export const JAMMER_STT_DEGRADE_PROB = 0.5;
 
+// Cone-readout colours for the HUD status line: a live burst, the cooldown,
+// ready, and the standby the radar substitutes while the transmitter is off
+// (EMCON — a jamming burst cannot be triggered, it is itself an emission).
+export const JAMMER_HUD_ACTIVE_COLOR = '#ff3030';
+export const JAMMER_HUD_COOLDOWN_COLOR = '#888888';
+export const JAMMER_HUD_READY_COLOR = '#00ff00';
+export const JAMMER_HUD_STANDBY_COLOR = '#ffff00';
+
 // ── Radar world renderer (renderer/radarRenderer.ts) ───────────────────────
 
 // Radius of VIM-220 waypoint markers in world pixels.
@@ -636,6 +641,21 @@ export const TERRAIN_SPECKLES_PER_PULSE_LENGTH = 8;
 export const TERRAIN_SPECKLE_LENGTH_PX = 5;
 export const TERRAIN_SPECKLE_DROPOUT_PROB = 0.25;
 
+// Within a cell a dash sits mostly behind the leading edge but a little in
+// front of it — the leading edge's own range jitter, as a fraction of the
+// cell's depth. Dash length and brightness vary around the nominal speckle
+// (a minimum plus a random span), and brightness dims toward the tail.
+export const TERRAIN_SPECKLE_LEADING_JITTER = 0.15;
+export const TERRAIN_SPECKLE_LENGTH_MIN = 0.3;
+export const TERRAIN_SPECKLE_LENGTH_SPAN = 0.7;
+export const TERRAIN_SPECKLE_INTENSITY_MIN = 0.35;
+export const TERRAIN_SPECKLE_INTENSITY_SPAN = 0.65;
+export const TERRAIN_SPECKLE_TAIL_FADE = 0.7;
+
+// Floor of the bloom random walk (TERRAIN_BLOOM_ROUGHNESS above; the cap is
+// 1) — how shallow the paint can wander between two returns on one surface.
+export const TERRAIN_BLOOM_LUMP_MIN = 0.25;
+
 // Radar shadow behind the mapped surface. Returns are binned by bearing from
 // the antenna and each bin is filled once, from its nearest return out to the
 // display range, so the shadow is one flat tone whatever the distance.
@@ -687,6 +707,19 @@ export const CFAR_REFERENCE_CELLS = 5;
 // clear the floor; the reference-cell average in practice dilutes that
 // unless clutter genuinely surrounds the point, not just brushes past it.
 export const CFAR_THRESHOLD_FACTOR = 1.0;
+
+// Chance an empty cell the beam sweeps reports a contact anyway — receiver
+// noise alone crossing the (clutter-raised) threshold, at the same
+// Pd(0) = RADAR_PFA the detection curve in the signal-path section is built
+// around, applied to a *specific* cell rather than to a real echo. Rolled
+// once per ray by the detector itself (CfarDetector.rollFalseAlarm),
+// deliberately its own tunable rate rather than RADAR_PFA reused directly:
+// this radar has one ray's worth of cell to offer per frame, not the many a
+// real set's Pfa is spread across (see the realism roadmap's sampling item),
+// so the two numbers are free to answer different questions — how readily a
+// real, if faint, echo is believed, versus how often the picture sparkles
+// with nothing there at all.
+export const RADAR_FALSE_ALARM_RATE = 0.0006;
 
 // ── MTI / radial velocity (systems/modules/trackingComputer.ts) ─────────────
 // There is no carrier and no phase anywhere in this raycasting engine, so

@@ -4,12 +4,19 @@ import {
   RADAR_BEAM_WIDTH_DEG,
   RADAR_PULSE_LENGTH_PX,
   TERRAIN_BLOOM_DEPTH_PX,
+  TERRAIN_BLOOM_LUMP_MIN,
   TERRAIN_BLOOM_ROUGHNESS,
   TERRAIN_MAX_SAMPLES,
   TERRAIN_SAMPLE_TTL_MS,
   TERRAIN_SPECKLES_PER_PULSE_LENGTH,
   TERRAIN_SPECKLE_DROPOUT_PROB,
+  TERRAIN_SPECKLE_INTENSITY_MIN,
+  TERRAIN_SPECKLE_INTENSITY_SPAN,
+  TERRAIN_SPECKLE_LEADING_JITTER,
+  TERRAIN_SPECKLE_LENGTH_MIN,
   TERRAIN_SPECKLE_LENGTH_PX,
+  TERRAIN_SPECKLE_LENGTH_SPAN,
+  TERRAIN_SPECKLE_TAIL_FADE,
 } from '../../data/radarGameSettings';
 
 // One scatterer inside a return's resolution cell: where it lit up, how long
@@ -93,7 +100,7 @@ export class TerrainMapper {
     // normal's orientation is not guaranteed, so take it either way round.
     const facing = Math.abs(ux * surfaceNormal.x + uy * surfaceNormal.y);
     this.bloomLump = Phaser.Math.Clamp(
-      this.bloomLump + (Math.random() - 0.5) * TERRAIN_BLOOM_ROUGHNESS, 0.25, 1);
+      this.bloomLump + (Math.random() - 0.5) * TERRAIN_BLOOM_ROUGHNESS, TERRAIN_BLOOM_LUMP_MIN, 1);
     // Echo power goes with the square of the facing cosine, and so does the
     // bloom that power drives.
     const depth = RADAR_PULSE_LENGTH_PX + TERRAIN_BLOOM_DEPTH_PX * facing * facing * this.bloomLump;
@@ -105,15 +112,15 @@ export class TerrainMapper {
       const across = (Math.random() * 2 - 1) * halfWidth;
       // Mostly behind the leading edge, a little in front (range jitter of
       // the leading edge itself).
-      const along = (Math.random() * 1.15 - 0.15) * depth;
+      const along = (Math.random() * (1 + TERRAIN_SPECKLE_LEADING_JITTER) - TERRAIN_SPECKLE_LEADING_JITTER) * depth;
       // The saturated tail decays: brightest at the surface, fading into the
       // shadow.
       const tail = Phaser.Math.Clamp(along / depth, 0, 1);
       speckles.push({
         x: point.x + ux * along + tangent.x * across,
         y: point.y + uy * along + tangent.y * across,
-        halfLength: (0.3 + Math.random() * 0.7) * TERRAIN_SPECKLE_LENGTH_PX / 2,
-        intensity: (0.35 + Math.random() * 0.65) * (1 - 0.7 * tail),
+        halfLength: (TERRAIN_SPECKLE_LENGTH_MIN + Math.random() * TERRAIN_SPECKLE_LENGTH_SPAN) * TERRAIN_SPECKLE_LENGTH_PX / 2,
+        intensity: (TERRAIN_SPECKLE_INTENSITY_MIN + Math.random() * TERRAIN_SPECKLE_INTENSITY_SPAN) * (1 - TERRAIN_SPECKLE_TAIL_FADE * tail),
       });
     }
 

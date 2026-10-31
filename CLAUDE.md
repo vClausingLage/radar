@@ -211,8 +211,9 @@ display-and-weapons concern.
   the radar modules.
 - Comments explain the radar/physics reasoning ("chaff between the antenna and
   the target can swallow the return"), not the syntax. Match that density.
-- Existing `HACK:`/`TODO:` markers (e.g. the STT direct-entity reference) are
-  tracked in `TO_DO.md` — don't silently rewrite them as drive-bys.
+- Known simulation/architecture debt is tracked in the debt ledger in
+  `TO_DO.md`. Any `HACK:`/`TODO:` markers in the source point there — don't
+  silently rewrite them as drive-bys.
 
 ## Verification
 

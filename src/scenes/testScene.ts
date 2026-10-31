@@ -148,9 +148,9 @@ export class TestScene extends Game {
     armFlight(flight: Flight): void {
         const roles: [Target, 'lead' | 'wing'][] = [[flight.lead, 'lead'], [flight.wing, 'wing']];
         for (const [ship, role] of roles) {
-            const controller = new AiUnitController(
-                this, ship, targetShipSettings.TURN_RATE_CRUISER, false, ship.radar, ship.id, 'active', null,
-            );
+            const controller = new AiUnitController({
+                scene: this, ship, turnRate: targetShipSettings.TURN_RATE_CRUISER, radar: ship.radar, activity: 'active',
+            });
             ship.setController(controller);
             controller.joinFlight(flight, role);
         }

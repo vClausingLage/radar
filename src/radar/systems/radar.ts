@@ -26,7 +26,7 @@ import {
     specularFactor,
     beamPattern,
 } from "../data/signalPath";
-import { Track, iffStateOf } from "../data/track";
+import { Track, clearIff, iffStateOf } from "../data/track";
 import { Entity, GasVolume, Loadout, Mode, RadarHost, Terrain } from "../data/types";
 
 import { InterfaceRenderer } from "../renderer/interfaceRenderer";
@@ -40,13 +40,13 @@ import { RadarEventEmitter } from "./game/radarEventEmitter";
 import {
     CLUTTER_GAS_DENSITY,
     CLUTTER_TERRAIN_DENSITY,
+    JAMMER_HUD_STANDBY_COLOR,
     JAMMER_STT_DEGRADE_PROB,
     MAX_TWS_TRACKS,
     RADAR_BEAM_WIDTH_DEG,
     RADAR_DEFAULT_RANGE_PX,
     IFF_MATE_PPLI_PX,
     LINK_TRACK_MIN_AGE_SCANS,
-    RADAR_FALSE_ALARM_RATE,
     RWR_BEARING_ACCURACY_DEG,
     STT_ACQUISITION_BEAM_DEG,
     STT_ACQUISITION_FRAMES,
@@ -54,6 +54,7 @@ import {
     STT_BEAM_RAY_SPACING_DEG,
     STT_LOCK_BREAK_FRAMES,
     TRACK_STT_COURSE_WINDOW_FRAMES,
+    TRACK_STT_MAX_MISSED_FRAMES,
     TRACK_STT_MIN_COURSE_SPEED_PX,
     decoySettings,
 } from "../data/radarGameSettings";
@@ -464,7 +465,7 @@ export class Radar {
         const tracks = this.trackingComputer.getTracks();
         this.iffInterrogator.ageOut(tracks, now);
         if (!this.iffAvailable) {
-            for (const track of tracks) delete track.iff;
+            for (const track of tracks) clearIff(track);
             return;
         }
 
@@ -530,7 +531,7 @@ export class Radar {
     // timer, since the transmitter is off and the jammer cannot be triggered.
     getJammerHudStatus(): JammerHudStatus {
         if (this.mode === 'emcon') {
-            return { label: 'JAMMER STDBY', color: '#ffff00' };
+            return { label: 'JAMMER STDBY', color: JAMMER_HUD_STANDBY_COLOR };
         }
         return this.jammer.getHudStatus(this.scene.time.now);
     }
@@ -570,11 +571,13 @@ export class Radar {
     // The radar supplies the track picture; FireControl owns the launch. A
     // confirmed launch fires a 'missile-fired' event on this radar's own
     // emitter — only the player's radar has a listener (see Game.create()),
-    // so AI ships firing the same weapons stay silent.
+    // so AI ships firing the same weapons stay silent. Returns whether a round
+    // actually left the rail, so a shooter (the AI) can tell a refused shot
+    // from a fired one without watching the loadout count.
     //
     // `only` confines a TWS shot to that track: a flight member shooting its
     // sorted group does not spend a round on the other member's.
-    shoot(only?: Track): void {
+    shoot(only?: Track): boolean {
         const tracks = this.displayedTracks();
         const fired = this.fireControl.shoot(this.mode, {
             ship: this.ownerShip(),
@@ -584,6 +587,7 @@ export class Radar {
         if (fired) {
             this.eventEmitter.emitMissileFired(fired);
         }
+        return fired !== null;
     }
 
     // Launch on remote: fire a VIM-220 at a track a flight mate holds and sent
@@ -593,14 +597,16 @@ export class Radar {
     // its own seeker. The track is re-resolved against the link, so a stale or
     // invented one launches nothing; and it must be inside this ship's ring.
     // Mid-course updates keep coming from the link while the lead holds the
-    // track (remoteTracksInRing in the guidance context below).
-    shootOnRemote(track: Track): void {
+    // track (remoteTracksInRing in the guidance context below). Returns whether
+    // a round left the rail, as shoot() does.
+    shootOnRemote(track: Track): boolean {
         const remote = this.remoteTracksInRing().find(t => t.id === track.id);
-        if (!remote) return;
+        if (!remote) return false;
         const fired = this.fireControl.shootOnRemote(this.ownerShip(), remote);
         if (fired) {
             this.eventEmitter.emitMissileFired(fired);
         }
+        return fired !== null;
     }
 
     // Max range (px) of the currently selected weapon, for the range indicator.
@@ -719,14 +725,17 @@ export class Radar {
         // is a no-op (factor 1) for the antenna every current scenario uses.
         const scanGain = beamGain(scanWidth) * scanLossFactor(this.antenna.scanAngleDeg(shipDirection));
 
-        this.radarRenderer?.update(
-            graphics, ownerPos, this.range,
+        this.radarRenderer?.update({
+            graphics, radarPosition: ownerPos, radarRange: this.range,
             scanStartAngle, scanEndAngle,
-            [], this.fireControl.getLoadout(), this.fireControl.getWaypoints(), pulse, false,
-            this.fireControl.getLastVim220TimeToActive(), this.fireControl.getActiveMissileRange(),
-            this.getJammerHudStatus(), this.fireControl.getWaypointAlpha(),
-            false, this.hasIffTracks(),
-        );
+            activeMissiles: [], loadout: this.fireControl.getLoadout(),
+            vim220Waypoints: this.fireControl.getWaypoints(), pulse,
+            vim220TimeToActive: this.fireControl.getLastVim220TimeToActive(),
+            missileRange: this.fireControl.getActiveMissileRange(),
+            jammerStatus: this.getJammerHudStatus(),
+            vim220WaypointAlpha: this.fireControl.getWaypointAlpha(),
+            iffHint: this.hasIffTracks(),
+        });
 
         // Render our own jamming cone while the jammer is running.
         if (this.jammer.isActive()) {
@@ -750,52 +759,41 @@ export class Radar {
         if (jamming) this.sweepJamming = jamming;
 
         // Ship, terrain and chaff returns compete for the beam — the nearer
-        // reflector wins the ray. Terrain shadows ships and is handed to the
-        // TerrainMapper; a chaff cloud is a reflector like any other, so
-        // nearer than the target it hides it behind an echo of its own (and
-        // paints a contact — that is what chaff is for); a nearer ship return
-        // masks both. The pencil ray is its own beam boresight, so hits are
-        // pattern-weighted at the pencil's width.
-        const shipHit = this.nearestHit(pulse.line, ownerPos, targets, pulseDirection, RADAR_BEAM_WIDTH_DEG);
-        const terrainHit = this.nearestHit(pulse.line, ownerPos, terrain, pulseDirection, RADAR_BEAM_WIDTH_DEG);
-        const decoyEcho = this.nearestDecoyEcho(pulse.line, ownerPos, decoyCircles);
-        const distSqOf = (hit: { point: Phaser.Math.Vector2 } | null): number =>
-            hit
-                ? Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, hit.point.x, hit.point.y)
-                : Infinity;
-        const shipDistSq = distSqOf(shipHit);
-        const terrainDistSq = distSqOf(terrainHit);
-        const decoyDistSq = distSqOf(decoyEcho);
+        // reflector wins the ray (firstReflector). The pencil ray is its own
+        // beam boresight, so hits are pattern-weighted at the pencil's width.
+        const first = this.firstReflector(
+            pulse.line, ownerPos, targets, terrain, decoyCircles, pulseDirection, RADAR_BEAM_WIDTH_DEG,
+        );
 
-        if (terrainHit && terrainDistSq <= shipDistSq && terrainDistSq <= decoyDistSq) {
+        if (first?.kind === 'terrain') {
             // Ground mapping is a picture, not a track, and the picture stops at
             // the rated range - the beam reaching past it paints nothing. Gas
             // dims what is inside exactly as it dims a contact.
-            if (this.withinDisplayRange(ownerPos, terrainHit.point)
-                && !this.receiver.isAbsorbedByGas(ownerPos, terrainHit.point, gasVolumes)) {
-                this.terrainMapper.addSample(terrainHit.point, terrainHit.normal, ownerPos, this.scene.time.now);
+            if (this.withinDisplayRange(ownerPos, first.point)
+                && !this.receiver.isAbsorbedByGas(ownerPos, first.point, gasVolumes)) {
+                this.terrainMapper.addSample(first.point, first.normal, ownerPos, this.scene.time.now);
                 // Ground clutter: whatever the ground map is painting here is
                 // also raising the floor a ship return here must clear.
-                this.cfarDetector.addClutter(terrainHit.point, CLUTTER_TERRAIN_DENSITY, this.scene.time.now);
+                this.cfarDetector.addClutter(first.point, CLUTTER_TERRAIN_DENSITY, this.scene.time.now);
             }
-        } else if (decoyEcho && decoyDistSq < shipDistSq) {
+        } else if (first?.kind === 'decoy') {
             // The chaff cloud's echo enters the tracking pipeline like a
             // contact: same energy budget, same clustering, and the tracking
             // computer cannot tell it from a hull — a false track is the
             // whole point of throwing chaff.
             this.sweepBuffer.push({
-                point: decoyEcho.point,
+                point: first.point,
                 crossSection: decoySettings.CROSS_SECTION,
-                transmission: this.receiver.gasRoundTrip(ownerPos, decoyEcho.point, gasVolumes),
+                transmission: this.receiver.gasRoundTrip(ownerPos, first.point, gasVolumes),
             });
-        } else if (shipHit) {
+        } else if (first?.kind === 'ship') {
             // Gas only weakens it, so it goes into the hit's signal
             // budget instead, to be weighed against range and hull size when the
             // sweep is processed.
             this.sweepBuffer.push({
-                point: shipHit.point,
-                crossSection: shipHit.crossSection,
-                transmission: this.receiver.gasRoundTrip(ownerPos, shipHit.point, gasVolumes),
+                point: first.point,
+                crossSection: first.crossSection,
+                transmission: this.receiver.gasRoundTrip(ownerPos, first.point, gasVolumes),
             });
         }
 
@@ -816,44 +814,15 @@ export class Radar {
             );
         }
 
-        // Thermal false alarm: the receiver's own noise can cross the
-        // detection threshold with nothing in the cell at all (see
-        // detectionProbability in data/signalPath.ts — its floor is exactly
-        // this chance, RADAR_PFA). This roll *is* the Pfa event, so the
-        // fabricated point does not go through the signal budget a second
-        // time — it goes straight into falseAlarmBuffer rather than
-        // sweepBuffer. Its range is drawn uniformly along the full traced
-        // reach rather than weighted toward the near end the way a real echo
-        // is: that is the tell that separates a noise spike from a
-        // reflection, a genuine return thins out with distance and receiver
-        // noise does not.
-        //
-        // The same CFAR threshold applies to noise as to echoes: the raised
-        // floor near clutter suppresses noise spikes there exactly as it
-        // suppresses weak target returns, so the roll is divided by the same
-        // floor multiplier the real hits are judged against. Without this the
-        // threshold would be higher only for echoes — and noise would be
-        // *most* believable exactly where a real set declares nothing, which
-        // is backwards: clutter residue is the reason a real CFAR detector
-        // raises its threshold in the first place.
-        const phantomRange = Math.random() * this.emitter.getReach();
-        const phantomRad = Phaser.Math.DegToRad(pulseDirection);
-        const phantomPoint = new Phaser.Math.Vector2(
-            ownerPos.x + Math.cos(phantomRad) * phantomRange,
-            ownerPos.y + Math.sin(phantomRad) * phantomRange,
+        // Thermal false alarm, rolled by the detector whose threshold the
+        // noise would have to cross (CfarDetector.rollFalseAlarm). The phantom
+        // it returns is already a decided detection — the roll *is* the Pfa
+        // event — so it goes straight into falseAlarmBuffer rather than
+        // through the signal budget a second time.
+        const phantom = this.cfarDetector.rollFalseAlarm(
+            ownerPos, pulseDirection, this.emitter.getReach(), this.scene.time.now,
         );
-        if (Math.random() < RADAR_FALSE_ALARM_RATE
-            / this.cfarDetector.noiseFloorMultiplier(phantomPoint, this.scene.time.now)) {
-            this.falseAlarmBuffer.push({
-                point: phantomPoint,
-                range: phantomRange,
-                angle: pulseDirection,
-                // A noise spike that cleared the threshold carries exactly the
-                // floor it cleared — no amplitude structure for the tracking
-                // computer's weighted centroid to read anything into.
-                signal: 1,
-            });
-        }
+        if (phantom) this.falseAlarmBuffer.push(phantom);
 
         if (sweepComplete) {
             const now = this.scene.time.now;
@@ -984,14 +953,17 @@ export class Radar {
         const beamLines = this.beamRays(ownerPos, lockDir, beamWidth);
 
         // Render full RWS cone with the narrow tracking beam inside it.
-        this.radarRenderer?.update(
-            graphics, ownerPos, this.range,
-            shipDirection - rwsHalfAz, shipDirection + rwsHalfAz,
-            [], this.fireControl.getLoadout(), this.fireControl.getWaypoints(), pulse, true,
-            this.fireControl.getLastVim220TimeToActive(), this.fireControl.getActiveMissileRange(),
-            this.getJammerHudStatus(), this.fireControl.getWaypointAlpha(),
-            false, this.hasIffTracks(),
-        );
+        this.radarRenderer?.update({
+            graphics, radarPosition: ownerPos, radarRange: this.range,
+            scanStartAngle: shipDirection - rwsHalfAz, scanEndAngle: shipDirection + rwsHalfAz,
+            activeMissiles: [], loadout: this.fireControl.getLoadout(),
+            vim220Waypoints: this.fireControl.getWaypoints(), pulse, sttMode: true,
+            vim220TimeToActive: this.fireControl.getLastVim220TimeToActive(),
+            missileRange: this.fireControl.getActiveMissileRange(),
+            jammerStatus: this.getJammerHudStatus(),
+            vim220WaypointAlpha: this.fireControl.getWaypointAlpha(),
+            iffHint: this.hasIffTracks(),
+        });
 
         // Render our own jamming cone while the jammer is running.
         if (this.jammer.isActive()) {
@@ -999,47 +971,39 @@ export class Radar {
         }
 
         // Collect every ship return in the beam. Terrain and chaff compete
-        // ray by ray under the same nearest-wins rule as the sweep: where
-        // terrain is nearer it paints the ground map and shadows whatever
-        // is behind it, so a target sliding behind a rock starves the lock;
-        // chaff nearer than the target hides it behind an echo of its own.
+        // ray by ray under the same nearest-wins rule as the sweep
+        // (firstReflector): where terrain is nearer it paints the ground map
+        // and shadows whatever is behind it, so a target sliding behind a rock
+        // starves the lock; chaff nearer than the target hides it behind an
+        // echo of its own.
         const rawHits: BeamHit[] = [];
         for (const line of beamLines) {
-            const shipHit = this.nearestHit(line, ownerPos, targets, lockDir, beamWidth);
-            const terrainHit = this.nearestHit(line, ownerPos, terrain, lockDir, beamWidth);
-            const decoyEcho = this.nearestDecoyEcho(line, ownerPos, decoyCircles);
-            const distSqOf = (hit: { point: Phaser.Math.Vector2 } | null): number =>
-                hit
-                    ? Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, hit.point.x, hit.point.y)
-                    : Infinity;
-            const shipDistSq = distSqOf(shipHit);
-            const terrainDistSq = distSqOf(terrainHit);
-            const decoyDistSq = distSqOf(decoyEcho);
+            const first = this.firstReflector(line, ownerPos, targets, terrain, decoyCircles, lockDir, beamWidth);
 
-            if (terrainHit && terrainDistSq <= shipDistSq && terrainDistSq <= decoyDistSq) {
-                if (this.withinDisplayRange(ownerPos, terrainHit.point)
-                    && !this.receiver.isAbsorbedByGas(ownerPos, terrainHit.point, gasVolumes)) {
-                    this.terrainMapper.addSample(terrainHit.point, terrainHit.normal, ownerPos, this.scene.time.now);
+            if (first?.kind === 'terrain') {
+                if (this.withinDisplayRange(ownerPos, first.point)
+                    && !this.receiver.isAbsorbedByGas(ownerPos, first.point, gasVolumes)) {
+                    this.terrainMapper.addSample(first.point, first.normal, ownerPos, this.scene.time.now);
                 }
-            } else if (decoyEcho && decoyDistSq < shipDistSq) {
+            } else if (first?.kind === 'decoy') {
                 // The cloud's echo is a return like any other — it can land
                 // inside the gate and drag the lock, or starve it entirely if
                 // the target sits behind the cloud.
                 rawHits.push({
-                    point: decoyEcho.point,
+                    point: first.point,
                     crossSection: decoySettings.CROSS_SECTION,
-                    transmission: this.receiver.gasRoundTrip(ownerPos, decoyEcho.point, gasVolumes),
+                    transmission: this.receiver.gasRoundTrip(ownerPos, first.point, gasVolumes),
                 });
-            } else if (shipHit) {
+            } else if (first?.kind === 'ship') {
                 // Chaff between the antenna and the target has already lost
                 // the ray above; gas only costs it energy, which the
                 // concentrated STT beam has more of to spend. Starved frames
                 // feed the lock-break counter below, so a target that drags
                 // the lock through a thick enough cloud can still shake it.
                 rawHits.push({
-                    point: shipHit.point,
-                    crossSection: shipHit.crossSection,
-                    transmission: this.receiver.gasRoundTrip(ownerPos, shipHit.point, gasVolumes),
+                    point: first.point,
+                    crossSection: first.crossSection,
+                    transmission: this.receiver.gasRoundTrip(ownerPos, first.point, gasVolumes),
                 });
             }
         }
@@ -1092,7 +1056,7 @@ export class Radar {
         // per frame there is nothing to read in a shorter baseline, and this
         // estimate is what a SARH seeker leads on.
         this.trackingComputer.update(returns, ownerPos, {
-            maxMissedScans: 90,
+            maxMissedScans: TRACK_STT_MAX_MISSED_FRAMES,
             minCourseSpeed: TRACK_STT_MIN_COURSE_SPEED_PX,
             courseWindow: TRACK_STT_COURSE_WINDOW_FRAMES,
             courseFromMeasurements: true,
@@ -1157,14 +1121,17 @@ export class Radar {
         const scanStartAngle = shipDirection - scanWidth / 2;
         const scanEndAngle = shipDirection + scanWidth / 2;
 
-        this.radarRenderer?.update(
-            graphics, ownerPos, this.range,
+        this.radarRenderer?.update({
+            graphics, radarPosition: ownerPos, radarRange: this.range,
             scanStartAngle, scanEndAngle,
-            [], this.fireControl.getLoadout(), this.fireControl.getWaypoints(), undefined, false,
-            this.fireControl.getLastVim220TimeToActive(), this.fireControl.getActiveMissileRange(),
-            this.getJammerHudStatus(), this.fireControl.getWaypointAlpha(),
-            true,
-        );
+            activeMissiles: [], loadout: this.fireControl.getLoadout(),
+            vim220Waypoints: this.fireControl.getWaypoints(),
+            vim220TimeToActive: this.fireControl.getLastVim220TimeToActive(),
+            missileRange: this.fireControl.getActiveMissileRange(),
+            jammerStatus: this.getJammerHudStatus(),
+            vim220WaypointAlpha: this.fireControl.getWaypointAlpha(),
+            emconStandby: true,
+        });
 
         // A jamming burst triggered just before EMCON was engaged still runs
         // its course — keep showing its cone rather than hide it silently.
@@ -1219,13 +1186,12 @@ export class Radar {
     ): void {
         const now = this.scene.time.now;
         for (const entity of targets) {
-            if (!('radar' in entity)) continue;
+            if (!this.hasRadar(entity)) continue;
             const polygon = this.raycaster.getBodyPolygons(entity);
             const inMainBeam = lines.some(line => Phaser.Geom.Intersects.GetLineToPolygon(line, polygon));
             if (!inMainBeam && !testSidelobes) continue;
 
-            const tgt = entity as PlayerShip | Target;
-            const epos = tgt.getPosition();
+            const epos = entity.getPosition();
             const range = Phaser.Math.Distance.Between(ownerPos.x, ownerPos.y, epos.x, epos.y);
             let gain = mainGain;
             if (!inMainBeam) {
@@ -1255,8 +1221,8 @@ export class Radar {
             // not the beam itself, so it does not earn the lock warning or the
             // event. Only a ship the main beam is actually resting on gets that.
             const locked = isLocked && inMainBeam;
-            tgt.radar.rwrReceiver.receive(String(this.owner?.id ?? 'unknown'), bearingDeg, locked, now);
-            if (locked) tgt.radar.eventEmitter.onRwrLock();
+            entity.radar.rwrReceiver.receive(String(this.owner?.id ?? 'unknown'), bearingDeg, locked, now);
+            if (locked) entity.radar.eventEmitter.onRwrLock();
         }
     }
 
@@ -1270,21 +1236,20 @@ export class Radar {
         ownerPos: { x: number; y: number },
     ): { error: JammerError; range: number; bearingDeg: number } | null {
         for (const entity of targets) {
-            if (!('radar' in entity)) continue;
-            const tgt = entity as PlayerShip | Target;
-            if (!tgt.radar.jammer.isActive()) continue;
+            if (!this.hasRadar(entity)) continue;
+            if (!entity.radar.jammer.isActive()) continue;
 
             const polygon = this.raycaster.getBodyPolygons(entity);
             if (!lines.some(line => Phaser.Geom.Intersects.GetLineToPolygon(line, polygon))) continue;
 
-            if (tgt.radar.jammer.covers(tgt.getPosition(), tgt.getDirection(), ownerPos, this.range)) {
+            if (entity.radar.jammer.covers(entity.getPosition(), entity.getDirection(), ownerPos, this.range)) {
                 return {
-                    error: tgt.radar.jammer.getError(),
+                    error: entity.radar.jammer.getError(),
                     range: Phaser.Math.Distance.Between(
-                        ownerPos.x, ownerPos.y, tgt.getPosition().x, tgt.getPosition().y,
+                        ownerPos.x, ownerPos.y, entity.getPosition().x, entity.getPosition().y,
                     ),
                     bearingDeg: Phaser.Math.RadToDeg(
-                        Math.atan2(tgt.getPosition().y - ownerPos.y, tgt.getPosition().x - ownerPos.x),
+                        Math.atan2(entity.getPosition().y - ownerPos.y, entity.getPosition().x - ownerPos.x),
                     ),
                 };
             }
@@ -1306,16 +1271,66 @@ export class Radar {
     ): void {
         const now = this.scene.time.now;
         for (const entity of targets) {
-            if (!('radar' in entity)) continue;
-            const tgt = entity as PlayerShip | Target;
-            if (!tgt.radar.jammer.isActive()) continue;
-            if (!tgt.radar.jammer.covers(tgt.getPosition(), tgt.getDirection(), ownerPos, this.range)) continue;
+            if (!this.hasRadar(entity)) continue;
+            if (!entity.radar.jammer.isActive()) continue;
+            if (!entity.radar.jammer.covers(entity.getPosition(), entity.getDirection(), ownerPos, this.range)) continue;
 
             const bearingDeg = Phaser.Math.RadToDeg(
-                Math.atan2(tgt.y - ownerPos.y, tgt.x - ownerPos.x),
+                Math.atan2(entity.y - ownerPos.y, entity.x - ownerPos.x),
             );
-            this.rwrReceiver.receive(String(tgt.id), bearingDeg, false, now, true);
+            this.rwrReceiver.receive(String(entity.id), bearingDeg, false, now, true);
         }
+    }
+
+    // What the ray struck first: terrain, a chaff cloud, or a ship hull — the
+    // nearer reflector wins. Terrain shadows ships and is handed to the
+    // ground map; a chaff cloud is a reflector like any other, so nearer than
+    // the target it hides it behind an echo of its own (and paints a contact —
+    // that is what chaff is for); a nearer ship return masks both. Shared by
+    // the search sweep and the STT stare, which do different things with the
+    // answer (the sweep also logs ground clutter off the terrain it paints).
+    private firstReflector(
+        line: Phaser.Geom.Line,
+        ownerPos: { x: number; y: number },
+        targets: Entity[],
+        terrain: Terrain[],
+        decoyCircles: Phaser.Geom.Circle[],
+        beamCentreDeg: number,
+        beamWidthDeg: number,
+    ):
+        | { kind: 'terrain'; point: Phaser.Math.Vector2; normal: { x: number; y: number } }
+        | { kind: 'decoy'; point: Phaser.Math.Vector2 }
+        | { kind: 'ship'; point: Phaser.Math.Vector2; crossSection: number }
+        | null {
+        const shipHit = this.nearestHit(line, ownerPos, targets, beamCentreDeg, beamWidthDeg);
+        const terrainHit = this.nearestHit(line, ownerPos, terrain, beamCentreDeg, beamWidthDeg);
+        const decoyEcho = this.nearestDecoyEcho(line, ownerPos, decoyCircles);
+        const distSqOf = (hit: { point: Phaser.Math.Vector2 } | null): number =>
+            hit
+                ? Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, hit.point.x, hit.point.y)
+                : Infinity;
+        const shipDistSq = distSqOf(shipHit);
+        const terrainDistSq = distSqOf(terrainHit);
+        const decoyDistSq = distSqOf(decoyEcho);
+
+        if (terrainHit && terrainDistSq <= shipDistSq && terrainDistSq <= decoyDistSq) {
+            return { kind: 'terrain', point: terrainHit.point, normal: terrainHit.normal };
+        }
+        if (decoyEcho && decoyDistSq < shipDistSq) {
+            return { kind: 'decoy', point: decoyEcho.point };
+        }
+        if (shipHit) {
+            return { kind: 'ship', point: shipHit.point, crossSection: shipHit.crossSection };
+        }
+        return null;
+    }
+
+    // Ships carry a radar — and so an RWR that can hear us and a jammer that
+    // can paint us; terrain does neither. Narrowing by the property rather
+    // than casting: what an inter-set interaction (illumination, jamming) may
+    // read off another ship is exactly what its radar exposes.
+    private hasRadar(entity: Entity): entity is PlayerShip | Target {
+        return 'radar' in entity;
     }
 
     // Where this ray first strikes something, and how much of that something is
@@ -1436,6 +1451,9 @@ export class Radar {
         return (this.owner instanceof PlayerShip || this.owner instanceof Target) ? this.owner : null;
     }
 
+    // Test seam: the suite injects a synthetic picture directly (iffTests),
+    // bypassing detection. Mode transitions are this class's own work and go
+    // straight to the tracking computer — nothing in play should call this.
     setTracks(tracks: Track[]): void {
         this.trackingComputer.setTracks(tracks);
     }

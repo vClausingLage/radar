@@ -373,7 +373,7 @@ const pictureCarriesIffWords: GameTest = {
         const recorder = new PictureRecorder();
         drone.controller?.destroy();
         // An emplacement: it holds still while its radar, IFF and decisions all run.
-        drone.controller = new AiUnitController(ctx.scene, drone, 0, false, drone.radar, drone.id, 'inactive', recorder);
+        drone.controller = new AiUnitController({ scene: ctx.scene, ship: drone, radar: drone.radar, activity: 'inactive', tactician: recorder });
         ctx.player.radar.enterEmcon();
 
         await ctx.frames(FRAMES_PER_SWEEP * 6);

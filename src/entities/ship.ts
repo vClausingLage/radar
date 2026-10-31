@@ -44,7 +44,7 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
         // The body is what the radar echoes off and what a missile or the
         // ground actually meets, so give it the hull's silhouette rather
         // than the texture's box. Must run before the friction and velocity
-        // below and before any subclass setScale: setBody resets the former
+        // below and before the factory's setScale: setBody resets the former
         // and Phaser scales body and picture together from here on.
         fitBodyToOutline(this, SHIP_OUTLINES[this.texture.key] ?? SHIP_OUTLINES.ship);
         // Remove air friction for space physics
@@ -53,7 +53,6 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
         const velocityX = Math.cos(Phaser.Math.DegToRad(this.direction)) * this.speed;
         const velocityY = Math.sin(Phaser.Math.DegToRad(this.direction)) * this.speed;
         this.setVelocity(velocityX, velocityY);
-        this.radar.setMode('rws');
         this.angle = this.direction;
         this.currentSpeed = this.speed;
 
@@ -185,7 +184,6 @@ export class PlayerShip extends Ship {
         radar: Radar;
     }) {
         super({ ...params, id: 0 });
-        this.setScale(.7);
     }
 }
 
@@ -230,8 +228,6 @@ export class Target extends Ship {
         });
         this.shipType = params.shipType;
         this.side = params.side ?? 'hostile';
-
-        this.setScale(.4);
     }
 
     get iffCode(): IffCode {

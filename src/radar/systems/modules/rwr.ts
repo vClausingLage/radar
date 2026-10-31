@@ -11,6 +11,12 @@
 
 import { RWR_CONTACT_TTL_MS } from '../../data/radarGameSettings';
 
+// The emitter-key prefix marking a contact as a missile seeker rather than a
+// ship's radar. Minted by MissileRadar ('missile-N' per seeker); read here,
+// by the AI's missile-inbound check and by the tests — one constant, so the
+// protocol cannot silently drift between the four.
+export const RWR_SEEKER_KEY_PREFIX = 'missile-';
+
 export type RwrContact = {
   bearingDeg: number;
   isLocked: boolean;     // true when source is in STT (fire-control lock)
@@ -49,7 +55,7 @@ export class RwrReceiver {
     // enemy's however well its bearing lines up with the wingman's - and
     // hiding it would blind EVADE exactly when an enemy shoots from behind
     // the wingman. A missile seeker is never a friend either.
-    const friendly = !isLocked && !key.startsWith('missile-') && (this.friendFilter?.(bearingDeg) ?? false);
+    const friendly = !isLocked && !key.startsWith(RWR_SEEKER_KEY_PREFIX) && (this.friendFilter?.(bearingDeg) ?? false);
     this.contacts.set(key, { bearingDeg, isLocked, isJammer, lastSeenAt: now, friendly });
   }
 
@@ -74,8 +80,8 @@ export class RwrReceiver {
   }
 
   // The emitter key behind every live contact. Ship radars key on the emitting
-  // ship's entity id, missile seekers on their own 'missile-N' key, so this is
-  // what tells a search radar apart from an inbound seeker.
+  // ship's entity id, missile seekers on their own RWR_SEEKER_KEY_PREFIX key,
+  // so this is what tells a search radar apart from an inbound seeker.
   getRwrSources(): string[] {
     return Array.from(this.contacts.entries()).filter(([, c]) => !c.friendly).map(([k]) => k);
   }
@@ -86,7 +92,7 @@ export class RwrReceiver {
   getPlatformContact(): RwrContact | null {
     let best: RwrContact | null = null;
     for (const [key, contact] of this.contacts) {
-      if (key.startsWith('missile-') || contact.friendly) continue;
+      if (key.startsWith(RWR_SEEKER_KEY_PREFIX) || contact.friendly) continue;
       if (!best || (contact.isLocked && !best.isLocked)) best = contact;
     }
     return best;

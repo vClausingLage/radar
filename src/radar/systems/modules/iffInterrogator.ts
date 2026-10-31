@@ -29,7 +29,7 @@ import Phaser from 'phaser';
 import { Vector2 } from '../../../types';
 import { IffCode } from '../../../entities/ship';
 import { GasVolume } from '../../data/types';
-import { Track } from '../../data/track';
+import { Track, stampIff, clearIff } from '../../data/track';
 import { emissionSignal, gasTransmission, measurementJitterPx } from '../../data/signalPath';
 import {
     IFF_AUTO_INTERVAL_MS,
@@ -96,7 +96,7 @@ export class IffInterrogator {
     // window reverts to 'not interrogated'. Run every frame by the host radar.
     ageOut(tracks: Track[], now: number): void {
         for (const track of tracks) {
-            if (track.iff && now - track.iff.at > IFF_STATE_VALID_MS) delete track.iff;
+            if (track.iff && now - track.iff.at > IFF_STATE_VALID_MS) clearIff(track);
         }
     }
 
@@ -156,7 +156,7 @@ export class IffInterrogator {
             if (track) answered.add(track);
         }
         for (const track of tracks) {
-            track.iff = { state: answered.has(track) ? 'friendly' : 'unknown', at: now };
+            stampIff(track, answered.has(track) ? 'friendly' : 'unknown', now);
         }
     }
 

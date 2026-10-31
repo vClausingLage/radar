@@ -10,6 +10,30 @@ flanking beaming etc RIGHT? -> test!
   don't know it, so no AI beams deliberately, and nothing on the HUD tells the
   player which aspect they are presenting)
 
+# Debt ledger
+
+Known simulation/architecture debt, in one place. Items leave the list when
+they are paid; paid items are recorded once so they are not re-opened.
+
+- STT reading the target entity directly — PAID. The lock is keyed by track
+  id only and closes entirely through the beam (predicted position → antenna
+  servo → ray fan → receiver), so a lock is defeated by out-turning the
+  antenna, terrain, chaff or jamming — never by reading the hull. What reads
+  another ship's true state by design is inter-set signalling: RWR
+  illumination and the jamming contest (my emission, your receiver), never
+  track formation.
+- VIM-220 wakeup near the target — PAID, differently than first sketched: the
+  seeker arms by closing range (`ACTIVE_RADAR_ACTIVATION_RANGE` in
+  `entities/entitySettings.ts`) or at WP1 on a maddog route, so the wake-up
+  point is the missile's own energy budget rather than a radar-planted one.
+- Loadout manager — PAID (`systems/modules/loadoutManager.ts`), made
+  per-ship via `Radar.setLoadout` (player vs target loadouts in `settings.ts`).
+- Missile tuning spans three homes, by subsystem: what the airframe does
+  (`entities/entitySettings.ts`, re-shaped as `MISSILE_FLIGHT` in
+  `entities/missiles.ts` — the single read point for speed/burn/turn), what
+  its radar does (`radarGameSettings.ts`, missile radar section), what it
+  carries (`settings.ts` loadouts). Retune within a home; don't add a fourth.
+
 
 # To Dos
 

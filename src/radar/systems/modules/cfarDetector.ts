@@ -1,8 +1,11 @@
+import Phaser from 'phaser';
+import { RadarReturn } from '../../data/radarReturn';
 import {
   CFAR_REFERENCE_CELLS,
   CFAR_THRESHOLD_FACTOR,
   CLUTTER_CELL_PX,
   CLUTTER_SAMPLE_TTL_MS,
+  RADAR_FALSE_ALARM_RATE,
 } from '../../data/radarGameSettings';
 
 type ClutterCell = { density: number; at: number };
@@ -93,5 +96,49 @@ export class CfarDetector {
   // clutter, not how many times the amplitude test would raise the bar.
   clutterDensity(point: { x: number; y: number }, now: number): number {
     return this.localDensity(point, now);
+  }
+
+  // Thermal false alarm: the receiver's own noise can cross the detection
+  // threshold with nothing in the cell at all (see detectionProbability in
+  // data/signalPath.ts — its floor is exactly this chance, RADAR_PFA). This
+  // roll *is* the Pfa event, so the fabricated point does not go through the
+  // signal budget a second time — the caller appends it to the decided
+  // returns rather than to the hits still waiting on the energy budget. Its
+  // range is drawn uniformly along the ray's traced reach rather than
+  // weighted toward the near end the way a real echo is: that is the tell
+  // that separates a noise spike from a reflection, a genuine return thins
+  // out with distance and receiver noise does not.
+  //
+  // The same CFAR threshold applies to noise as to echoes: the raised floor
+  // near clutter suppresses noise spikes there exactly as it suppresses weak
+  // target returns, so the roll is divided by the same floor multiplier the
+  // real hits are judged against. Without this the threshold would be higher
+  // only for echoes — and noise would be *most* believable exactly where a
+  // real set declares nothing, which is backwards: clutter residue is the
+  // reason a real CFAR detector raises its threshold in the first place.
+  rollFalseAlarm(
+    ownerPos: { x: number; y: number },
+    bearingDeg: number,
+    reachPx: number,
+    now: number,
+  ): RadarReturn | null {
+    const range = Math.random() * reachPx;
+    const rad = Phaser.Math.DegToRad(bearingDeg);
+    const point = new Phaser.Math.Vector2(
+      ownerPos.x + Math.cos(rad) * range,
+      ownerPos.y + Math.sin(rad) * range,
+    );
+    if (Math.random() >= RADAR_FALSE_ALARM_RATE / this.noiseFloorMultiplier(point, now)) {
+      return null;
+    }
+    return {
+      point,
+      range,
+      angle: bearingDeg,
+      // A noise spike that cleared the threshold carries exactly the floor it
+      // cleared — no amplitude structure for the tracking computer's weighted
+      // centroid to read anything into.
+      signal: 1,
+    };
   }
 }

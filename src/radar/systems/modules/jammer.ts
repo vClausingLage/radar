@@ -7,6 +7,9 @@ import {
   JAMMER_ANGLE_ERROR_MAX_DEG,
   JAMMER_DISTANCE_ERROR_MIN_PX,
   JAMMER_DISTANCE_ERROR_MAX_PX,
+  JAMMER_HUD_ACTIVE_COLOR,
+  JAMMER_HUD_COOLDOWN_COLOR,
+  JAMMER_HUD_READY_COLOR,
 } from "../../data/radarGameSettings";
 
 // A single bearing/range offset applied to every spoofed return in a sweep.
@@ -84,13 +87,13 @@ export class Jammer {
     if (this.activatedAt !== null) {
       const elapsed = now - this.activatedAt;
       if (elapsed < JAMMER_DURATION_MS) {
-        return { label: `XMIT ${Math.ceil((JAMMER_DURATION_MS - elapsed) / 1000)}s`, color: '#ff3030' };
+        return { label: `XMIT ${Math.ceil((JAMMER_DURATION_MS - elapsed) / 1000)}s`, color: JAMMER_HUD_ACTIVE_COLOR };
       }
       if (elapsed < JAMMER_COOLDOWN_MS) {
-        return { label: `XMIT in ${Math.ceil((JAMMER_COOLDOWN_MS - elapsed) / 1000)}s`, color: '#888888' };
+        return { label: `XMIT in ${Math.ceil((JAMMER_COOLDOWN_MS - elapsed) / 1000)}s`, color: JAMMER_HUD_COOLDOWN_COLOR };
       }
     }
-    return { label: 'JAMMER RDY', color: '#00ff00' };
+    return { label: 'JAMMER RDY', color: JAMMER_HUD_READY_COLOR };
   }
 
   // True when `point` (an enemy emitter) lies inside the jamming cone projected

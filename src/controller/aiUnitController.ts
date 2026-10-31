@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { Radar } from '../radar/systems/radar';
+import { RWR_SEEKER_KEY_PREFIX } from '../radar/systems/modules/rwr';
 import { Target } from '../entities/ship';
 import { Track, iffStateOf } from '../radar/data/track';
 import { world } from '../settings';
@@ -117,6 +118,13 @@ export class AiUnitController {
     private state: AIState = AIState.PATROL;
     private readonly personality: Personality;
 
+    private readonly scene: Phaser.Scene;
+    private readonly ship: Target;
+    private turnRate: number;
+    private readonly radar: Radar | null;
+    private readonly activity: UnitActivity;
+    private readonly tactician: Tactician | null;
+
     private debugText?: Phaser.GameObjects.Text;
 
     // Engagement timing.
@@ -127,6 +135,9 @@ export class AiUnitController {
     private crankSide = 1;             // +1/−1: which way to crank the nose
     private skateUntil = 0;
     private evadeSide = 1;
+    // Are we being locked by an enemy fire-control radar? Refreshed from our
+    // own RWR every frame before the state rules read it.
+    private sttTracked = false;
 
     // The flight this ship belongs to, and which half of it. A wingman flies
     // FORMATION on its lead for as long as the lead lives; if it dies the wing
@@ -173,28 +184,32 @@ export class AiUnitController {
     private routeLoops = true;
     private arrived = false;
 
-    constructor(
-        private readonly scene: Phaser.Scene,
-        private readonly ship: Target,
-        private turnRate = 0,
-        private sttTracked = false,
-        private readonly radar: Radar | null = null,
-        private readonly id: number | null = null,
-        private readonly activity: UnitActivity = 'active',
+    constructor(params: {
+        scene: Phaser.Scene;
+        ship: Target;
+        turnRate?: number;
+        radar?: Radar | null;
+        activity?: UnitActivity;
         // Optional tactical judgement in place of the scripted state rules.
         // Without one (haulers, production builds) the doctrine below decides.
-        private readonly tactician: Tactician | null = null,
-    ) {
+        tactician?: Tactician | null;
+    }) {
+        this.scene = params.scene;
+        this.ship = params.ship;
+        this.turnRate = params.turnRate ?? 0;
+        this.radar = params.radar ?? null;
+        this.activity = params.activity ?? 'active';
+        this.tactician = params.tactician ?? null;
         // Cargo is always defensive; cruisers get a coin-flip personality so both
         // aggressive and defensive behaviours show up in a scene.
-        this.personality = ship.shipType === 'cargo'
+        this.personality = this.ship.shipType === 'cargo'
             ? 'defensive'
             : (Phaser.Math.Between(0, 1) === 0 ? 'aggressive' : 'defensive');
 
         this.createDebugText();
         // A stationary unit has no route to fly.
         if (this.activity === 'active') {
-            if (ship.shipType === 'cargo') {
+            if (this.ship.shipType === 'cargo') {
                 this.cargoWaypoints = this.generateCargoRoute();
             } else {
                 this.patrolRoute = this.generatePatrolRoute();
@@ -209,6 +224,9 @@ export class AiUnitController {
         this.debugText?.destroy();
         this.debugText = undefined;
         this.tactician?.destroy();
+        // A lead's advisor closure points back at this controller — unhook it,
+        // so a flight that outlives the brain never consults one that is gone.
+        if (this.flightRole === 'lead') this.flight?.setTacticAdvisor(null);
     }
 
     // Fly as one half of a flight. Radar wiring (the datalink) is the
@@ -284,7 +302,7 @@ export class AiUnitController {
         const activity = this.activity === 'inactive' ? ' STATIC' : '';
         const jev = this.tactician ? `\n${this.tactician.getDebugLabel()}` : '';
         this.debugText.setText(
-            `AI ${this.id} ${this.personality[0].toUpperCase()}${activity} [${stateNames[this.state]}] ${lock} D:${this.ship.getRemainingDecoys()} M:${w220}/${w177}${jev}`,
+            `AI ${this.ship.id} ${this.personality[0].toUpperCase()}${activity} [${stateNames[this.state]}] ${lock} D:${this.ship.getRemainingDecoys()} M:${w220}/${w177}${jev}`,
         );
         this.debugText.setPosition(this.ship.x, this.ship.y - 24);
     }
@@ -587,9 +605,9 @@ export class AiUnitController {
             rwr: !rwr ? 'silent' : rwr.isLocked ? 'locked by enemy fire-control radar' : 'searched by enemy radar',
             emitterHeard: !this.heardEmitter ? 'never'
                 : this.scene.time.now - this.heardEmitter.heardAt < HUNT_RECENT_MS ? 'heard just now' : 'heard a while ago',
-            // A missile seeker reports on its own 'missile-N' key: hearing one is
+            // A missile seeker reports on its own prefixed key: hearing one is
             // the RWR telling us a weapon has gone active against us.
-            missileInbound: radar?.rwrReceiver.getRwrSources().some(k => k.startsWith('missile-')) ?? false,
+            missileInbound: radar?.rwrReceiver.getRwrSources().some(k => k.startsWith(RWR_SEEKER_KEY_PREFIX)) ?? false,
             chaffLeft: this.ship.getRemainingDecoys(),
             jammerReady: radar?.isJammerReady() ?? false,
             nearWorldEdge: x < margin || y < margin || x > world.WIDTH - margin || y > world.HEIGHT - margin,
@@ -642,8 +660,9 @@ export class AiUnitController {
         if (state === AIState.EVADE) {
             this.evadeSide = Phaser.Math.Between(0, 1) === 0 ? 1 : -1;
         }
-        // A shot enters CRANK directly (executeEngage) with its side picked;
-        // a tactician choosing it later picks the side the same way.
+        // The crank side turns the nose toward open space (world centre), off
+        // the last target position — for a shot (executeEngage) that is the
+        // track just fired on, for a tactician's choice its last contact.
         if (state === AIState.CRANK && this.lastTargetPos) {
             this.crankSide = this.crankSideFor(this.lastTargetPos);
         }
@@ -789,11 +808,11 @@ export class AiUnitController {
             this.nextShotAt = now + FIRE_COOLDOWN_MS;
             this.tryDeployDecoy();
 
-            // Enter the crank: pick the side that turns the nose toward open space
-            // (world centre), so we open range without cornering ourselves.
-            this.crankSide = this.crankSideFor(track.pos);
+            // Enter the crank through enter() so its entry side-effects can't
+            // be skipped: it picks the crank side off lastTargetPos (set above
+            // from this track), turning the nose toward open space.
             this.crankUntil = now + CRANK_DURATION_MS;
-            this.state = AIState.CRANK;
+            this.enter(AIState.CRANK);
         }
     }
 
@@ -821,18 +840,18 @@ export class AiUnitController {
     }
 
     // Select the weapon and pull the trigger. Returns true only if a missile
-    // actually left the rail (detected via the load count), since shoot() can
-    // silently refuse — e.g. all tracks already engaged, or wrong radar mode.
-    // A cued wing launches on the lead's link track (shootOnRemote); everyone
-    // else shoots from their own picture.
+    // actually left the rail — the radar answers that directly, so a refused
+    // shot (all tracks engaged, wrong radar mode, ...) reads as no shot rather
+    // than being inferred from the load count. A cued wing launches on the
+    // lead's link track (shootOnRemote); everyone else shoots from their own
+    // picture.
     private tryShoot(weapon: 'VIM-220' | 'VIM-177', track: Track): boolean {
         if (!this.radar) return false;
         this.radar.selectWeapon(weapon);
-        const before = this.radar.getWeaponLoad(weapon);
-        if (before <= 0 || !this.deconflicted(track)) return false;
-        if (this.contactViaLink) this.radar.shootOnRemote(track);
-        else this.radar.shoot(this.contactSorted ? track : undefined);
-        const fired = this.radar.getWeaponLoad(weapon) < before;
+        if (this.radar.getWeaponLoad(weapon) <= 0 || !this.deconflicted(track)) return false;
+        const fired = this.contactViaLink
+            ? this.radar.shootOnRemote(track)
+            : this.radar.shoot(this.contactSorted ? track : undefined);
         if (fired) this.flight?.recordShot(this.ship);
         return fired;
     }

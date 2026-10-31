@@ -9,7 +9,8 @@ import { Terrain } from "../radar/data/types";
 import { GasCloud } from "../entities/gasCloud";
 import { PlayerShip, Target } from "../entities/ship";
 import { CAMERA_ZOOM, playerShipSettings, VISIBILITY_FADE_BAND_PX, VISIBILITY_RANGE_PX, world } from "../settings";
-import { createMissileFactory } from "../entities/missileFactory";
+import { createMissileFactory, MISSILE_SPAWNED_EVENT } from "../entities/missileFactory";
+import type { Missile } from "../entities/missiles";
 import { CollisionRegistrar } from "../physics/collisionRegistrar";
 import { PhysicsRenderer } from "../physics/renderer/physicsRenderer";
 import { AudioPlayer } from "../audio/audioPlayer";
@@ -77,6 +78,10 @@ export default class Game extends Phaser.Scene
   private extraFadeAssets: FadeableAsset[] = [];
   // Members of a fade group: faded through the group, never on their own.
   private groupedFadeAssets = new Set<FadeableAsset>();
+  // Every missile in flight, whoever fired it: seen by eye like a ship, so it
+  // fades with distance too. Its explosion is a separate sprite and does not —
+  // a detonation is bright enough to be seen from anywhere on the map.
+  private missiles = new Set<Missile>();
 
   constructor(key = 'Game')
   {
@@ -152,6 +157,12 @@ export default class Game extends Phaser.Scene
     this.gasClouds = [];
     this.extraFadeAssets = [];
     this.groupedFadeAssets = new Set();
+    this.missiles = new Set();
+    // The scene's event bus outlives a restart, so the listener comes off at
+    // shutdown — otherwise every run would add another one.
+    const onMissileSpawned = (missile: Missile) => this.trackMissile(missile);
+    this.events.on(MISSILE_SPAWNED_EVENT, onMissileSpawned);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off(MISSILE_SPAWNED_EVENT, onMissileSpawned));
 
     // Register factories
     createPlayerShipFactory();
@@ -493,16 +504,31 @@ export default class Game extends Phaser.Scene
   // while the player is still over part of it, and a big asteroid's edge
   // would stay hidden well past where it's actually close enough to see.
   private updateVisibilityFade(player: PlayerShip): void {
-    const assets: FadeableAsset[] = [...this.targets, ...this.terrain, ...this.gasClouds, ...this.extraFadeAssets];
+    const assets: FadeableAsset[] = [
+      ...this.targets, ...this.terrain, ...this.gasClouds, ...this.missiles, ...this.extraFadeAssets,
+    ];
     for (const asset of assets) {
       if (this.groupedFadeAssets.has(asset)) continue;
-      const bounds = asset.getBounds();
-      const dx = Math.max(bounds.left - player.x, 0, player.x - bounds.right);
-      const dy = Math.max(bounds.top - player.y, 0, player.y - bounds.bottom);
-      const distance = Math.hypot(dx, dy);
-      const alpha = Phaser.Math.Clamp((VISIBILITY_RANGE_PX - distance) / VISIBILITY_FADE_BAND_PX, 0, 1);
-      asset.setAlpha(alpha);
+      asset.setAlpha(this.sightAlpha(asset, player));
     }
+  }
+
+  private sightAlpha(asset: FadeableAsset, player: PlayerShip): number {
+    const bounds = asset.getBounds();
+    const dx = Math.max(bounds.left - player.x, 0, player.x - bounds.right);
+    const dy = Math.max(bounds.top - player.y, 0, player.y - bounds.bottom);
+    const distance = Math.hypot(dx, dy);
+    return Phaser.Math.Clamp((VISIBILITY_RANGE_PX - distance) / VISIBILITY_FADE_BAND_PX, 0, 1);
+  }
+
+  // A new missile is faded at once rather than on the next frame, so a shot
+  // fired beyond eyesight never flashes up for a frame at the shooter's rail.
+  // Its exhaust plume copies the missile's alpha (Exhaust.update()).
+  private trackMissile(missile: Missile): void {
+    this.missiles.add(missile);
+    missile.once(Phaser.GameObjects.Events.DESTROY, () => this.missiles.delete(missile));
+    const player = this.player;
+    if (player?.active && player.body) missile.setAlpha(this.sightAlpha(missile, player));
   }
 
   // The player has set down on a pad or the ground by the landing rules
@@ -524,8 +550,6 @@ export default class Game extends Phaser.Scene
     player.destroy();
     this.player = undefined;
 
-    // Clean up renderers
-    // this.interfaceRenderer?.destroy();
     this.graphics?.destroy();
 
     // Destroy targets and terrain
