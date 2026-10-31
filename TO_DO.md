@@ -33,6 +33,10 @@ they are paid; paid items are recorded once so they are not re-opened.
   `entities/missiles.ts` — the single read point for speed/burn/turn), what
   its radar does (`radarGameSettings.ts`, missile radar section), what it
   carries (`settings.ts` loadouts). Retune within a home; don't add a fourth.
+- Chain single-linkage clustering and the amplitude-weighted centroid exist
+  twice — `Receiver` (hits → integration groups) and `TrackingComputer.cluster()`
+  (returns → measurements). Same resolution-cell rule on both sides, so a
+  retune of one silently diverges from the other. Open.
 
 
 # To Dos
