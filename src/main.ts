@@ -29,6 +29,9 @@ const config = {
     width: window.innerWidth,
     height: window.innerHeight
   },
+  input: {
+    gamepad: true
+  },
   physics: {
     default: 'matter',
     matter: {

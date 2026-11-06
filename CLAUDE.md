@@ -54,7 +54,7 @@ src/scenes/level1..3.ts  Mule Train (VID traffic) / Shepherd (tow a derelict,
                          live in src/audio/radioScript.json
 src/scenes/oneOnOne.ts   One versus two: the player against a two-ship hostile flight
 src/scenes/startMenu.ts  Menu, ScenarioKey ('duel' | 'occluded' | 'skirmish')
-src/controller/          playerController.ts (key bindings), aiUnitController.ts (intent:
+src/controller/          playerController.ts (keyboard and gamepad bindings), aiUnitController.ts (intent:
                          flies the ship; which state it is in comes from the scripted
                          doctrine or a Tactician), jevTactician.ts (Jev decision model,
                          DEV-only, via the /api/jev proxy in vite.config.ts holding AI_KEY
@@ -220,7 +220,7 @@ display-and-weapons concern.
 Package manager is **pnpm**; the deploy workflow builds
 on push to `main`, so a broken build ships. A test scene is in `src/scenes/testScene.ts` and a test suite in `src/tests/radarTests.ts`
 (signal path), `src/tests/tacticianTests.ts` (the AI's tactician seam — stubbed, no
-network) and `src/tests/iffTests.ts` (IFF), `src/tests/flightTests.ts` (formation, PPLI friend tagging, shared picture, sort, launch on remote, tactics; all scripted);
+network) and `src/tests/iffTests.ts` (IFF), `src/tests/flightTests.ts` (formation, PPLI friend tagging, shared picture, sort, launch on remote, tactics; all scripted), `src/tests/gamepadTests.ts` (pad bindings, through a fake `navigator.getGamepads`);
 `window.runRadarTests(seed?, nameRegex?)` runs them all.
 
 ```bash

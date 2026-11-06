@@ -31,6 +31,16 @@ export const playerShipSettings = {
     }
 }
 
+// GAMEPAD
+export const gamepadSettings = {
+    // Stick deflection (0..1) below which it counts as centred: a worn stick
+    // does not rest at exactly zero, and that drift must not steer the ship.
+    STICK_DEADZONE: .2,
+    // Trigger travel (0..1) at which L2 counts as pressed, well short of the
+    // full pull a worn or slightly-off trigger may never report.
+    TRIGGER_PRESS_THRESHOLD: .5,
+}
+
 // RADAR
 // How far an RWR hears a radar is not a number set here: it falls out of the
 // energy in the pulse (see radar/data/signalPath.ts and RWR_NOISE_FLOOR), which

@@ -28,7 +28,21 @@ const CONTROLS = [
     'SHIFT + right click  clear VIM-220 waypoints',
 ];
 
-const REPO_URL = 'https://github.com/vClausingLage/radar';
+const GAMEPAD_CONTROLS = [
+    'GAMEPAD / STEAM DECK',
+    'L-stick  turn',
+    'A  fire      B  STT lock',
+    'X  chaff     Y  jammer',
+    'R1  RWS > TWS > EMCON',
+    'L1  faster   L2  slower',
+    'D-pad left  cycle missiles',
+    'D-pad up  IFF',
+    'D-pad down  bogey dope',
+    'START  next   SELECT  menu',
+    'Touch  zoom, menus, cold start',
+];
+
+const REPO_URL ='https://github.com/vClausingLage/radar';
 
 export default class StartMenu extends Phaser.Scene {
     private selected: ScenarioKey = 'duel';
@@ -113,12 +127,18 @@ export default class StartMenu extends Phaser.Scene {
         this.refreshScenarioButtons();
 
         // Controls — small, light gray, beneath the menu
-        this.add.text(cx, this.scale.height - 140, CONTROLS.join('\n'), {
+        this.add.text(cx, this.scale.height - 16, CONTROLS.join('\n'), {
             fontSize: '15px',
             color: '#aaaaaa',
             align: 'center',
             lineSpacing: 6,
-        }).setOrigin(0.5);
+        }).setOrigin(0.5, 1);
+
+        this.add.text(16, this.scale.height - 16, GAMEPAD_CONTROLS.join('\n'), {
+            fontSize: '15px',
+            color: '#aaaaaa',
+            lineSpacing: 6,
+        }).setOrigin(0, 1);
 
         this.createRepoLink();
     }

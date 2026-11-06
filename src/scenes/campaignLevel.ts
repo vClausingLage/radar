@@ -272,7 +272,9 @@ export default abstract class CampaignLevel extends Game {
         this.input.keyboard?.on('keydown-C', this.onRequestBogeyDope);
         this.input.keyboard?.on('keydown-ENTER', this.onContinue);
         this.input.keyboard?.on('keydown-M', this.onMenu);
+        this.input.gamepad?.on('down', this.onPadButtonDown);
         this.events.once('shutdown', () => {
+            this.input.gamepad?.off('down', this.onPadButtonDown);
             this.input.keyboard?.off('keydown-C', this.onRequestBogeyDope);
             this.input.keyboard?.off('keydown-ENTER', this.onContinue);
             this.input.keyboard?.off('keydown-M', this.onMenu);
@@ -647,10 +649,10 @@ export default abstract class CampaignLevel extends Game {
     protected showOutcome(text: string, color: string): void {
         super.showOutcome(text, color);
         const next = this.outcome === 'complete'
-            ? (this.nextLevel() ? 'ENTER  next mission' : 'ENTER  campaign complete — back to menu')
-            : 'ENTER  retry';
+            ? (this.nextLevel() ? 'ENTER/START  next mission' : 'ENTER/START  campaign complete — back to menu')
+            : 'ENTER/START  retry';
         const cam = this.cameras.main;
-        this.add.text(cam.centerX, cam.centerY + 60, `${next}      M  menu`, {
+        this.add.text(cam.centerX, cam.centerY + 60, `${next}      M/SELECT  menu`, {
             font: '18px Courier',
             color: '#aaaaaa',
             backgroundColor: '#000000aa',
@@ -669,6 +671,14 @@ export default abstract class CampaignLevel extends Game {
 
     private onMenu = () => {
         if (this.outcome) this.scene.start('StartMenu');
+    };
+
+    // The same three keys on a gamepad, for a player with no keyboard to hand.
+    private onPadButtonDown = (_pad: Phaser.Input.Gamepad.Gamepad, button: Phaser.Input.Gamepad.Button) => {
+        const pad = Phaser.Input.Gamepad.Configs.XBOX_360;
+        if (button.index === pad.DOWN) this.onRequestBogeyDope();
+        else if (button.index === pad.START) this.onContinue();
+        else if (button.index === pad.BACK) this.onMenu();
     };
 
     // Mark identified ships on the tactical picture: a ring in datalink cyan

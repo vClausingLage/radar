@@ -335,6 +335,7 @@ export default class Game extends Phaser.Scene
     // On the pad: no way on and both engines out.
     player.setCurrentSpeed(0);
     player.shutDownEngines();
+    player.controller?.setThrottleLocked(true);
 
     const ui = player.radar.getInterfaceRenderer();
     ui?.setFlightControlsVisible(false);
@@ -348,6 +349,7 @@ export default class Game extends Phaser.Scene
       onComplete: () => {
         ui?.destroyStartupPanel();
         ui?.setFlightControlsVisible(true);
+        player.controller?.setThrottleLocked(false);
       },
     });
 

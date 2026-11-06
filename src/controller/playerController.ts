@@ -1,9 +1,14 @@
 import Phaser from "phaser";
 import { PlayerShip } from "../entities/ship";
-import { playerShipSettings } from "../settings";
+import { gamepadSettings, landingSettings, playerShipSettings } from "../settings";
+
+// The browser's standard gamepad layout, which the Steam Deck's controls report.
+const PAD = Phaser.Input.Gamepad.Configs.XBOX_360;
 
 export class PlayerController {
   private turn = 0;
+  // Set while the ship is cold: no engines, no throttle to step.
+  private throttleLocked = false;
 
   // ── Movement ──────────────────────────────────────────────────────────
   private onKeyDownA = () => { this.turn = -playerShipSettings.TURN_SPEED; };
@@ -71,11 +76,79 @@ export class PlayerController {
     this.ship.radar.addVim220Waypoint({ x: pointer.worldX, y: pointer.worldY });
   };
 
+  // ── Gamepad ───────────────────────────────────────────────────────────
+  // R1 → step the search loop RWS → TWS → EMCON → RWS. A lock is not a stop on
+  // the loop: from STT the button breaks it and drops back to RWS, like Esc.
+  private onPadCycleRadarMode = () => {
+    if (!this.ship.active || !this.ship.scene) return;
+    const radar = this.ship.radar;
+    const mode = radar.getMode();
+    if (mode === 'rws') radar.enterTws();
+    else if (mode === 'tws') radar.enterEmcon();
+    else radar.enterRws();
+  };
+
+  // L1 / L2 → one throttle setting up / down, the same settings the touch
+  // buttons offer. There is no stop among them: below 1/3 is astern, and that
+  // is the landing approach (see landingSettings).
+  private stepThrottle(direction: 1 | -1): void {
+    if (this.throttleLocked || !this.ship.active || !this.ship.scene) return;
+    const full = this.ship.getSpeed();
+    const settings = [-landingSettings.REVERSE_SPEED, full / 3, (full * 2) / 3, full];
+    const current = this.ship.getCurrentSpeed();
+    const next = direction > 0
+      ? settings.find(setting => setting > current)
+      : settings.reverse().find(setting => setting < current);
+    if (next !== undefined) this.ship.setCurrentSpeed(next);
+  }
+  private onPadThrottleUp = () => { this.stepThrottle(1); };
+  private onPadThrottleDown = () => { this.stepThrottle(-1); };
+
+  private padBindings: Record<number, () => void> = {
+    [PAD.A]: this.onKeyDownSpace,
+    [PAD.B]: this.onKeyDownE,
+    [PAD.X]: this.onKeyDownT,
+    [PAD.Y]: this.onKeyDownJ,
+    [PAD.RB]: this.onPadCycleRadarMode,
+    [PAD.LB]: this.onPadThrottleUp,
+    [PAD.LT]: this.onPadThrottleDown,
+    [PAD.LEFT]: this.onKeyDownQ,
+    [PAD.UP]: this.onKeyDownI,
+  };
+
+  private onPadButtonDown = (_pad: Phaser.Input.Gamepad.Gamepad, button: Phaser.Input.Gamepad.Button) => {
+    this.padBindings[button.index]?.();
+  };
+
   constructor(
     private scene: Phaser.Scene,
     private ship: PlayerShip,
   ) {
     this.setupControls();
+  }
+
+  setThrottleLocked(locked: boolean): void {
+    this.throttleLocked = locked;
+  }
+
+  // L2 is an analog trigger and Phaser only counts a button as down at full
+  // travel. Pads come and go between frames, so each one is set as it is seen.
+  private softenThrottleTrigger(): void {
+    for (const pad of this.scene.input.gamepad?.getAll() ?? []) {
+      const trigger = pad.buttons[PAD.LT];
+      if (trigger) trigger.threshold = gamepadSettings.TRIGGER_PRESS_THRESHOLD;
+    }
+  }
+
+  // Left stick's horizontal deflection, -1..1, or 0 inside the deadzone. Taken
+  // from whichever connected pad is pushed furthest, as a machine can list more
+  // than one (a Deck's built-in controls and a paired controller).
+  private stickTurn(): number {
+    let deflection = 0;
+    for (const pad of this.scene.input.gamepad?.getAll() ?? []) {
+      if (Math.abs(pad.leftStick.x) > Math.abs(deflection)) deflection = pad.leftStick.x;
+    }
+    return Math.abs(deflection) < gamepadSettings.STICK_DEADZONE ? 0 : deflection;
   }
 
   private setupControls(): void {
@@ -92,6 +165,7 @@ export class PlayerController {
     kb?.on('keydown-J', this.onKeyDownJ);
     kb?.on('keydown-I', this.onKeyDownI);
     kb?.on('keydown-SPACE', this.onKeyDownSpace);
+    this.scene.input.gamepad?.on('down', this.onPadButtonDown);
     this.scene.input.on('pointerdown', this.onPointerDown);
     // Right-click clears the VIM-220 route (see onPointerDown) — don't let the
     // browser's context menu swallow it first.
@@ -112,13 +186,20 @@ export class PlayerController {
     kb?.off('keydown-J', this.onKeyDownJ);
     kb?.off('keydown-I', this.onKeyDownI);
     kb?.off('keydown-SPACE', this.onKeyDownSpace);
+    this.scene.input.gamepad?.off('down', this.onPadButtonDown);
     this.scene.input.off('pointerdown', this.onPointerDown);
   }
 
   update(speed: number): void {
     if (!this.ship.active || !this.ship.body) return;
 
-    this.ship.setAngularVelocity(this.turn * speed);
+    this.softenThrottleTrigger();
+
+    // The stick scales the same full rate the keys command, for fine pointing
+    // of the radar cone; a centred stick leaves the keys in charge.
+    const stick = this.stickTurn();
+    const turn = stick !== 0 ? stick * playerShipSettings.TURN_SPEED : this.turn;
+    this.ship.setAngularVelocity(turn * speed);
     const angleRad = Phaser.Math.DegToRad(this.ship.angle);
     this.ship.setVelocity(
       Math.cos(angleRad) * speed,

@@ -55,8 +55,11 @@ game.sound.sounds.filter(x => x.isPlaying)       // audio verification
 
 A/D turn · R RWS · E lock STT · ESC exit STT · Q cycle weapon · T chaff ·
 J jammer · Space fire · Shift+click VIM-220 waypoint · C (Level 1, once
-airborne) datalink bearing call. Throttle is mouse-only (1/3, 2/3, FULL, REV);
+airborne) datalink bearing call. Throttle is mouse or gamepad only (1/3, 2/3, FULL, REV);
 from script use `s.player.setCurrentSpeed(v)` — REV is `-landingSettings.REVERSE_SPEED`.
+Gamepad bindings are in docs/player.md; `src/tests/gamepadTests.ts` has a fake pad
+to stand behind `navigator.getGamepads` (its `timestamp` must be fresh, or Phaser
+ignores the update).
 
 ## Things that bite
 

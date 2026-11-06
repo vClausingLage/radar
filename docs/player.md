@@ -54,6 +54,37 @@ See [radar.md](radar.md) for how the simulation actually works under the hood.
 | **Shift + Click** | Place a VIM-220 mid-course waypoint (VIM-220 selected) |
 | **Mouse + / −** buttons | Zoom the camera |
 
+## Gamepad / Steam Deck
+
+| Input | Action |
+|-------|--------|
+| **Left stick** | Turn left / right, proportional to deflection |
+| **A** | Fire the active weapon |
+| **B** | Enter **STT** — lock the best current track |
+| **X** | Deploy a decoy (chaff) |
+| **Y** | Activate the jammer |
+| **R1** | Step the radar mode: RWS → TWS → EMCON → RWS. From STT: break the lock, back to RWS |
+| **L1** | Throttle one setting up: REV → 1/3 → 2/3 → FULL |
+| **L2** | Throttle one setting down: FULL → 2/3 → 1/3 → REV |
+| **D-pad left** | Cycle active weapon |
+| **D-pad up** | Interrogate (IFF) |
+| **D-pad down** | Campaign: bogey dope call to Disco |
+| **Start** | Campaign, after the verdict: next mission / retry |
+| **Select** | Campaign, after the verdict: back to the menu |
+
+Everything else is on the touchscreen: the menus, the zoom buttons and the
+cold-start switches. The throttle is locked until the cold start is complete, on
+the pad as on the touch buttons. VIM-220 waypoints need Shift + click and have no
+gamepad or touch input.
+
+The R1 loop has a cost: EMCON shuts the transmitter and drops every track, so
+stepping from TWS back round to RWS passes through it and loses the picture. RWS
+to TWS keeps the tracks.
+
+The browser only reveals a gamepad to the page once a button has been pressed
+with the page open, so press one if the first input seems to do nothing. Browsers
+may also withhold gamepads from a page not served over https or localhost.
+
 **IFF.** With at least one track held, `IFF [I]` shows beside the range readout.
 Press **I** and every track is asked who it is; a track that answers turns blue
 with a ring (friendly), one that does not gets an amber frame (unknown - treat as
