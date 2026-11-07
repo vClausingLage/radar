@@ -163,6 +163,12 @@ export default class Game extends Phaser.Scene
     const onMissileSpawned = (missile: Missile) => this.trackMissile(missile);
     this.events.on(MISSILE_SPAWNED_EVENT, onMissileSpawned);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off(MISSILE_SPAWNED_EVENT, onMissileSpawned));
+    this.input.keyboard?.on('keydown-M', this.onMenu);
+    this.input.gamepad?.on('down', this.onPadButtonDown);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.keyboard?.off('keydown-M', this.onMenu);
+      this.input.gamepad?.off('down', this.onPadButtonDown);
+    });
 
     // Register factories
     createPlayerShipFactory();
@@ -227,6 +233,22 @@ export default class Game extends Phaser.Scene
       this.beginColdStart();
     }
   }
+
+  // Whether M / Select may leave for the menu right now. Free play has no ending
+  // of its own, and a desktop build has no browser reload to fall back on.
+  protected canLeaveToMenu(): boolean {
+    return true;
+  }
+
+  private onMenu = () => {
+    if (this.canLeaveToMenu()) this.scene.start('StartMenu');
+  };
+
+  private onPadButtonDown = (_pad: Phaser.Input.Gamepad.Gamepad, button: Phaser.Input.Gamepad.Button) => {
+    const pad = Phaser.Input.Gamepad.Configs.XBOX_360;
+    if (button.index === pad.BACK) this.onMenu();
+    else if (button.index === pad.START && this.player) this.startup?.pressNext();
+  };
 
   // Where the player's ship enters the world and which way it points.
   // Free play and the campaign start on the pad's spot, nose north.

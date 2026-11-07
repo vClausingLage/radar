@@ -3,6 +3,8 @@ import { GameTest, TestContext } from './testHarness';
 import { Target } from '../entities/ship';
 import { RADAR_DEFAULT_RANGE_PX } from '../radar/data/radarGameSettings';
 import { gamepadSettings, landingSettings, playerShipSettings } from '../settings';
+import { AudioPlayer } from '../audio/audioPlayer';
+import { ShipStartup, StartupStepKey } from '../audio/startup';
 
 // In-game tests for the gamepad bindings. A fake pad stands behind
 // navigator.getGamepads(), so a press travels the real way: Phaser polls the
@@ -239,6 +241,45 @@ const coldShipHasNoThrottle: GameTest = {
     },
 };
 
+// Long enough for the slowest switch: the ack delay, then an engine spooling up.
+const SWITCH_MAX_FRAMES = 400;
+
+const startThrowsColdStartSwitches: GameTest = {
+    name: 'Gamepad: Start throws the cold-start switches in order, never over a running one',
+    description: 'A real procedure with its intercom stubbed out. A second press while a switch is still '
+        + 'running must not skip ahead: the order and the waits belong to the procedure.',
+    async run(ctx) {
+        await withPad(ctx, async pad => {
+            const busy: StartupStepKey[] = [];
+            const done: StartupStepKey[] = [];
+            const intercom = {
+                playMessage: (_keys: string[], then: () => void) => { then(); return true; },
+            } as unknown as AudioPlayer;
+            const startup = new ShipStartup(ctx.scene, intercom, {
+                onStepBusy: step => busy.push(step),
+                onStepDone: step => done.push(step),
+                onEngineStart: () => {},
+                onComplete: () => {},
+            });
+            ctx.scene['startup'] = startup;
+            try {
+                await pad.press(ctx, PAD.START);
+                await pad.press(ctx, PAD.START);
+                ctx.check('a press while BAT is running changes nothing', busy.length === 1, busy.join(' '));
+
+                for (let thrown = 1; thrown <= 4; thrown++) {
+                    await ctx.waitUntil(() => done.length === thrown, SWITCH_MAX_FRAMES);
+                    if (thrown < 4) await pad.press(ctx, PAD.START);
+                }
+                ctx.check('all four switches ran in order', done.join(' ') === 'BAT ENG1 ENG2 SYS', done.join(' '));
+                ctx.check('the procedure is complete', startup.isComplete());
+            } finally {
+                ctx.scene['startup'] = undefined;
+            }
+        });
+    },
+};
+
 export const gamepadTests: GameTest[] = [
     r1StepsTheModeLoop,
     lockAndBreakLock,
@@ -246,4 +287,5 @@ export const gamepadTests: GameTest[] = [
     stickTurnsInProportion,
     throttleSteps,
     coldShipHasNoThrottle,
+    startThrowsColdStartSwitches,
 ];

@@ -39,6 +39,9 @@ export const gamepadSettings = {
     // Trigger travel (0..1) at which L2 counts as pressed, well short of the
     // full pull a worn or slightly-off trigger may never report.
     TRIGGER_PRESS_THRESHOLD: .5,
+    // Stick deflection (0..1) that counts as one step through the menu, well
+    // past the deadzone so resting a thumb on the stick does not move the cursor.
+    MENU_STICK_THRESHOLD: .5,
 }
 
 // RADAR

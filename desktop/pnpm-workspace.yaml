@@ -1,0 +1,8 @@
+# Its own workspace, with its own lockfile: the server's `pnpm install` for the
+# web deploy never sees Electron, and a desktop dependency cannot break a release.
+packages: []
+
+allowBuilds:
+  electron: true
+  # Only for building Windows installers, which this project does not do.
+  electron-winstaller: false

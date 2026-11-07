@@ -14,17 +14,23 @@ import tsPlugin from "@typescript-eslint/eslint-plugin";
 /** @type {import('eslint').Linter.Config[]} */
 export default [
   // Build output is generated, not authored.
-  { ignores: ["dist/**"] },
+  { ignores: ["dist/**", "desktop/release/**"] },
   { files: ["**/*.{js,mjs,cjs,ts}"] },
   { languageOptions: { globals: globals.browser } },
   pluginJs.configs.recommended,
   ...tsPlugin.configs["flat/recommended"],
 
-  // The game runs in the browser; the clip-generation scripts in tools/ run in
-  // Node and legitimately reach for process, Buffer and friends.
+  // The game runs in the browser; the clip-generation scripts in tools/ and the
+  // desktop wrapper's main process run in Node and legitimately reach for
+  // process, Buffer and friends.
   {
     files: ["tools/**/*.js"],
     languageOptions: { globals: { ...globals.node } },
+  },
+  {
+    files: ["desktop/**/*.cjs"],
+    languageOptions: { sourceType: "commonjs", globals: { ...globals.node } },
+    rules: { "@typescript-eslint/no-require-imports": "off" },
   },
 
   // A parameter an override needs but a base/default implementation does not

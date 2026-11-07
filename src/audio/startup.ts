@@ -57,6 +57,13 @@ export class ShipStartup {
         this.scene.time.delayedCall(SWITCH_ACK_DELAY_MS, () => this.runStep(step));
     }
 
+    // A gamepad has no pointer to aim at a switch: its one button throws whichever
+    // is next. The order and the waits are the procedure's, the same as by touch.
+    pressNext(): void {
+        const next = STARTUP_STEPS[this.completedCount];
+        if (next) this.press(next);
+    }
+
     private runStep(step: StartupStepKey): void {
         switch (step) {
             case 'BAT':

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "desktop": "pnpm build && pnpm --dir desktop install && pnpm --dir desktop start",
+    "desktop:build": "pnpm build && pnpm --dir desktop install && pnpm --dir desktop dist"
   },
   "devDependencies": {
     "@elevenlabs/elevenlabs-js": "^2.74.0",

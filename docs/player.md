@@ -53,6 +53,7 @@ See [radar.md](radar.md) for how the simulation actually works under the hood.
 | **I** | Interrogate (IFF) every track on the scope - needs at least one track |
 | **Shift + Click** | Place a VIM-220 mid-course waypoint (VIM-220 selected) |
 | **Mouse + / −** buttons | Zoom the camera |
+| **M** | Back to the menu: any time in free play and One versus Two, after the verdict in the campaign |
 
 ## Gamepad / Steam Deck
 
@@ -69,13 +70,13 @@ See [radar.md](radar.md) for how the simulation actually works under the hood.
 | **D-pad left** | Cycle active weapon |
 | **D-pad up** | Interrogate (IFF) |
 | **D-pad down** | Campaign: bogey dope call to Disco |
-| **Start** | Campaign, after the verdict: next mission / retry |
-| **Select** | Campaign, after the verdict: back to the menu |
+| **Start** | Cold start: throw the next switch. Campaign, after the verdict: next mission / retry |
+| **Select** | Back to the menu: any time in free play and One versus Two, after the verdict in the campaign |
+| **D-pad up/down or stick, then A** | In the menu: move the cursor and press. The first press only shows the cursor |
 
-Everything else is on the touchscreen: the menus, the zoom buttons and the
-cold-start switches. The throttle is locked until the cold start is complete, on
-the pad as on the touch buttons. VIM-220 waypoints need Shift + click and have no
-gamepad or touch input.
+The zoom buttons stay on the touchscreen. The throttle is locked until the cold
+start is complete, on the pad as on the touch buttons. VIM-220 waypoints need
+Shift + click and have no gamepad or touch input.
 
 The R1 loop has a cost: EMCON shuts the transmitter and drops every track, so
 stepping from TWS back round to RWS passes through it and loses the picture. RWS
@@ -84,6 +85,17 @@ to TWS keeps the tracks.
 The browser only reveals a gamepad to the page once a button has been pressed
 with the page open, so press one if the first input seems to do nothing. Browsers
 may also withhold gamepads from a page not served over https or localhost.
+
+### Desktop build (Steam Deck)
+
+`pnpm desktop` runs the game in its own window; `pnpm desktop:build` writes an
+AppImage to `desktop/release/`. It is the same game as the website, wrapped in
+Electron, and its menu adds a **QUIT** item.
+
+On the Deck: copy the AppImage over and mark it executable (Properties →
+Permissions), add it in Steam through *Games → Add a Non-Steam Game*, then in
+Gaming Mode set its controller layout to a gamepad template. If the window stays
+blank, add `--no-sandbox` to its launch options.
 
 **IFF.** With at least one track held, `IFF [I]` shows beside the range readout.
 Press **I** and every track is asked who it is; a track that answers turns blue

@@ -98,6 +98,8 @@ src/settings.ts                   Non-radar gameplay constants (world, ship, cam
 src/audio/                        audioPlayer, radarVoice (BRA callouts), startup, supportRadarComms,
                                   radioNet + radioScript.json (campaign story traffic, subtitled)
 public/                           Sprites; audio in public/audio
+desktop/                          Electron wrapper around dist/ (main.cjs). Its own package,
+                                  workspace and lockfile, so the web deploy never installs it
 docs/                             radar.md, player.md, GCI.md, gci-comms.md
 TO_DO.md, decision_tree.md, cowork.md   Roadmap, AI behaviour spec, design intent
 ```
@@ -227,6 +229,7 @@ network) and `src/tests/iffTests.ts` (IFF), `src/tests/flightTests.ts` (formatio
 npx tsc --noEmit
 pnpm lint          # eslint ., flat config in eslint.config.js
 pnpm build         # when TypeScript or the bundle changed
+pnpm desktop:build # when desktop/ changed: AppImage in desktop/release/
 ```
 
 The build's chunk-size warning is pre-existing. Lint is clean as of

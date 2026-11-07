@@ -271,13 +271,11 @@ export default abstract class CampaignLevel extends Game {
 
         this.input.keyboard?.on('keydown-C', this.onRequestBogeyDope);
         this.input.keyboard?.on('keydown-ENTER', this.onContinue);
-        this.input.keyboard?.on('keydown-M', this.onMenu);
-        this.input.gamepad?.on('down', this.onPadButtonDown);
+        this.input.gamepad?.on('down', this.onCampaignPadButtonDown);
         this.events.once('shutdown', () => {
-            this.input.gamepad?.off('down', this.onPadButtonDown);
+            this.input.gamepad?.off('down', this.onCampaignPadButtonDown);
             this.input.keyboard?.off('keydown-C', this.onRequestBogeyDope);
             this.input.keyboard?.off('keydown-ENTER', this.onContinue);
-            this.input.keyboard?.off('keydown-M', this.onMenu);
         });
     }
 
@@ -669,16 +667,16 @@ export default abstract class CampaignLevel extends Game {
         this.scene.start(this.nextLevel() ?? 'StartMenu');
     };
 
-    private onMenu = () => {
-        if (this.outcome) this.scene.start('StartMenu');
-    };
+    // A mission is left through its verdict, not walked out on.
+    protected canLeaveToMenu(): boolean {
+        return Boolean(this.outcome);
+    }
 
-    // The same three keys on a gamepad, for a player with no keyboard to hand.
-    private onPadButtonDown = (_pad: Phaser.Input.Gamepad.Gamepad, button: Phaser.Input.Gamepad.Button) => {
+    // The same keys on a gamepad, for a player with no keyboard to hand.
+    private onCampaignPadButtonDown = (_pad: Phaser.Input.Gamepad.Gamepad, button: Phaser.Input.Gamepad.Button) => {
         const pad = Phaser.Input.Gamepad.Configs.XBOX_360;
         if (button.index === pad.DOWN) this.onRequestBogeyDope();
         else if (button.index === pad.START) this.onContinue();
-        else if (button.index === pad.BACK) this.onMenu();
     };
 
     // Mark identified ships on the tactical picture: a ring in datalink cyan

@@ -75,7 +75,7 @@ const PLAYER_SPEED = 1.3;
 const STORY_MODEL_ID = "eleven_multilingual_v2";
 const STORY_VOICES = {
   disco:    { engine: "elevenlabs", id: GCI_VOICE_ID },
-  anvil:    { engine: "elevenlabs", id: "pqHfZKP75CyOlkJxvsaD" }, // Bill — older, gravelly: the colonel
+  anvil:    { engine: "elevenlabs", id: "pqHfZKP75CvOlQylNhV4" }, // Bill — older, gravelly: the colonel
   mule21:   { engine: "elevenlabs", id: "nPczCjzI2devNBz1zQrb" }, // Brian — deep, wry: the flight lead
   mule22:   { engine: "elevenlabs", id: "cjVigY5qzO86Huf0OWal" }, // Eric — the nervous one
   mule24:   { engine: "elevenlabs", id: "iP95p4xoKVk53GoZ742B" }, // Chris — the gossip
