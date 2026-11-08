@@ -9,22 +9,36 @@ import { ContactCall, ContactIdentity, SupportRadarComms } from "../audio/suppor
 import { RadioLineKey, RadioNet, RadioTransmission } from "../audio/radioNet";
 import { gasCloudSettings } from "../radar/data/radarGameSettings";
 import { playerShipSettings, VID_RANGE_PX } from "../settings";
-import { Vector2 } from "../types";
+import { Vector2, WorldSize } from "../types";
 
 // ── The theatre every campaign level is fought in ───────────────────────────
 // (one-off placements, so they live with the scenes rather than in settings)
 
+// Half as big again as the practice square, every distance in it with it, so
+// the ranges that do not scale — the radar ring, a missile's reach, the dish's
+// coverage — leave room to manoeuvre between the places that matter: to come
+// at a contact from the side its Doppler shows, to open range on a shooter,
+// to stand off the gas.
+export const CAMPAIGN_WORLD: WorldSize = { width: 3750, height: 3750 };
+
+// The ground strip along the bottom of the world (surface.png is 120 px tall,
+// tiled across the width).
+const SURFACE_TOP_Y = CAMPAIGN_WORLD.height - 120;
+const SURFACE_TILE_PX = 2500;
+
 // The gas band: a wall of absorbing gas from the south-west corner up to the
 // middle of the northern edge, fully formed before the crew even starts the
 // ship. It splits the world into a friendly east and a shadowed north-west.
-export const GAS_FROM: Vector2 = { x: 0, y: 2000 };
-export const GAS_TO: Vector2 = { x: 1250, y: 0 };
+export const GAS_FROM: Vector2 = { x: 0, y: 3000 };
+export const GAS_TO: Vector2 = { x: 1875, y: 0 };
 
-// The pad, and the dish rock "Disco" stands on. The rock sits well north of
-// the pad so the dish covers deep into the approaches and there is open
-// space to work in between the two.
-export const PAD_POSITION: Vector2 = { x: 1400, y: 2300 };
-export const STATION_POSITION: Vector2 = { x: 1600, y: 1500 };
+// The pad, set 80 px into the ground, and the dish rock "Disco" stands on. The
+// rock sits well north of the pad so the dish covers deep into the approaches
+// and there is open space to work in between the two.
+export const PAD_POSITION: Vector2 = { x: 2100, y: SURFACE_TOP_Y - 80 };
+export const STATION_POSITION: Vector2 = { x: 2400, y: 2250 };
+// Where the player's ship stands on the pad at the start of every level.
+export const PARKED_POSITION: Vector2 = { x: PAD_POSITION.x + 200, y: PAD_POSITION.y + 85 };
 
 // Hostile pickets hold station in the gas shadow, strung out along the band
 // like a real picket line. Where along it is random every run, but they are
@@ -94,6 +108,7 @@ const RADIO_HUD_WIDTH_PX = 760;
 // friendly/hostile ship lists here are the scene's ground truth, which the
 // radio and datalink only ever reveal through those two routes.
 export default abstract class CampaignLevel extends Game {
+    readonly world: WorldSize = CAMPAIGN_WORLD;
     protected station?: DishRadarStation;
     protected comms?: SupportRadarComms;
     protected radio?: RadioNet;
@@ -199,9 +214,16 @@ export default abstract class CampaignLevel extends Game {
     // ships parked on them are not shadowed by them (see Radar.nearestHit).
     // The pad is set into the ground, so the two show and hide together.
     protected buildTerrain(): void {
-        const surface = this.registerTerrain(this.add.structure({ position: { x: 0, y: 2380 }, texture: 'surface' }));
+        const surfaces = [];
+        for (let x = 0; x < this.world.width; x += SURFACE_TILE_PX) {
+            surfaces.push(this.registerTerrain(this.add.structure({ position: { x, y: SURFACE_TOP_Y }, texture: 'surface' })));
+        }
         const pad = this.registerTerrain(this.add.structure({ position: PAD_POSITION, texture: 'launchpad', scale: 0.25 }));
-        this.registerFadeGroup([surface, pad]);
+        this.registerFadeGroup([...surfaces, pad]);
+    }
+
+    protected playerStart(): { x: number; y: number; direction: number } {
+        return { x: PARKED_POSITION.x, y: PARKED_POSITION.y, direction: playerShipSettings.DIRECTION };
     }
 
     protected buildScenario(): void {
@@ -512,7 +534,7 @@ export default abstract class CampaignLevel extends Game {
         this.landArrivedTraffic();
         if (this.outcome) return;
 
-        const parked = playerShipSettings.START_POSITION;
+        const parked = PARKED_POSITION;
         if (this.airborneAt === undefined && this.isReadyForFlight()
             && Phaser.Math.Distance.Between(player.x, player.y, parked.x, parked.y) > AIRBORNE_DISTANCE_PX) {
             this.airborneAt = this.time.now;

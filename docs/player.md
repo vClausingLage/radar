@@ -33,6 +33,9 @@ telling tracks apart — and terrain is solid: fly into it and you are gone (see
   track turns **red**.
 - A **Radar Warning Receiver (RWR)** in the bottom-left shows when something is
   painting *you*, and from which bearing — green for search, red for a lock.
+  A **red triangle with a number** is a missile: **22** is a VIM-220's own
+  seeker, at the missile; **7** is a lock that is guiding a VIM-177, at the
+  shooter (the VIM-177 itself emits nothing).
 
 See [radar.md](radar.md) for how the simulation actually works under the hood.
 
@@ -136,15 +139,34 @@ off again. Missiles fly over ground and are stopped only by rocks and towers.
 
 ## Decoys (chaff)
 
-You carry **5** decoys. Press **T** to drop a chaff cloud at your current
-position. A cloud lingers for a few seconds and fades out. A cloud is a
-**reflector**: it returns energy of its own, and where it sits **nearer than
-your hull on a beam's line it swallows that return** and paints a false
-contact in its place. So it works by geometry — put the cloud **between your
-ship and the threat radar (or an incoming missile's seeker)** and run cold.
-Dropped beside you with the threat off to the side, it does nothing. A held
-**STT lock** is much harder to shake with it: the cloud and the hull usually
-sit inside the same lock gate, and the missile on that lock goes for the pair.
+You carry **5** decoys. Press **T** to drop a chaff cloud just astern of
+your ship. A cloud lingers for a few seconds and fades out. A cloud is a
+**volume of dipoles**, not a wall: it echoes energy of its own, and it lets
+most of the beam through, so the radar hears both the cloud and your hull
+behind or inside it. Which one it believes is a matter of **energy**:
+
+- The cloud's echo grows with range (the radar's resolution cell widens the
+  further out it looks, so more dipoles share it), your hull's does not. Far
+  out the cloud outshines you; close in you outshine the cloud. That is the
+  **burn-through range**.
+- An **STT lock** follows the energy in its gate. Drop chaff while a lock is on
+  you from far away and the gate walks off your hull onto the cloud as you
+  fly clear of it. Close in, the lock burns through and stays on you.
+- A **search radar** filters out echoes that do not move (rocks, gas,
+  chaff — see *Notching* below), so in RWS/TWS the cloud itself rarely shows,
+  but it does make the place it sits a clutter cell.
+
+## Notching (beaming)
+
+Every echo carries the reflector's speed along the line of sight (its
+Doppler). Where a search radar knows there is clutter — rocks, gas, a chaff
+cloud — it switches in a filter that throws away everything with **no radial
+speed**, because that is what clutter looks like. Fly **square across the
+threat's line of sight** (put it on your wingline) while you are among rocks,
+gas or your own chaff, and your echo sits in that notch and fades from its
+search picture. In clear space the filter is not in, so beaming alone does
+nothing; and a close enough radar still burns through the notch. An STT lock
+does not use the filter.
 
 ## Jammer (active deception)
 
@@ -218,7 +240,8 @@ A few things to keep in mind:
   cooldown.
 - **Yellow dots / line** — your placed VIM-220 waypoints and the direction leg.
 - **RWR panel (bottom-left)** — diamonds on bearings where something is
-  emitting at you; red means you are locked.
+  emitting at you; red means you are locked; a red triangle with **7** or
+  **22** is a missile guiding on you.
 
 ---
 

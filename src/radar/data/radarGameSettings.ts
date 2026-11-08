@@ -60,6 +60,15 @@ export const STT_ACQUISITION_FRAMES = 30;
 // Frames without a return before STT lock breaks (~0.75 s at 60 fps).
 export const STT_LOCK_BREAK_FRAMES = 45;
 
+// Half-width (px) of the STT range gate: the lock listens only to echoes this
+// close in range to where it expects the target — a pulse length and a half
+// (RADAR_PULSE_LENGTH_PX) either side, the early and late gates of a real
+// range tracker, with room for the spread of hits across a hull's near face.
+// Whatever else the beam lights outside it — the rest of a chaff cloud, a rock
+// behind the target — cannot pull the lock; what can is the slice of cloud
+// that shares the hull's cell.
+export const STT_RANGE_GATE_PX = 15;
+
 // How long (ms) the placed VIM-220 waypoints take to fade out once the missile
 // carrying them has passed its first waypoint or been destroyed.
 export const VIM220_WAYPOINT_FADE_MS = 600;
@@ -153,6 +162,19 @@ export const RADAR_PFA = 0.008;
 // two contacts be told apart" are one answer, not a tracking rule next to a
 // differently-shaped receiver rule.
 export const RADAR_INTEGRATION_GAIN_EXPONENT = 0.5;
+
+// Sensitivity time control (signalPath.stcGain, applied in Receiver): range
+// (px) out to which the ship radar's receiver gain is still ramping up after
+// each pulse. The two-way range law makes the first range cells absurdly
+// loud — a chaff cloud blooming round the radar's own hull, 15 px out, would
+// otherwise echo some ten thousand times the noise floor and outshout even
+// the Doppler notch. A real set ramps its receiver gain with R⁴ over the first
+// stretch after the pulse, so inside this range an echo arrives no louder
+// than the same reflector would at this range. Far enough out to flatten the
+// own cloud below the notched noise floor, close enough that a hull at knife
+// range still comes back thousands of times over it. The missile seeker has no
+// STC: its whole job is the terminal end.
+export const RADAR_STC_RANGE_PX = 100;
 
 // 1-sigma position jitter (px) applied to a detected return, at the noise
 // floor (signal = 1). A real set's measurement accuracy improves with SNR as
@@ -603,6 +625,11 @@ export const SHOT_REFUSED_SHOW_MS = 2000;
 // RWR contact marker sizing. The marker radius is relative to the widget size.
 export const RWR_MARKER_RADIUS_FACTOR = 0.35;
 export const RWR_CONTACT_DIAMOND_SIZE_PX = 8;
+// A missile on the RWR (rwr.ts threat library): a red triangle, apex pointing
+// at the emitter, with the missile's number beside it in segment digits —
+// drawn as vector strokes, like the rest of the scope's symbology.
+export const RWR_MISSILE_TRIANGLE_SIZE_PX = 10;
+export const RWR_MISSILE_DIGIT_HEIGHT_PX = 10;
 
 // Pulsing red locked-contact flare on the RWR widget.
 export const RWR_THREAT_PULSE_TIME_DIVISOR_MS = 120;
@@ -709,6 +736,40 @@ export const CLUTTER_TERRAIN_DENSITY = 1.5;
 // on a rock.
 export const CLUTTER_GAS_DENSITY = 0.6;
 
+// Clutter density a chaff echo deposits at its cell. Chaff *is* volume
+// clutter — dipoles hanging motionless where they were thrown — and denser
+// than gas: a cloud is meant to fill the cells around it with energy. Being
+// motionless, it fills them at zero Doppler, which is what makes it the
+// clutter a beaming target can hide in (DOPPLER_* below).
+export const CLUTTER_CHAFF_DENSITY = 1.0;
+
+// ── Doppler clutter filter (cfarDetector.ts notchGain, signalPath.ts) ───────
+// Every echo comes back carrying the radial speed of whatever reflected it —
+// the reflector's own velocity along the line of sight, a property of the
+// echo exactly as its range is. Terrain, gas and chaff sit still, so all the
+// clutter in the game lives at zero radial speed. Where the clutter map knows
+// there is clutter (density at least MTI_ACTIVATION_DENSITY), the search
+// processor switches a clutter filter into that cell — the clutter-map
+// controlled MTI of a real set, which only filters where it has to so it does
+// not throw away tangential targets in clear space for nothing. The filter is
+// a notch around zero radial speed: an echo moving along the line of sight
+// passes, an echo that is not — a hull flying square across the beam, the
+// "beam" or "notch" manoeuvre — is attenuated with the clutter it sits among.
+// The rejection is finite, so the range law still buys burn-through: a
+// notching hull close enough in is seen anyway.
+//
+// Width (1σ) of the notch, in ship-speed units (px per physics step, as
+// playerShipSettings.SPEED). At cruise (0.1) a hull has to keep its radial component
+// within about half this of zero to sit deep in the notch, i.e. hold the beam
+// within ~15° — and a hull far out, whose echo has less margin to lose, is
+// notched across a wider band of aspects than one close in.
+export const DOPPLER_NOTCH_WIDTH = 0.05;
+// Fraction of the echo energy that survives at exactly zero radial speed —
+// the filter's clutter rejection, here 30 dB. Enough to make a notching hull
+// vanish from search across most of the ring; not so much that a contact
+// sitting still beside a rock at knife range disappears.
+export const DOPPLER_NOTCH_FLOOR = 0.001;
+
 // Side length (in cells) of the CFAR reference window averaged around a
 // tested point — must be odd, so the tested cell sits at its exact centre
 // and is excluded as the guard cell (CfarDetector.localDensity).
@@ -735,10 +796,12 @@ export const CFAR_THRESHOLD_FACTOR = 1.0;
 export const RADAR_FALSE_ALARM_RATE = 0.0006;
 
 // ── MTI / radial velocity (systems/modules/trackingComputer.ts) ─────────────
-// There is no carrier and no phase anywhere in this raycasting engine, so
-// per-pulse Doppler does not exist and cannot be bolted on: nothing here can
-// measure a frequency shift. What the engine *can* measure honestly is the
-// scan-to-scan stand-in — classical area MTI. The tracking computer already
+// Two layers against clutter, the way a real set stacks them. The signal-level
+// one is the Doppler clutter filter (DOPPLER_* in the clutter section): each
+// echo carries its reflector's radial speed, and a notch takes out what sits
+// still among clutter. This one is the track-level stand-in that came first —
+// scan-to-scan area MTI, which judges motion from the track's own fitted
+// course rather than from any single echo. The tracking computer already
 // fits every track's course and speed across scans, so the radial rate a
 // contact shows (its fitted velocity projected on the line of sight) is real
 // measured information, and clutter is the one thing that has none of it. The
@@ -788,8 +851,10 @@ export const MTI_ACTIVATION_DENSITY = 0.1;
 // search) it puts the notch at ~13 px per sweep, against a blind speed of
 // ~1.5: a contact at cruise (~6 px per sweep) does not outrun its own glint
 // inside a four-sweep baseline and stays in the notch while it is in
-// clutter. That is the cost of measuring across scans — a real Doppler MTI,
-// which this engine cannot have, would lift it out on the first dwell.
+// clutter. That is the cost of measuring across scans; the Doppler clutter
+// filter, which reads each echo's own radial speed, lifts a hull with any real
+// closure out on the first dwell — the two layers disagree only for a slow
+// hull, where the track-level one is the stricter.
 export const MTI_RANGE_GLINT_PX = 40;
 
 // ── Support dish radar (entities/dishRadarStation.ts) ──────────────────────
@@ -809,21 +874,39 @@ export const decoySettings = {
     COUNT: 5,                 // how many the player carries
     RADIUS: 50,               // px — size of the chaff cloud
     LIFETIME_MS: 8000,        // how long a cloud lingers before dissipating
-    // Radar cross-section of a fully-formed cloud, as a fraction of
-    // RADAR_REFERENCE_CROSS_SECTION_PX. A chaff cloud is a swarm of dipoles —
-    // a reflector in its own right, not a mask: it returns energy the way a
-    // hull does (the same energy budget, so it paints a contact and forms a
-    // track), and being nearer along the beam than the target it was thrown
-    // in front of, its echo is what the radar sees — the same nearest-wins
-    // rule terrain competes under. Sized against the biggest hulls so fresh
-    // chaff out-reflects most ships, which is the point of throwing it.
-    CROSS_SECTION: 3.5,
-    // px of clear space between the hull's edge and the near edge of a fresh
-    // cloud. Chaff is ejected aft and blooms behind the dispenser; a cloud
-    // laid over the ship would wrap the antenna, and every pulse would echo
-    // off it at point-blank range before reaching anything — the ship blinding
-    // its own forward radar. Turning back into the cloud still does that.
-    SPAWN_CLEARANCE_PX: 10,
+    // A chaff cloud is a swarm of dipoles spread through a volume — volume
+    // clutter, not a point target. What a radar sees of it is only the part
+    // that falls inside one resolution cell (RADAR_PULSE_LENGTH_PX deep,
+    // RADAR_BEAM_WIDTH_DEG across), and the cross-range side of that cell is
+    // R·θ: it widens with range. So the cloud's echo per cell grows linearly
+    // with range, while a hull's echo is a point target's and does not — far
+    // out the cloud swamps the hull it shares a cell with, close in the hull
+    // out-reflects the slice of cloud beside it. That ratio is the chaff
+    // burn-through (signalPath.chaffCellCrossSection).
+    //
+    // Range (px) at which the slice of cloud filling one cell reflects as much
+    // as the reference hull (cross-section 1). Twice as far the cloud is twice
+    // as bright per cell; half as far, half. The cell stops widening once it is
+    // as wide as the cloud itself, so there is a ceiling far beyond the ring.
+    BURN_THROUGH_REF_PX: 5000,
+    // Fraction of the pulse energy that survives one crossing of the cloud. Real
+    // chaff is mostly empty space: it reflects, it does not wall off. A hull
+    // behind the cloud is still lit and still answers — weaker, twice over (out
+    // and back) — and it is the contest in the tracking gate between that echo
+    // and the cloud's that decides whether a lock walks off onto the chaff.
+    ONE_WAY_TRANSMISSION: 0.8,
+    // Where a fresh cloud is centred, in px aft of the hull's edge. Chaff
+    // blooms at the dispenser, so a new cloud shares the hull's resolution
+    // cell — which is what lets it contest a lock at all: an STT range gate
+    // only hears what lies within STT_RANGE_GATE_PX of the hull. A cloud laid
+    // a cloud's width astern would sit outside the gate, and at short range
+    // so much nearer the radar that the fourth-power range law, not the chaff,
+    // would decide everything. The cloud wraps the dispensing ship too, so its
+    // own radar looks out through it: the lock's gate is out at the target,
+    // and the search picture is kept clean by the receiver's STC
+    // (RADAR_STC_RANGE_PX) flattening the cloud's first, loudest cells and the
+    // Doppler notch taking out what is left.
+    SPAWN_AFT_PX: 10,
 }
 
 // ── Gas clouds (entities/gasCloud.ts, data/signalPath.ts) ────────────────────

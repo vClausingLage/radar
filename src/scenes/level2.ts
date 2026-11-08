@@ -15,7 +15,7 @@ import { playerShipSettings } from "../settings";
 // the picket line (a big hull is a bright echo, well past the gas), so the
 // briefed task of reaching her was itself the way to fail it. Down here she is
 // ~1000 px clear of the nearest station the pickets may take.
-const LANTERN_ALONG_PX = 800;
+const LANTERN_ALONG_PX = 1200;
 const LANTERN_OFFSET_PX = gasCloudSettings.RADIUS + 360;
 const LANTERN_DRIFT_SPEED = 0.018;
 
@@ -31,7 +31,7 @@ const HOOKUP_MS = 5000;
 // ship landing tail-first; see physics/landing.ts). She glides down onto the
 // pad beside the player's own parking spot.
 const HOME_RADIUS_PX = 300;
-const LANTERN_TOUCHDOWN = { x: 1280, y: 2290 };
+const LANTERN_TOUCHDOWN = { x: PAD_POSITION.x - 120, y: PAD_POSITION.y - 10 };
 
 // The raider that crippled her comes out of the gas once she is under tow —
 // out of the southern stretch of the band, well clear of the picket line
@@ -43,13 +43,13 @@ const LANTERN_TOUCHDOWN = { x: 1280, y: 2290 };
 // find it, lock it and shoot with a hulk on the line that cannot defend itself.
 // Now the player has the time to drag her out of its reach, and the lead to
 // meet it with a shot instead of an answer.
-const RAIDER_ALONG_PX = 350;
+const RAIDER_ALONG_PX = 525;
 const RAIDER_DEPTH_PX = 40;
 const RAIDER_DELAY_MS = 25000;
-// Wide enough to clear the Lantern too (her station is 800 up the spine): a
-// picket's reach runs ~900 px past its depth, and the first rig of this level
-// failed 3 runs in 8 with her merely being fetched.
-const PICKET_KEEP_CLEAR_PX = 1300;
+// Wide enough to clear the Lantern too (her station is LANTERN_ALONG_PX up the
+// spine): a picket's reach runs ~900 px past its depth, and the first rig of
+// this level failed 3 runs in 8 with her merely being fetched.
+const PICKET_KEEP_CLEAR_PX = LANTERN_ALONG_PX + 900 - RAIDER_ALONG_PX;
 
 type Phase = 'search' | 'alongside' | 'tow' | 'home';
 

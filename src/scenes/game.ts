@@ -6,6 +6,7 @@ import { createStructureFactory } from "../entities/structureFactory";
 import { createGasCloudFactory } from "../entities/gasCloudFactory";
 import { createFlightFactory } from "../entities/flightFactory";
 import { Terrain } from "../radar/data/types";
+import { WorldSize } from "../types";
 import { GasCloud } from "../entities/gasCloud";
 import { Starfield } from "../entities/starfield";
 import { PlayerShip, Target } from "../entities/ship";
@@ -59,7 +60,10 @@ class FadeGroup implements FadeableAsset {
 // rather than rebuilding the world wiring (see scenes/campaignLevel.ts).
 export default class Game extends Phaser.Scene
 {
-  protected world = {
+  // How big this scene's world is. Public so what flies in it (the AI's
+  // border sense and patrol ladders, the sky) reads the scene's own size, not
+  // the default square.
+  readonly world: WorldSize = {
     width: world.WIDTH,
     height: world.HEIGHT
   };
@@ -217,7 +221,7 @@ export default class Game extends Phaser.Scene
     this.matter.world.setBounds(0, 0, this.world.width, this.world.height);
     this.physicsRenderer = new PhysicsRenderer(this, this.hasScenery());
     // ADD IMAGES
-    if (this.hasScenery()) new Starfield(this);
+    if (this.hasScenery()) new Starfield(this, this.world);
     // GRAPHICS
     this.graphics = this.add.graphics();
 

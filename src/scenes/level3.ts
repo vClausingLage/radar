@@ -8,9 +8,9 @@ import { FlightDatalink } from "../radar/systems/modules/flightDatalink";
 // Mule 2-3 comes through the middle of the band, heading for the pad. It is a
 // hauler with a dead transponder: to every sensor it is a bogey, exactly like
 // what follows it.
-const MULE_ALONG_PX = 1100;
+const MULE_ALONG_PX = 1650;
 const MULE_SPEED = 0.13;
-const MULE_LANDING: Vector2 = { x: 1300, y: 2330 };
+const MULE_LANDING: Vector2 = { x: PAD_POSITION.x - 100, y: PAD_POSITION.y + 30 };
 // It comes out this long after the player is off the pad.
 const MULE_DELAY_MS = 20000;
 

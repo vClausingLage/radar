@@ -53,7 +53,12 @@ they are paid; paid items are recorded once so they are not re-opened.
   realism roadmap §9): the tracking computer's fitted radial rate rejects
   near-zero-radial-rate echoes inside significant clutter — a parked hull in
   clutter never holds a stable track while the same hull under way lifts out.
-  Phase Doppler remains genuinely out of reach: the engine has no carrier.)
+  A Doppler notch is in now as well: every echo carries the reflector's
+  radial speed off its Matter velocity, and where the clutter map holds
+  clutter the search modes and the VIM-220 seeker attenuate near-zero-Doppler
+  echoes (`CfarDetector.notchGain`, `signalPath.dopplerNotchGain`) — a beaming
+  hull among rocks, gas or chaff sinks with them. Still no carrier phase: the
+  Doppler is read off the body, not measured from a pulse train.)
 - move visibility material etc and other atributes to group instead of the objects themselves
 - gas clouds that reduce radar effectiveness   (done: `entities/gasCloud.ts`.
   Absorption is now a cost in the energy budget rather than a coin flip
@@ -139,11 +144,12 @@ assets load), and read the returned report rather than the on-screen one.
   - gas / medium                 (done: gas costs the radar range, not sight)
   - weapons stop at the ring     (done: fire control will not shoot at what the
                                   scope does not show)
-  - countermeasures (chaff)   (done: chaff is now a reflector, not a coin flip
-                            — the cloud echoes with its own cross-section,
-                            forms a false track, and hides what is behind it
-                            under the same nearest-wins rule terrain runs;
-                            see the realism roadmap §10)
+  - countermeasures (chaff)   (done: chaff is volume clutter, not a coin flip
+                            — the cloud echoes per range cell, brighter with
+                            range (R·θ), and lets the beam through to the hull;
+                            an STT range/energy gate follows the louder echo,
+                            so chaff walks a distant lock off and a close lock
+                            burns through; see the realism roadmap §10)
   - clutter, once it exists
 - RWR
   - warned outside the emitting radar's own range   (done: illumination is now

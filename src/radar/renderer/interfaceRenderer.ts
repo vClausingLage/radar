@@ -10,6 +10,8 @@ import {
     RADAR_BUTTON_SPACING_Y_PX,
     RADAR_WARNING_OFFSET_Y_PX,
     RWR_CONTACT_DIAMOND_SIZE_PX,
+    RWR_MISSILE_DIGIT_HEIGHT_PX,
+    RWR_MISSILE_TRIANGLE_SIZE_PX,
     RWR_MARKER_RADIUS_FACTOR,
     RWR_THREAT_ALPHA_RANGE,
     RWR_THREAT_BASE_RADIUS_PX,
@@ -533,6 +535,14 @@ export class InterfaceRenderer {
             const markerX = centerX + Math.cos(angleRad) * markerRadius;
             const markerY = centerY + Math.sin(angleRad) * markerRadius;
 
+            // The threat library matched a missile's signature: a red
+            // triangle with its number, locked or not — a missile guiding on
+            // us is never a mere search contact.
+            if (contact.missile) {
+                this.drawMissileSymbol(markerX, markerY, angleRad, contact.missile);
+                continue;
+            }
+
             // A locked contact is an incoming missile threat: draw a pulsating
             // red flare pointing at it instead of a plain diamond.
             if (contact.isLocked) {
@@ -563,6 +573,62 @@ export class InterfaceRenderer {
             this.rwrDirectionGraphics.closePath();
             this.rwrDirectionGraphics.strokePath();
         }
+    }
+
+    // A missile on the RWR: a filled red triangle whose apex points outward,
+    // along the bearing it was heard on, and the missile's number beside it.
+    private drawMissileSymbol(markerX: number, markerY: number, angleRad: number, designation: string): void {
+        const g = this.rwrDirectionGraphics;
+        if (!g) return;
+        const size = RWR_MISSILE_TRIANGLE_SIZE_PX;
+        const corner = (offsetRad: number, r: number): Phaser.Math.Vector2 =>
+            new Phaser.Math.Vector2(
+                markerX + Math.cos(angleRad + offsetRad) * r,
+                markerY + Math.sin(angleRad + offsetRad) * r,
+            );
+        g.fillStyle(0xff0000, 1);
+        g.fillPoints([corner(0, size), corner(Math.PI * 2 / 3, size), corner(-Math.PI * 2 / 3, size)], true);
+
+        // The number sits on the inward side of the symbol, toward the centre,
+        // so it never runs off the edge of the widget.
+        const h = RWR_MISSILE_DIGIT_HEIGHT_PX;
+        const labelX = markerX - Math.cos(angleRad) * (size + h);
+        const labelY = markerY - Math.sin(angleRad) * (size + h);
+        this.drawSegmentDigits(g, designation, labelX, labelY, h, 0xff0000);
+    }
+
+    // Digits as seven-segment strokes, centred on (cx, cy). Vector strokes
+    // rather than a Text object: the RWR is redrawn every frame into one
+    // graphics, and a scope draws its numerals the way it draws its symbols.
+    private drawSegmentDigits(
+        g: Phaser.GameObjects.Graphics,
+        digits: string,
+        cx: number,
+        cy: number,
+        height: number,
+        color: number,
+    ): void {
+        // Segments a-g, each as two corners of a unit cell 1 wide, 2 high.
+        const SEGMENTS: Record<string, [number, number, number, number]> = {
+            a: [0, 0, 1, 0], b: [1, 0, 1, 1], c: [1, 1, 1, 2], d: [0, 2, 1, 2],
+            e: [0, 1, 0, 2], f: [0, 0, 0, 1], g: [0, 1, 1, 1],
+        };
+        const LIT: Record<string, string> = {
+            '0': 'abcdef', '1': 'bc', '2': 'abged', '3': 'abgcd', '4': 'fgbc',
+            '5': 'afgcd', '6': 'afgedc', '7': 'abc', '8': 'abcdefg', '9': 'abcfgd',
+        };
+        const unit = height / 2;
+        const advance = unit * 1.6;
+        const left = cx - (advance * digits.length - (advance - unit)) / 2;
+        g.lineStyle(2, color, 1);
+        [...digits].forEach((digit, i) => {
+            const x0 = left + i * advance;
+            const y0 = cy - unit;
+            for (const seg of LIT[digit] ?? '') {
+                const [x1, y1, x2, y2] = SEGMENTS[seg];
+                g.lineBetween(x0 + x1 * unit, y0 + y1 * unit, x0 + x2 * unit, y0 + y2 * unit);
+            }
+        });
     }
 
     // Pulsating red "flurry" marking an incoming missile-lock threat on the RWR

@@ -3,8 +3,10 @@ import type { Vector2 } from '../../../types';
 import type { GasVolume, Terrain } from '../../data/types';
 import { Ray } from '../../../physics/ray';
 import { correlatesWithPpli, type Ppli } from './flightDatalink';
-import { RWR_SEEKER_KEY_PREFIX } from './rwr';
+import { RWR_SEEKER_KEY_PREFIX, type EmitterSignature } from './rwr';
 import {
+  CFAR_REFERENCE_CELLS,
+  CLUTTER_CELL_PX,
   MISSILE_RADAR_MAX_MISSED_LOCK_FRAMES,
   MISSILE_SEEKER_BEAM_DEG,
   MISSILE_SEEKER_MIN_SIGNAL,
@@ -12,7 +14,23 @@ import {
   TRACK_FILTER_ALPHA,
   TRACK_FILTER_BETA,
 } from '../../data/radarGameSettings';
-import { crossSection, echoHorizonPx, emissionSignal, gasTransmission, isDetected, returnSignal, specularFactor } from '../../data/signalPath';
+import {
+  crossSection,
+  dopplerNotchGain,
+  echoHorizonPx,
+  emissionSignal,
+  gasTransmission,
+  isDetected,
+  radialSpeed,
+  returnSignal,
+  specularFactor,
+} from '../../data/signalPath';
+
+// How far from a target the seeker looks for clutter it would share a
+// Doppler filter with: the reach of the ship radar's own CFAR reference window
+// (half of CFAR_REFERENCE_CELLS cells, each CLUTTER_CELL_PX), so a seeker and a
+// ship radar agree on what counts as "in the clutter".
+const SEEKER_CLUTTER_REACH_PX = Math.floor(CFAR_REFERENCE_CELLS / 2) * CLUTTER_CELL_PX;
 
 // Minimal target interface an onboard seeker needs to acquire and track.
 // Lives here (rather than in missileGuidance) so the missile entity can hold a
@@ -30,7 +48,12 @@ export type GuidanceTarget = {
   getDirection(): number;
   getSpeed(): number;
   radar?: {
-    rwrReceiver: { receive(key: string, bearingDeg: number, isLocked: boolean, now: number): void };
+    rwrReceiver: {
+      receive(
+        key: string, bearingDeg: number, isLocked: boolean, now: number,
+        isJammer?: boolean, signature?: EmitterSignature,
+      ): void;
+    };
   };
 };
 
@@ -247,7 +270,9 @@ export class MissileRadar {
       if (correlatesWithPpli({ x: t.x, y: t.y }, this.friends, this.now)) continue;
       if (!this.inCone(pos, coneCentreDeg, t, coneHalfDeg)) continue;
       if (this.isMaskedByDecoy(pos, t, decoyCircles)) continue;
-      if (this.returnStrength(pos, t, gasVolumes, terrain) < MISSILE_SEEKER_MIN_SIGNAL) continue;
+      const signal = this.returnStrength(pos, t, gasVolumes, terrain)
+        * this.clutterFilter(pos, t, decoyCircles, terrain);
+      if (signal < MISSILE_SEEKER_MIN_SIGNAL) continue;
       bestDist = d;
       best = t;
     }
@@ -291,12 +316,12 @@ export class MissileRadar {
   // Lock (STT) illumination: a red RWR contact on the victim.
   private illuminateLock(pos: Vector2, t: GuidanceTarget, now: number): void {
     if (!t.radar) return;
-    t.radar.rwrReceiver.receive(this.emitterKey, this.bearingFrom(pos, t), true, now);
+    t.radar.rwrReceiver.receive(this.emitterKey, this.bearingFrom(pos, t), true, now, false, 'vim220-seeker');
   }
 
   // Search (RWS) illumination: green, unlocked RWR contact.
   private illuminateSearch(pos: Vector2, t: GuidanceTarget, now: number): void {
-    t.radar?.rwrReceiver.receive(this.emitterKey, this.bearingFrom(pos, t), false, now);
+    t.radar?.rwrReceiver.receive(this.emitterKey, this.bearingFrom(pos, t), false, now, false, 'vim220-seeker');
   }
 
   // Bearing from the victim toward the emitting missile (RWR convention).
@@ -341,6 +366,35 @@ export class MissileRadar {
       * specularFactor(beamDir, normal);
     const transmission = gasTransmission(pos, point, gasVolumes);
     return returnSignal(range, this.range, rcs, transmission);
+  }
+
+  // The seeker's Doppler clutter filter — the same notch the ship radar's
+  // search runs (signalPath.dopplerNotchGain), switched in only where there is
+  // clutter to reject. A seeker carries no clutter map; what it has instead is
+  // its own beam, which at terminal range is small enough that whatever stands
+  // beside the target is in it with it: a chaff cloud or a rock within the
+  // CFAR window's reach of the hull. Gas is left out, as the ship radar's map
+  // leaves it out: too diffuse to switch a filter in. A hull crossing square
+  // to the seeker's line of sight beside its own chaff is attenuated with the
+  // chaff — beam and chaff, the classic answer to an active seeker.
+  private clutterFilter(
+    pos: Vector2,
+    t: GuidanceTarget,
+    decoyCircles: Phaser.Geom.Circle[],
+    terrain: Terrain[],
+  ): number {
+    const nearChaff = decoyCircles.some(c =>
+      Phaser.Math.Distance.Between(c.x, c.y, t.x, t.y) <= c.radius + SEEKER_CLUTTER_REACH_PX);
+    const nearRock = !nearChaff && terrain.some(body => {
+      if (!body.active || !body.body) return false;
+      const b = (body.body as MatterJS.BodyType).bounds;
+      return t.x >= b.min.x - SEEKER_CLUTTER_REACH_PX && t.x <= b.max.x + SEEKER_CLUTTER_REACH_PX
+        && t.y >= b.min.y - SEEKER_CLUTTER_REACH_PX && t.y <= b.max.y + SEEKER_CLUTTER_REACH_PX;
+    });
+    if (!nearChaff && !nearRock) return 1;
+    const velocity = (t.body as { velocity?: { x: number; y: number } } | null | undefined)?.velocity
+      ?? { x: 0, y: 0 };
+    return dopplerNotchGain(radialSpeed(pos, { x: t.x, y: t.y }, velocity));
   }
 
   // Whether solid terrain stands between the seeker and a return at `point`.

@@ -126,13 +126,23 @@ TO_DO.md, decision_tree.md, cowork.md   Roadmap, AI behaviour spec, design inten
    the player parked on the pad, the dish inside its own tower. **The nearer
    return wins** — terrain shadows ships and is handed to `TerrainMapper`; a
    nearer ship return masks terrain behind it.
-4. Interference: chaff (`Receiver.isBlockedByDecoy`) swallows a return outright;
-   gas does not — it is priced into the hit's energy instead
-   (`Receiver.gasRoundTrip`). An enemy `Jammer` covering us rewrites the whole
+4. Interference (`Radar.reflectorsAlong`): chaff is a semi-transparent
+   volume, not a wall. A ray crossing a cloud brings back one echo per range
+   cell (`chaffCellCrossSection`, brighter the further out it is seen) *and*
+   carries on to the hull behind it at `ONE_WAY_TRANSMISSION`²; the cloud is
+   also logged as clutter. Which echo the radar believes is settled by energy:
+   in STT the range gate (`STT_RANGE_GATE_PX`) and the tracker's energy gate
+   follow the louder one, so chaff walks a distant lock off the hull and
+   burns through close in. Gas is priced into the hit's energy
+   (`Receiver.gasRoundTrip`). Every hit carries its `radialSpeed`; where the
+   clutter map holds clutter the search modes' Doppler notch
+   (`CfarDetector.notchGain`) takes a beaming hull down with the clutter.
+   An enemy `Jammer` covering us rewrites the whole
    sweep into a coherent false track at `sweepComplete`
    (`Receiver.createFakeHits`).
-5. `Receiver.processHits()` weighs each hit's signal against the receiver's
-   noise floor and yields the returns that cleared it.
+5. `Receiver.processHits()` weighs each hit's signal (through the receiver's
+   STC ramp, `stcRangePx`, so the radar's own chaff cannot swamp it) against
+   the receiver's noise floor and yields the returns that cleared it.
 6. `TrackingComputer.update(returns, ownerPos, maxMissedScans, maxTracks)`
    forms/ages tracks. RWS is uncapped; TWS caps at `MAX_TWS_TRACKS`.
 7. Anything the beam touches *and can hear it* gets an RWR contact via

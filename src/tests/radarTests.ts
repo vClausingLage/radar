@@ -448,57 +448,166 @@ const mtiMasksStationaryContact: GameTest = {
     },
 };
 
-// (j) Chaff is a reflector, not a dice roll. A cloud deployed between the
-// radar and its contact returns energy of its own: the contact the scope
-// draws jumps from the hull to the cloud, and the hull behind the cloud
-// simply stops being sampled — the same nearest-wins rule terrain competes
-// under. No probability anywhere: the cloud echoes, and that echo is what
-// the radar believes.
-const chaffShowsAsContactAndMasks: GameTest = {
-    name: 'Chaff returns as its own contact and hides the hull behind it',
-    description: 'A drone deploying chaff between itself and the player: the track moves off '
-        + 'the hull onto the cloud, and the hull behind the cloud is no longer tracked.',
+// (j) Chaff is volume clutter, not a wall. A cloud is lit and lets the beam
+// through, so the hull behind it still answers — dimmed — and the STT gate
+// follows whichever of the two echoes carries the energy. The cloud's echo is
+// one resolution cell's worth of dipoles, and that cell widens with range
+// (signalPath.chaffCellCrossSection): far out the cloud out-reflects the hull
+// and walks the lock off onto itself, close in the hull burns through and the
+// lock stays put. One helper, two ranges either side of the burn-through.
+const CHAFF_FAR_RANGE_PX = 560;
+const CHAFF_NEAR_RANGE_PX = 260;
+
+async function chaffAgainstLock(ctx: TestContext, rangePx: number): Promise<{
+    locked: boolean;
+    // Frames (of the cloud's life) the lock was held at all.
+    heldFrames: number;
+    samples: number;
+    // Mean distance from the lock to the hull's centre over the cloud's last
+    // second, against the hull's own radius: a lock on the hull sits on its
+    // near (tail) surface, about one radius off the centre; a lock the cloud
+    // has taken stays with the cloud while the hull flies out of it.
+    finalOffset: number;
+    hullRadius: number;
+}> {
+    const radar = ctx.player.radar;
+    const boresight = ctx.player.getDirection();
+    // Running away from the player, so the cloud blooms on the side facing the
+    // radar locked on it, and the hull flies on out of it.
+    const drone = ctx.scene.spawnDrone({ bearingDeg: boresight, rangePx, facingDeg: boresight, speed: 0.15 });
+
+    await ctx.waitUntil(() => nearestTrackOffset(ctx, drone) < TRACK_ON_TARGET_PX, FRAMES_PER_SWEEP * 6);
+    radar.enterStt();
+    // Let the acquisition beam narrow and the lock settle on the hull.
+    await ctx.frames(FRAMES_PER_SWEEP);
+    const locked = radar.getMode() === 'stt';
+
+    drone.deployDecoy();
+    const samples = Math.round(decoySettings.LIFETIME_MS / (1000 / 60) * 0.9);
+    const lastSecond = 60;
+    let heldFrames = 0;
+    let finalSum = 0;
+    let finalCount = 0;
+    for (let i = 0; i < samples; i++) {
+        await ctx.frames(1);
+        const track = radar.getSttTrack();
+        if (radar.getMode() !== 'stt' || !track) continue;
+        heldFrames++;
+        if (i >= samples - lastSecond) {
+            finalSum += Phaser.Math.Distance.Between(track.pos.x, track.pos.y, drone.x, drone.y);
+            finalCount++;
+        }
+    }
+    return {
+        locked,
+        heldFrames,
+        samples,
+        finalOffset: finalCount > 0 ? finalSum / finalCount : Infinity,
+        hullRadius: drone.getCircle().radius,
+    };
+}
+
+// A lock this much further off the hull's centre than its own radius has left
+// the hull: the hull has flown that far out of the cloud.
+const LOCK_LEFT_HULL_PX = 30;
+
+const chaffWalksADistantLock: GameTest = {
+    name: 'Chaff walks a distant lock off the hull',
+    description: `A drone running away at ${CHAFF_FAR_RANGE_PX}px throws chaff under an STT lock: `
+        + 'the cloud out-reflects the hull in its resolution cell and the lock stays with the cloud.',
+    async run(ctx) {
+        const r = await chaffAgainstLock(ctx, CHAFF_FAR_RANGE_PX);
+        ctx.check('the lock was on the hull before the chaff', r.locked);
+        ctx.check('the lock is left behind on the cloud',
+            r.finalOffset > r.hullRadius + LOCK_LEFT_HULL_PX,
+            `lock ${formatOffset(r.finalOffset)} off the hull's centre (radius ${r.hullRadius.toFixed(0)}px), `
+            + `held ${r.heldFrames}/${r.samples} frames`);
+    },
+};
+
+const chaffBurnThroughCloseIn: GameTest = {
+    name: 'Chaff burn-through: a close lock stays on the hull',
+    description: `The same drone and chaff at ${CHAFF_NEAR_RANGE_PX}px: the cell is narrow, the slice `
+        + 'of cloud beside the hull is faint, and the lock flies on with the hull.',
+    async run(ctx) {
+        const r = await chaffAgainstLock(ctx, CHAFF_NEAR_RANGE_PX);
+        ctx.check('the lock was on the hull before the chaff', r.locked);
+        ctx.check('the lock holds through the cloud', r.heldFrames > r.samples * 0.9,
+            `held ${r.heldFrames}/${r.samples} frames`);
+        ctx.check('the lock is still on the hull', r.finalOffset < r.hullRadius + LOCK_LEFT_HULL_PX / 2,
+            `lock ${formatOffset(r.finalOffset)} off the hull's centre (radius ${r.hullRadius.toFixed(0)}px)`);
+    },
+};
+
+// (k) The Doppler notch. Every echo carries its reflector's radial speed, and
+// where the clutter map holds clutter the search processor filters out what
+// sits at zero — the clutter, and with it any hull flying square across the
+// beam. Two identical hulls beaming at the same range: one has thrown chaff,
+// so it beams through the zero-Doppler clutter its own cloud filled the cells
+// with, and drops out of the picture; the other beams in clear space, where
+// there is no clutter, no filter, and nothing to hide in.
+const DOPPLER_TEST_RANGE_PX = 420;
+// A track this close to a hull is on the hull, not on the chaff cloud that
+// lies a cloud's radius and more behind it.
+const ON_HULL_PX = 40;
+
+const notchHidesABeamingHullInChaff: GameTest = {
+    name: 'Doppler notch: a beaming hull hides in its chaff, not in clear space',
+    description: 'Two drones crossing the beam at the same range; the one that has thrown chaff '
+        + 'vanishes in the clutter filter, the one in clear space stays tracked.',
     async run(ctx) {
         const boresight = ctx.player.getDirection();
-        // Nose away, so the cloud deploys on the side facing the player —
-        // between the hull and the radar that is looking at it.
-        const drone = ctx.scene.spawnDrone({
-            bearingDeg: boresight,
-            rangePx: 300,
-            facingDeg: boresight,
+        const spawnBeaming = (bearingDeg: number): Target => ctx.scene.spawnDrone({
+            bearingDeg,
+            rangePx: DOPPLER_TEST_RANGE_PX,
+            // Square across the line of sight: no radial speed to speak of.
+            facingDeg: bearingDeg + 90,
+            speed: 0.1,
         });
-        drone.deployDecoy();
-        const cloud = drone.getActiveDecoys()[0].getCircle();
+        const hiding = spawnBeaming(boresight - 22);
+        const clear = spawnBeaming(boresight + 22);
+        hiding.deployDecoy();
 
-        // Two sweeps for the old track to be dragged to the cloud's echo,
-        // then measure across the cloud's remaining lifetime.
-        await ctx.frames(FRAMES_PER_SWEEP * 2);
-        let minOffset = Infinity;
-        let maxOffset = -Infinity;
-        let trackedFrames = 0;
-        const samples = FRAMES_PER_SWEEP * 4;
+        // One sweep for the cloud's clutter to be logged around it, then
+        // watch across most of what is left of its life.
+        await ctx.frames(FRAMES_PER_SWEEP * 1.5);
+        let hidingOnHull = 0;
+        let clearOnHull = 0;
+        const samples = FRAMES_PER_SWEEP * 5;
         for (let i = 0; i < samples; i++) {
             await ctx.frames(1);
-            const offset = nearestTrackOffset(ctx, drone);
-            if (offset < minOffset) minOffset = offset;
-            if (offset > maxOffset) maxOffset = offset;
-            if (Number.isFinite(offset)) trackedFrames++;
+            if (nearestTrackOffset(ctx, hiding) < ON_HULL_PX) hidingOnHull++;
+            if (nearestTrackOffset(ctx, clear) < ON_HULL_PX) clearOnHull++;
         }
+        ctx.check('the hull in clear space is tracked', clearOnHull > samples * 0.5,
+            `on the hull ${clearOnHull}/${samples} frames`);
+        ctx.check('the hull beaming in its chaff is notched out', hidingOnHull < samples * 0.1,
+            `on the hull ${hidingOnHull}/${samples} frames`);
+    },
+};
 
-        ctx.check('the radar holds a contact through the cloud', trackedFrames > samples * 0.8,
-            `tracked ${((trackedFrames / samples) * 100).toFixed(0)}% of the run`);
-        // The cloud is laid just clear of the tail (Ship.deployDecoy), so the
-        // contact sits somewhere on it — past the hull's edge, never back on
-        // the hull, which behind the cloud has stopped being sampled. Before
-        // the chaff, the same tracking sat within ~10px of the hull.
-        const hullRadius = drone.getCircle().radius;
-        const cloudCentre = hullRadius + decoySettings.RADIUS + decoySettings.SPAWN_CLEARANCE_PX;
-        ctx.check('the contact is on the cloud, not the hull',
-            Number.isFinite(minOffset) && minOffset > hullRadius
-                && maxOffset < cloudCentre + decoySettings.RADIUS,
-            `track ranged ${formatOffset(minOffset)}-${formatOffset(maxOffset)} from the hull`);
-        ctx.check('the cloud is where the track should be',
-            Math.abs(Phaser.Math.Distance.Between(cloud.x, cloud.y, drone.x, drone.y) - cloudCentre) < 1);
+// A cloud blooms round the hull that threw it, so the radar on that hull looks
+// out through its own chaff. The first range cells are the loudest echoes the
+// range law can make; the receiver's STC flattens them and the clutter map
+// (the cloud's own cell) switches the notch in on what is left. Without both
+// the radar tracks its own position.
+const ownChaffIsNotATrack: GameTest = {
+    name: 'A radar inside its own chaff cloud does not track itself',
+    description: 'The player throws chaff in an empty world and keeps sweeping: no track ever forms on '
+        + 'or around its own hull while the cloud lives.',
+    async run(ctx) {
+        ctx.player.radar.enterRws();
+        ctx.player.deployDecoy();
+        let nearOwnHull = 0;
+        const samples = FRAMES_PER_SWEEP * 6;
+        for (let i = 0; i < samples; i++) {
+            await ctx.frames(1);
+            const own = ctx.player.getPosition();
+            if (ctx.player.radar.getTracks().some(t =>
+                Phaser.Math.Distance.Between(t.pos.x, t.pos.y, own.x, own.y) < decoySettings.RADIUS * 2)) nearOwnHull++;
+        }
+        ctx.check('the cloud was live round the hull', ctx.player.getActiveDecoys().length > 0);
+        ctx.check('no track on or round the own hull', nearOwnHull === 0, `${nearOwnHull}/${samples} frames`);
     },
 };
 
@@ -546,6 +655,46 @@ const rwrWarnsOfMissileSeeker: GameTest = {
             FRAMES_PER_SWEEP * 10,
         );
         ctx.check('the seeker warning goes to a lock as it closes', locked);
+    },
+};
+
+// (l) The RWR's threat library names what it hears by the emission itself.
+// A VIM-220's own seeker is the missile, shown at the missile as "22"; a
+// VIM-177 emits nothing, but the lock that guides it changes character the
+// moment it is in flight, and the target's RWR names that lock "7" — at the
+// shooter's bearing, which is the only place the warning can come from.
+const rwrNamesTheMissile: GameTest = {
+    name: 'RWR names the missile: 22 at its seeker, 7 at the guiding lock',
+    description: "A VIM-177 under STT, then a VIM-220 from TWS, at the same drone: its RWR shows "
+        + "the lock as a 7 only once the missile is in flight, and the seeker as a 22.",
+    async run(ctx) {
+        const radar = ctx.player.radar;
+        const drone = ctx.scene.spawnDrone({ bearingDeg: ctx.player.getDirection(), rangePx: 320 });
+        const missiles = (): string[] => drone.radar.rwrReceiver.getRwrSignals()
+            .map(signal => signal.missile)
+            .filter((m): m is string => m !== undefined);
+
+        await ctx.waitUntil(() => radar.getTracks().length > 0, FRAMES_PER_SWEEP * 6);
+        radar.enterStt();
+        const lockSeen = await ctx.waitUntil(
+            () => drone.radar.rwrReceiver.getRwrSignals().some(signal => signal.isLocked), FRAMES_PER_SWEEP * 2);
+        ctx.check('a lock alone is not a missile', lockSeen && missiles().length === 0,
+            `locked ${lockSeen}, missiles [${missiles().join(', ')}]`);
+
+        radar.selectWeapon('VIM-177');
+        radar.shoot();
+        const seven = await ctx.waitUntil(() => missiles().includes('7'), FRAMES_PER_SWEEP);
+        ctx.check('the guiding lock reads as a 7', seven, `missiles [${missiles().join(', ')}]`);
+
+        // Break the lock and wait for the 7 to age out, then shoot a VIM-220
+        // whose seeker comes online as it closes.
+        radar.enterTws();
+        await ctx.waitUntil(() => !missiles().includes('7'), FRAMES_PER_SWEEP * 3);
+        await ctx.waitUntil(() => radar.getTracks().length > 0, FRAMES_PER_SWEEP * 6);
+        radar.selectWeapon('VIM-220');
+        radar.shoot();
+        const twentyTwo = await ctx.waitUntil(() => missiles().includes('22'), FRAMES_PER_SWEEP * 15);
+        ctx.check('the active seeker reads as a 22', twentyTwo, `missiles [${missiles().join(', ')}]`);
     },
 };
 
@@ -673,7 +822,11 @@ export const radarTests: GameTest[] = [
     jammingBurnsThroughCloseIn,
     jammerShowsAsStrobe,
     mtiMasksStationaryContact,
-    chaffShowsAsContactAndMasks,
+    chaffWalksADistantLock,
+    chaffBurnThroughCloseIn,
+    notchHidesABeamingHullInChaff,
+    ownChaffIsNotATrack,
     rwrWarnsOfMissileSeeker,
+    rwrNamesTheMissile,
     seekerBlindedByTerrain,
 ];

@@ -2,12 +2,13 @@ import Phaser from 'phaser';
 import { decoySettings } from '../radar/data/radarGameSettings';
 
 // A deployed chaff cloud. Represented visually as a sprite and geometrically as
-// a circle: when a radar beam (raycast line) passes through it the cloud
-// returns like any other reflector — it echoes with its own cross-section and,
-// being nearer along the beam than whatever it was thrown in front of, hides
-// it behind that echo (see Radar.nearestDecoyEcho / MissileRadar.isMaskedByDecoy).
-// It drifts nowhere — it lingers in place and fades over its lifetime, so the
-// player can manoeuvre to put it between their ship and a threat radar.
+// a circle: a radar beam (raycast line) crossing it lights the range cells it
+// fills, each echoing one cell's worth of dipoles, and carries on, dimmed, to
+// whatever is behind (Radar.reflectorsAlong, signalPath.chaffCellCrossSection).
+// A missile seeker's line of sight through it is masked (MissileRadar.
+// isMaskedByDecoy). It drifts nowhere — it lingers in place and fades over its
+// lifetime, so its echo sits at zero Doppler and the dispensing ship flies out
+// of it.
 export class Decoy {
   private readonly visual: Phaser.GameObjects.Image;
   private readonly createdAt: number;

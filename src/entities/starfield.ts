@@ -1,5 +1,6 @@
 import Phaser from "phaser";
-import { starfieldSettings, world } from "../settings";
+import { starfieldSettings } from "../settings";
+import { WorldSize } from "../types";
 
 // The sky behind the theatre. Pure scenery: no Matter body, so no ray can hit it
 // and no radar, RWR or fire-control path ever knows it exists.
@@ -20,11 +21,11 @@ const STAR_TILE_PX = 1024;
 const OVERHANG_PX = 1200;
 
 export class Starfield {
-    constructor(scene: Phaser.Scene) {
+    constructor(scene: Phaser.Scene, size: WorldSize) {
         Starfield.ensureNebulaTexture(scene);
-        scene.add.image(0, 0, NEBULA_TEXTURE_KEY)
-            .setOrigin(0)
-            .setScale(starfieldSettings.NEBULA_SCALE);
+        // One picture stretched over the whole world, however big the scene's is.
+        const nebula = scene.add.image(0, 0, NEBULA_TEXTURE_KEY).setOrigin(0);
+        nebula.setScale(starfieldSettings.NEBULA_OVERSCAN * Math.max(size.width, size.height) / nebula.width);
 
         starfieldSettings.LAYERS.forEach((layer, index) => {
             Starfield.ensureStarTexture(scene, index, layer);
@@ -33,8 +34,8 @@ export class Starfield {
             // dice of the radar's seeded test runs (see DEFAULT_TEST_SEED).
             const tiles = scene.add.blitter(0, 0, starLayerKey(index))
                 .setScrollFactor(layer.scrollFactor);
-            for (let y = -OVERHANG_PX; y < world.HEIGHT + OVERHANG_PX; y += STAR_TILE_PX) {
-                for (let x = -OVERHANG_PX; x < world.WIDTH + OVERHANG_PX; x += STAR_TILE_PX) {
+            for (let y = -OVERHANG_PX; y < size.height + OVERHANG_PX; y += STAR_TILE_PX) {
+                for (let x = -OVERHANG_PX; x < size.width + OVERHANG_PX; x += STAR_TILE_PX) {
                     tiles.create(x, y);
                 }
             }

@@ -8,8 +8,12 @@ export type BeamHit = {
   point: Phaser.Math.Vector2;
   // Hull cross-section relative to the reference hull (see data/signalPath.ts).
   crossSection: number;
-  // Round-trip transmission through gas on this path; 1 in clear space.
+  // Round-trip transmission through gas (and chaff) on this path; 1 in clear space.
   transmission: number;
+  // The reflector's own velocity along the line of sight (px per physics step,
+  // signalPath.radialSpeed) — the echo's Doppler, measured off the echo just as
+  // its range is. Zero for terrain and chaff, which do not move.
+  radialSpeed: number;
 }
 
 // What the receiver measured for one reflection, before any detection

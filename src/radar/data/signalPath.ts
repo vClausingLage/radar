@@ -3,6 +3,8 @@ import type { GasVolume } from './types';
 import {
     ANTENNA_REFERENCE_BEAM_WIDTH_DEG,
     ANTENNA_SIDELOBE_LEVEL,
+    DOPPLER_NOTCH_FLOOR,
+    DOPPLER_NOTCH_WIDTH,
     JAMMER_POWER,
     RADAR_BEAM_WIDTH_DEG,
     RADAR_MAX_CROSS_SECTION,
@@ -12,9 +14,11 @@ import {
     RADAR_PFA,
     RADAR_PULSE_LENGTH_PX,
     RADAR_REFERENCE_CROSS_SECTION_PX,
+    RADAR_STC_RANGE_PX,
     RADAR_SPECULAR_EXPONENT,
     RADAR_TWO_WAY_RANGE_POWER,
     RWR_NOISE_FLOOR,
+    decoySettings,
     gasCloudSettings,
 } from './radarGameSettings';
 
@@ -150,6 +154,17 @@ export function returnSignal(
         * Math.pow(ratedRangePx / rangePx, RADAR_TWO_WAY_RANGE_POWER);
 }
 
+// The receiver's sensitivity time control: the range an echo from `rangePx`
+// is effectively received at. A pulse radar ramps its receiver gain up over
+// the first stretch after each pulse (RADAR_STC_RANGE_PX) with the same power
+// the echo falls with, so inside the ramp an echo comes back exactly as loud
+// as the same reflector would at the ramp's end — close-in clutter, the
+// radar's own chaff above all, cannot swamp the receiver however near it
+// sits. Beyond the ramp, the range itself. Feed the answer to returnSignal.
+export function stcRangePx(rangePx: number): number {
+    return Math.max(rangePx, RADAR_STC_RANGE_PX);
+}
+
 // Signal the emission itself carries at a listener out at `rangePx`, relative
 // to a warning receiver's noise floor. One way only — no reflection, no return
 // leg — which is why this stays above the floor long after a return from the
@@ -199,6 +214,52 @@ export function detectionProbability(signal: number): number {
 export function jammerSignal(rangePx: number, ratedRangePx: number): number {
     if (rangePx <= 0) return Infinity;
     return JAMMER_POWER * Math.pow(ratedRangePx / rangePx, RADAR_ONE_WAY_RANGE_POWER);
+}
+
+// One resolution cell's worth of a chaff cloud, as a cross-section on the hull
+// scale (1 = the reference hull). Chaff is volume clutter: a ray crossing a
+// cloud lights a run of range cells, each RADAR_PULSE_LENGTH_PX deep, and each
+// echoes with the dipoles inside it. The cell is R·θ wide, so it widens with
+// range and the same cloud is brighter per cell the further away it is looked
+// at. A hull is a point target and gets no such help, which is the whole of
+// the chaff burn-through: a lock far out walks off onto the cloud, the same
+// lock close in sees the hull out-reflect the slice of chaff beside it.
+// `depthPx` is how much of this cell lies inside the cloud — the last cell of a
+// chord is usually a partial one. The cell stops widening once it spans the
+// whole cloud, so there is a ceiling.
+export function chaffCellCrossSection(rangePx: number, depthPx: number): number {
+    const beamRad = Phaser.Math.DegToRad(RADAR_BEAM_WIDTH_DEG);
+    const across = Math.min(rangePx * beamRad, 2 * decoySettings.RADIUS);
+    const depth = Math.min(depthPx, RADAR_PULSE_LENGTH_PX) / RADAR_PULSE_LENGTH_PX;
+    return (across / (decoySettings.BURN_THROUGH_REF_PX * beamRad)) * depth;
+}
+
+// The search processor's clutter filter at an echo of this radial speed (px
+// per physics step, the reflector's own velocity along the line of sight —
+// clutter's is zero). A Gaussian notch: 1 for anything moving well along the
+// line of sight, falling to DOPPLER_NOTCH_FLOOR at zero, so a hull flying
+// square across the beam is attenuated with the clutter it sits among. A
+// multiplier on the echo's energy, not a verdict — the range law still decides
+// whether what is left clears the floor.
+export function dopplerNotchGain(radialSpeed: number): number {
+    const z = radialSpeed / DOPPLER_NOTCH_WIDTH;
+    return 1 - (1 - DOPPLER_NOTCH_FLOOR) * Math.exp(-0.5 * z * z);
+}
+
+// Radial speed of a reflector moving at `velocity` as seen from `from`, at the
+// point `at`: its velocity projected on the line of sight. The sign does not
+// matter to a clutter filter (opening and closing both leave the notch), so
+// this is signed only for whoever wants to know which.
+export function radialSpeed(
+    from: { x: number; y: number },
+    at: { x: number; y: number },
+    velocity: { x: number; y: number },
+): number {
+    const dx = at.x - from.x;
+    const dy = at.y - from.y;
+    const r = Math.hypot(dx, dy);
+    if (r === 0) return 0;
+    return (velocity.x * dx + velocity.y * dy) / r;
 }
 
 // Roll for one detection at this signal strength.

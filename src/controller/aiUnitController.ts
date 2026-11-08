@@ -4,6 +4,7 @@ import { RWR_SEEKER_KEY_PREFIX } from '../radar/systems/modules/rwr';
 import { Target } from '../entities/ship';
 import { Track, iffStateOf } from '../radar/data/track';
 import { world } from '../settings';
+import type { WorldSize } from '../types';
 import { Flight, FlightBriefing, FlightRole, FlightTactic, Orders } from './flight';
 
 // Behaviour states. The engagement flow is a cycle rather than a single state:
@@ -618,7 +619,7 @@ export class AiUnitController {
             missileInbound: radar?.rwrReceiver.getRwrSources().some(k => k.startsWith(RWR_SEEKER_KEY_PREFIX)) ?? false,
             chaffLeft: this.ship.getRemainingDecoys(),
             jammerReady: radar?.isJammerReady() ?? false,
-            nearWorldEdge: x < margin || y < margin || x > world.WIDTH - margin || y > world.HEIGHT - margin,
+            nearWorldEdge: x < margin || y < margin || x > this.worldSize().width - margin || y > this.worldSize().height - margin,
             ...this.flightPicture(),
         };
     }
@@ -888,12 +889,20 @@ export class AiUnitController {
         this.turnTowardAngle(heading);
     }
 
+    // The extent of the world this ship flies in: the scene's own (Game.world),
+    // read structurally so the controller does not import the scene it is
+    // driven from; the default square for a scene that does not say.
+    private worldSize(): WorldSize {
+        return (this.scene as Phaser.Scene & { world?: WorldSize }).world
+            ?? { width: world.WIDTH, height: world.HEIGHT };
+    }
+
     // ── Routes ─────────────────────────────────────────────────────────────
 
     // Boustrophedon search ladder around the current position, clamped to world.
     private generatePatrolRoute(): { x: number; y: number }[] {
-        const clampX = (x: number) => Phaser.Math.Clamp(x, PATROL_MARGIN_PX, world.WIDTH - PATROL_MARGIN_PX);
-        const clampY = (y: number) => Phaser.Math.Clamp(y, PATROL_MARGIN_PX, world.HEIGHT - PATROL_MARGIN_PX);
+        const clampX = (x: number) => Phaser.Math.Clamp(x, PATROL_MARGIN_PX, this.worldSize().width - PATROL_MARGIN_PX);
+        const clampY = (y: number) => Phaser.Math.Clamp(y, PATROL_MARGIN_PX, this.worldSize().height - PATROL_MARGIN_PX);
 
         const points: { x: number; y: number }[] = [];
         let x = this.ship.x;
@@ -961,11 +970,11 @@ export class AiUnitController {
 
         let steerX = 0;
         if (x < margin && dirX < 0) steerX = 1;
-        else if (x > world.WIDTH - margin && dirX > 0) steerX = -1;
+        else if (x > this.worldSize().width - margin && dirX > 0) steerX = -1;
 
         let steerY = 0;
         if (y < margin && dirY < 0) steerY = 1;
-        else if (y > world.HEIGHT - margin && dirY > 0) steerY = -1;
+        else if (y > this.worldSize().height - margin && dirY > 0) steerY = -1;
 
         if (steerX === 0 && steerY === 0) return false;
 
@@ -1001,7 +1010,7 @@ export class AiUnitController {
     // world centre (keeps the ship from cranking itself into a wall).
     private sideTowardCenter(targetPos: { x: number; y: number }): number {
         const toCenter = Phaser.Math.RadToDeg(
-            Math.atan2(world.HEIGHT / 2 - this.ship.y, world.WIDTH / 2 - this.ship.x),
+            Math.atan2(this.worldSize().height / 2 - this.ship.y, this.worldSize().width / 2 - this.ship.x),
         );
         const delta = Phaser.Math.Angle.WrapDegrees(toCenter - this.bearingTo(targetPos));
         return delta >= 0 ? 1 : -1;

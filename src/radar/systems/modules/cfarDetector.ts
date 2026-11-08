@@ -5,8 +5,10 @@ import {
   CFAR_THRESHOLD_FACTOR,
   CLUTTER_CELL_PX,
   CLUTTER_SAMPLE_TTL_MS,
+  MTI_ACTIVATION_DENSITY,
   RADAR_FALSE_ALARM_RATE,
 } from '../../data/radarGameSettings';
+import { dopplerNotchGain } from '../../data/signalPath';
 
 type ClutterCell = { density: number; at: number };
 
@@ -96,6 +98,35 @@ export class CfarDetector {
   // clutter, not how many times the amplitude test would raise the bar.
   clutterDensity(point: { x: number; y: number }, now: number): number {
     return this.localDensity(point, now);
+  }
+
+  // The Doppler clutter filter's pass fraction for an echo at `point` moving
+  // at `radialSpeed` (px per physics step, along the line of sight). The
+  // filter is only switched into a cell the map says holds clutter — at the
+  // same density the MTI gate wakes at — because a notch costs whatever
+  // happens to sit at zero radial speed, and in clear space there is no
+  // clutter there to be worth that. Where it is in, the notch
+  // (signalPath.dopplerNotchGain) takes a hull flying across the beam down
+  // with the rock, gas or chaff it is hiding among.
+  //
+  // The switch reads the clutter map at the echo's own cell as well as the
+  // CFAR window around it. The window leaves the cell under test out so a
+  // target cannot raise its own threshold, but that guard has no business
+  // here: only clutter (rock, gas, chaff) is ever logged into the map, never
+  // a hull, so a cell's own entry is exactly what a clutter-map MTI keys on —
+  // and a small patch of clutter, a fresh chaff cloud above all, may fill
+  // that one cell and little around it.
+  notchGain(point: { x: number; y: number }, radialSpeed: number, now: number): number {
+    const density = Math.max(this.cellDensity(point, now), this.localDensity(point, now));
+    if (density < MTI_ACTIVATION_DENSITY) return 1;
+    return dopplerNotchGain(radialSpeed);
+  }
+
+  // What the clutter map holds for the one cell `point` lies in, 0 if
+  // nothing live is logged there.
+  private cellDensity(point: { x: number; y: number }, now: number): number {
+    const cell = this.cells.get(this.key(point.x, point.y));
+    return cell && now - cell.at <= CLUTTER_SAMPLE_TTL_MS ? cell.density : 0;
   }
 
   // Thermal false alarm: the receiver's own noise can cross the detection

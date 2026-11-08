@@ -17,11 +17,13 @@ import { FireControl } from "./fireControl";
 import { BeamHit, RadarReturn } from "../data/radarReturn";
 import {
     beamGain,
+    chaffCellCrossSection,
     crossSection,
     emissionSignal,
     gasTransmission,
     isDetected,
     jammerSignal,
+    radialSpeed,
     scanLossFactor,
     specularFactor,
     beamPattern,
@@ -39,11 +41,13 @@ import { RadarEventEmitter } from "./game/radarEventEmitter";
 
 import {
     CLUTTER_GAS_DENSITY,
+    CLUTTER_CHAFF_DENSITY,
     CLUTTER_TERRAIN_DENSITY,
     JAMMER_HUD_STANDBY_COLOR,
     JAMMER_STT_DEGRADE_PROB,
     MAX_TWS_TRACKS,
     RADAR_BEAM_WIDTH_DEG,
+    RADAR_PULSE_LENGTH_PX,
     RADAR_DEFAULT_RANGE_PX,
     IFF_MATE_PPLI_PX,
     LINK_TRACK_MIN_AGE_SCANS,
@@ -53,6 +57,7 @@ import {
     STT_BEAM_DEG,
     STT_BEAM_RAY_SPACING_DEG,
     STT_LOCK_BREAK_FRAMES,
+    STT_RANGE_GATE_PX,
     TRACK_STT_COURSE_WINDOW_FRAMES,
     TRACK_STT_MAX_MISSED_FRAMES,
     TRACK_STT_MIN_COURSE_SPEED_PX,
@@ -784,44 +789,37 @@ export class Radar {
         const jamming = this.detectJamming(targets, [pulse.line], ownerPos);
         if (jamming) this.sweepJamming = jamming;
 
-        // Ship, terrain and chaff returns compete for the beam — the nearer
-        // reflector wins the ray (firstReflector). The pencil ray is its own
+        // What the ray lights up (reflectorsAlong). The pencil ray is its own
         // beam boresight, so hits are pattern-weighted at the pencil's width.
-        const first = this.firstReflector(
-            pulse.line, ownerPos, targets, terrain, decoyCircles, pulseDirection, RADAR_BEAM_WIDTH_DEG,
+        const lit = this.reflectorsAlong(
+            pulse.line, ownerPos, targets, terrain, decoyCircles, pulseDirection, RADAR_BEAM_WIDTH_DEG, gasVolumes,
         );
 
-        if (first?.kind === 'terrain') {
+        if (lit.terrain) {
             // Ground mapping is a picture, not a track, and the picture stops at
             // the rated range - the beam reaching past it paints nothing. Gas
             // dims what is inside exactly as it dims a contact.
-            if (this.withinDisplayRange(ownerPos, first.point)
-                && !this.receiver.isAbsorbedByGas(ownerPos, first.point, gasVolumes)) {
-                this.terrainMapper.addSample(first.point, first.normal, ownerPos, this.scene.time.now);
+            if (this.withinDisplayRange(ownerPos, lit.terrain.point)
+                && !this.receiver.isAbsorbedByGas(ownerPos, lit.terrain.point, gasVolumes)) {
+                this.terrainMapper.addSample(lit.terrain.point, lit.terrain.normal, ownerPos, this.scene.time.now);
                 // Ground clutter: whatever the ground map is painting here is
                 // also raising the floor a ship return here must clear.
-                this.cfarDetector.addClutter(first.point, CLUTTER_TERRAIN_DENSITY, this.scene.time.now);
+                this.cfarDetector.addClutter(lit.terrain.point, CLUTTER_TERRAIN_DENSITY, this.scene.time.now);
             }
-        } else if (first?.kind === 'decoy') {
-            // The chaff cloud's echo enters the tracking pipeline like a
-            // contact: same energy budget, same clustering, and the tracking
-            // computer cannot tell it from a hull — a false track is the
-            // whole point of throwing chaff.
-            this.sweepBuffer.push({
-                point: first.point,
-                crossSection: decoySettings.CROSS_SECTION,
-                transmission: this.receiver.gasRoundTrip(ownerPos, first.point, gasVolumes),
-            });
-        } else if (first?.kind === 'ship') {
-            // Gas only weakens it, so it goes into the hit's signal
-            // budget instead, to be weighed against range and hull size when the
-            // sweep is processed.
-            this.sweepBuffer.push({
-                point: first.point,
-                crossSection: first.crossSection,
-                transmission: this.receiver.gasRoundTrip(ownerPos, first.point, gasVolumes),
-            });
         }
+        if (lit.chaff) {
+            // The cloud's echo goes into the sweep like any reflection — and
+            // the cloud is logged as the zero-Doppler clutter it is, across
+            // the whole run of the ray through it, so the clutter filter
+            // switches in around it (and its own echo, sitting still, is the
+            // first thing that filter takes out).
+            this.sweepBuffer.push(...lit.chaff.hits);
+            this.logChaffClutter(lit.chaff);
+        }
+        // Gas and chaff only weaken a hull's echo, so they go into the hit's
+        // signal budget, to be weighed against range and hull size when the
+        // sweep is processed.
+        if (lit.ship) this.sweepBuffer.push(lit.ship);
 
         // Volume clutter: gas returns a diffuse floor across the cells it
         // occupies, logged along its spine rather than gated by this frame's
@@ -878,11 +876,13 @@ export class Radar {
                     : this.receiver.processHits(
                         this.sweepBuffer, ownerPos, this.range, scanGain,
                         point => this.cfarDetector.noiseFloorMultiplier(point, now),
+                        (point, speed) => this.cfarDetector.notchGain(point, speed, now),
                     );
             } else {
                 processed = this.receiver.processHits(
                     this.sweepBuffer, ownerPos, this.range, scanGain,
                     point => this.cfarDetector.noiseFloorMultiplier(point, now),
+                    (point, speed) => this.cfarDetector.notchGain(point, speed, now),
                 );
             }
             // Every echo the sweep caught, measured before the detector
@@ -997,43 +997,41 @@ export class Radar {
             this.radarRenderer?.renderJammerCone(graphics, ownerPos, shipDirection, this.range);
         }
 
-        // Collect every ship return in the beam. Terrain and chaff compete
-        // ray by ray under the same nearest-wins rule as the sweep
-        // (firstReflector): where terrain is nearer it paints the ground map
-        // and shadows whatever is behind it, so a target sliding behind a rock
-        // starves the lock; chaff nearer than the target hides it behind an
-        // echo of its own.
+        // Collect every return in the beam, ray by ray (reflectorsAlong):
+        // where terrain is nearer it paints the ground map and shadows
+        // whatever is behind it, so a target sliding behind a rock starves the
+        // lock. Chaff in the beam echoes and lets the beam through, so the
+        // cloud and the hull both answer, and both land in the tracking gate:
+        // the gate follows their energy, which far out is the cloud's.
         const rawHits: BeamHit[] = [];
         for (const line of beamLines) {
-            const first = this.firstReflector(line, ownerPos, targets, terrain, decoyCircles, lockDir, beamWidth);
+            const lit = this.reflectorsAlong(
+                line, ownerPos, targets, terrain, decoyCircles, lockDir, beamWidth, gasVolumes,
+            );
 
-            if (first?.kind === 'terrain') {
-                if (this.withinDisplayRange(ownerPos, first.point)
-                    && !this.receiver.isAbsorbedByGas(ownerPos, first.point, gasVolumes)) {
-                    this.terrainMapper.addSample(first.point, first.normal, ownerPos, this.scene.time.now);
+            if (lit.terrain) {
+                if (this.withinDisplayRange(ownerPos, lit.terrain.point)
+                    && !this.receiver.isAbsorbedByGas(ownerPos, lit.terrain.point, gasVolumes)) {
+                    this.terrainMapper.addSample(lit.terrain.point, lit.terrain.normal, ownerPos, this.scene.time.now);
                 }
-            } else if (first?.kind === 'decoy') {
-                // The cloud's echo is a return like any other — it can land
-                // inside the gate and drag the lock, or starve it entirely if
-                // the target sits behind the cloud.
-                rawHits.push({
-                    point: first.point,
-                    crossSection: decoySettings.CROSS_SECTION,
-                    transmission: this.receiver.gasRoundTrip(ownerPos, first.point, gasVolumes),
-                });
-            } else if (first?.kind === 'ship') {
-                // Chaff between the antenna and the target has already lost
-                // the ray above; gas only costs it energy, which the
-                // concentrated STT beam has more of to spend. Starved frames
-                // feed the lock-break counter below, so a target that drags
-                // the lock through a thick enough cloud can still shake it.
-                rawHits.push({
-                    point: first.point,
-                    crossSection: first.crossSection,
-                    transmission: this.receiver.gasRoundTrip(ownerPos, first.point, gasVolumes),
-                });
             }
+            if (lit.chaff) {
+                rawHits.push(...lit.chaff.hits);
+                this.logChaffClutter(lit.chaff);
+            }
+            // Gas and chaff only cost a hull energy, which the concentrated
+            // STT beam has more of to spend.
+            if (lit.ship) rawHits.push(lit.ship);
         }
+
+        // The range gate: a tracker listens only to the few range cells either
+        // side of where it expects the target, so only the echoes in there
+        // can steer the lock. That is what makes chaff a contest at the hull
+        // rather than across the whole cloud: what competes with the hull is
+        // the slice of cloud that shares its gate.
+        const gateRange = Phaser.Math.Distance.BetweenPoints(ownerPos, aimPoint);
+        const gatedHits = rawHits.filter(hit =>
+            Math.abs(Phaser.Math.Distance.BetweenPoints(ownerPos, hit.point) - gateRange) <= STT_RANGE_GATE_PX);
 
         // STT energy overpowers the jammer, so returns are not spoofed — but a
         // burst that still out-shouts the lock's echo has a chance to swallow
@@ -1043,18 +1041,18 @@ export class Radar {
         // hull: burn-through protects a lock the old flat chance degraded
         // regardless of geometry.
         const jamming = this.detectJamming(targets, beamLines, ownerPos);
-        let hits = rawHits;
+        let hits = gatedHits;
         let contest: JammingContest | null = null;
         if (jamming) {
             const jam = jammerSignal(jamming.range, this.range);
-            const signal = this.receiver.dwellSignal(rawHits, ownerPos, this.range, sttGain);
+            const signal = this.receiver.dwellSignal(gatedHits, ownerPos, this.range, sttGain);
             const swallow = JAMMER_STT_DEGRADE_PROB * (signal > 0 ? Math.min(jam / signal, 1) : 1);
             if (Math.random() < swallow) hits = [];
             contest = {
                 bearingDeg: jamming.bearingDeg,
                 jammerSignal: jam,
                 echoSignal: signal,
-                jammed: hits.length === 0 && rawHits.length > 0,
+                jammed: hits.length === 0 && gatedHits.length > 0,
                 spoofBearingDeg: null,
             };
         }
@@ -1087,6 +1085,7 @@ export class Radar {
             minCourseSpeed: TRACK_STT_MIN_COURSE_SPEED_PX,
             courseWindow: TRACK_STT_COURSE_WINDOW_FRAMES,
             courseFromMeasurements: true,
+            energyGate: true,
         });
 
         // Track missed-frame counter for lock-break logic.
@@ -1248,7 +1247,12 @@ export class Radar {
             // not the beam itself, so it does not earn the lock warning. Only a
             // ship the main beam is actually resting on gets that.
             const locked = isLocked && inMainBeam;
-            entity.radar.rwrReceiver.receive(String(this.owner?.id ?? 'unknown'), bearingDeg, locked, now);
+            // A lock that is guiding a VIM-177 sounds different from one that
+            // is only tracking: the target's RWR reads it as the missile.
+            const signature = locked && this.fireControl.isGuidingSarh() ? 'vim177-illuminator' : 'ship-radar';
+            entity.radar.rwrReceiver.receive(
+                String(this.owner?.id ?? 'unknown'), bearingDeg, locked, now, false, signature,
+            );
         }
     }
 
@@ -1308,14 +1312,19 @@ export class Radar {
         }
     }
 
-    // What the ray struck first: terrain, a chaff cloud, or a ship hull — the
-    // nearer reflector wins. Terrain shadows ships and is handed to the
-    // ground map; a chaff cloud is a reflector like any other, so nearer than
-    // the target it hides it behind an echo of its own (and paints a contact —
-    // that is what chaff is for); a nearer ship return masks both. Shared by
-    // the search sweep and the STT stare, which do different things with the
-    // answer (the sweep also logs ground clutter off the terrain it paints).
-    private firstReflector(
+    // What one ray of the beam lights up. Terrain is solid: nearer than
+    // everything else it wins the ray outright, shadows whatever is behind it
+    // and is handed to the ground map. A hull is solid too — the ray stops on
+    // it. A chaff cloud is not: it is a volume of dipoles, so a ray crossing
+    // it brings back the cloud's own echo (one resolution cell's worth of it,
+    // signalPath.chaffCellCrossSection — brighter the further out it is seen)
+    // *and* carries on, dimmed, to whatever hull is behind it. Both echoes
+    // then compete on equal terms in the receiver and the tracking gate; which
+    // one the radar believes is settled by energy, not by an occlusion rule.
+    // Shared by the search sweep and the STT stare, which do different things
+    // with the answer (the sweep also logs ground clutter off the terrain it
+    // paints).
+    private reflectorsAlong(
         line: Phaser.Geom.Line,
         ownerPos: { x: number; y: number },
         targets: Entity[],
@@ -1323,32 +1332,56 @@ export class Radar {
         decoyCircles: Phaser.Geom.Circle[],
         beamCentreDeg: number,
         beamWidthDeg: number,
-    ):
-        | { kind: 'terrain'; point: Phaser.Math.Vector2; normal: { x: number; y: number } }
-        | { kind: 'decoy'; point: Phaser.Math.Vector2 }
-        | { kind: 'ship'; point: Phaser.Math.Vector2; crossSection: number }
-        | null {
+        gasVolumes: GasVolume[],
+    ): {
+        terrain: { point: Phaser.Math.Vector2; normal: { x: number; y: number } } | null;
+        // The cloud's echo, and the points where the ray enters and leaves it
+        // — where the cloud deposits its clutter.
+        chaff: { hits: BeamHit[]; entry: Phaser.Math.Vector2; exit: Phaser.Math.Vector2 } | null;
+        ship: BeamHit | null;
+    } {
         const shipHit = this.nearestHit(line, ownerPos, targets, beamCentreDeg, beamWidthDeg);
         const terrainHit = this.nearestHit(line, ownerPos, terrain, beamCentreDeg, beamWidthDeg);
-        const decoyEcho = this.nearestDecoyEcho(line, ownerPos, decoyCircles);
-        const distSqOf = (hit: { point: Phaser.Math.Vector2 } | null): number =>
-            hit
-                ? Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, hit.point.x, hit.point.y)
+        const cloud = this.nearestChaffCrossing(line, ownerPos, decoyCircles);
+        const distSqOf = (point: { x: number; y: number } | undefined): number =>
+            point
+                ? Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, point.x, point.y)
                 : Infinity;
-        const shipDistSq = distSqOf(shipHit);
-        const terrainDistSq = distSqOf(terrainHit);
-        const decoyDistSq = distSqOf(decoyEcho);
+        const shipDistSq = distSqOf(shipHit?.point);
+        const terrainDistSq = distSqOf(terrainHit?.point);
+        const cloudDistSq = distSqOf(cloud?.entry);
 
-        if (terrainHit && terrainDistSq <= shipDistSq && terrainDistSq <= decoyDistSq) {
-            return { kind: 'terrain', point: terrainHit.point, normal: terrainHit.normal };
+        if (terrainHit && terrainDistSq <= shipDistSq && terrainDistSq <= cloudDistSq) {
+            return { terrain: { point: terrainHit.point, normal: terrainHit.normal }, chaff: null, ship: null };
         }
-        if (decoyEcho && decoyDistSq < shipDistSq) {
-            return { kind: 'decoy', point: decoyEcho.point };
-        }
-        if (shipHit) {
-            return { kind: 'ship', point: shipHit.point, crossSection: shipHit.crossSection };
-        }
-        return null;
+
+        const gas = (point: { x: number; y: number }): number =>
+            this.receiver.gasRoundTrip(ownerPos, point, gasVolumes);
+        // The cloud answers only where the ray reaches it before any hull or
+        // rock stops the ray, and only up to where the ray stops.
+        const chaffLit = cloud !== null && cloudDistSq < shipDistSq && cloudDistSq < terrainDistSq;
+        const stopPx = Math.sqrt(Math.min(shipDistSq, terrainDistSq));
+        const chaff = chaffLit && cloud
+            ? {
+                hits: this.chaffCells(cloud, ownerPos, stopPx, beamCentreDeg, beamWidthDeg, gas),
+                entry: cloud.entry,
+                exit: cloud.exit,
+            }
+            : null;
+
+        // A hull the ray reaches through the cloud pays for both crossings.
+        const shipVisible = shipHit !== null && shipDistSq < terrainDistSq;
+        const throughChaff = chaffLit ? decoySettings.ONE_WAY_TRANSMISSION ** 2 : 1;
+        const ship: BeamHit | null = shipVisible && shipHit
+            ? {
+                point: shipHit.point,
+                crossSection: shipHit.crossSection,
+                transmission: gas(shipHit.point) * throughChaff,
+                radialSpeed: radialSpeed(ownerPos, shipHit.point, shipHit.velocity),
+            }
+            : null;
+
+        return { terrain: null, chaff, ship };
     }
 
     // Ships carry a radar — and so an RWR that can hear us and a jammer that
@@ -1373,8 +1406,13 @@ export class Radar {
         targets: Entity[],
         beamCentreDeg: number,
         beamWidthDeg: number,
-    ): { point: Phaser.Math.Vector2; crossSection: number; normal: { x: number; y: number } } | null {
-        let nearest: { point: Phaser.Math.Vector2; crossSection: number; normal: { x: number; y: number } } | null = null;
+    ): {
+        point: Phaser.Math.Vector2;
+        crossSection: number;
+        normal: { x: number; y: number };
+        velocity: { x: number; y: number };
+    } | null {
+        let nearest: ReturnType<Radar['nearestHit']> = null;
         let nearestDistSq = Infinity;
 
         for (const target of targets) {
@@ -1417,6 +1455,10 @@ export class Radar {
                         * specularFactor({ x: beamDirX, y: beamDirY }, normal)
                         * pattern,
                     normal,
+                    // What the echo's Doppler is measured off: the body's own
+                    // motion (px per physics step). A rock that drifts has one
+                    // too; nothing in the clutter map pretends otherwise.
+                    velocity: (target.body as MatterJS.BodyType | null)?.velocity ?? { x: 0, y: 0 },
                 };
             }
         }
@@ -1424,30 +1466,87 @@ export class Radar {
         return nearest;
     }
 
-    // Where the beam first enters the nearest chaff cloud, or null. The echo
-    // comes off the cloud's near side — the resolution cell cannot see into
-    // it — so the contact paints at the entry point and competes by that
-    // range, the same as a terrain or hull return would.
-    private nearestDecoyEcho(
+    // The run of range cells a ray lights inside a cloud, from where it goes
+    // in to where it comes out — or to where the ray stops on a hull or a rock
+    // inside it. One echo per cell (RADAR_PULSE_LENGTH_PX deep), each at the
+    // middle of its cell and priced as one cell's worth of dipoles
+    // (signalPath.chaffCellCrossSection), weighted by the beam pattern at its
+    // bearing like any other hit.
+    private chaffCells(
+        cloud: { entry: Phaser.Math.Vector2; exit: Phaser.Math.Vector2 },
+        ownerPos: { x: number; y: number },
+        stopPx: number,
+        beamCentreDeg: number,
+        beamWidthDeg: number,
+        gas: (point: { x: number; y: number }) => number,
+    ): BeamHit[] {
+        const entryRange = Phaser.Math.Distance.BetweenPoints(ownerPos, cloud.entry);
+        const chord = Math.max(0, Math.min(
+            Phaser.Math.Distance.BetweenPoints(cloud.entry, cloud.exit),
+            stopPx - entryRange,
+        ));
+        if (chord === 0) return [];
+        const dirX = (cloud.exit.x - cloud.entry.x) / (Phaser.Math.Distance.BetweenPoints(cloud.entry, cloud.exit) || 1);
+        const dirY = (cloud.exit.y - cloud.entry.y) / (Phaser.Math.Distance.BetweenPoints(cloud.entry, cloud.exit) || 1);
+        const cells: BeamHit[] = [];
+        for (let start = 0; start < chord; start += RADAR_PULSE_LENGTH_PX) {
+            const depth = Math.min(RADAR_PULSE_LENGTH_PX, chord - start);
+            const along = start + depth / 2;
+            const point = new Phaser.Math.Vector2(cloud.entry.x + dirX * along, cloud.entry.y + dirY * along);
+            const bearingDeg = Phaser.Math.RadToDeg(Math.atan2(point.y - ownerPos.y, point.x - ownerPos.x));
+            cells.push({
+                point,
+                crossSection: chaffCellCrossSection(Phaser.Math.Distance.BetweenPoints(ownerPos, point), depth)
+                    * beamPattern(Math.abs(Phaser.Math.Angle.WrapDegrees(bearingDeg - beamCentreDeg)), beamWidthDeg),
+                transmission: gas(point),
+                radialSpeed: 0,
+            });
+        }
+        return cells;
+    }
+
+    // A cloud the beam crossed is clutter all along the run of the ray
+    // through it, not just at its rim: logged at the entry, the middle and the
+    // exit, so the cells it fills are the cells the clutter filter switches
+    // into.
+    private logChaffClutter(chaff: { entry: Phaser.Math.Vector2; exit: Phaser.Math.Vector2 }): void {
+        const now = this.scene.time.now;
+        const middle = { x: (chaff.entry.x + chaff.exit.x) / 2, y: (chaff.entry.y + chaff.exit.y) / 2 };
+        for (const point of [chaff.entry, middle, chaff.exit]) {
+            this.cfarDetector.addClutter(point, CLUTTER_CHAFF_DENSITY, now);
+        }
+    }
+
+    // The nearest chaff cloud this ray passes through, or null: where it goes
+    // in and where it comes out (or ends, if the ray stops inside).
+    private nearestChaffCrossing(
         line: Phaser.Geom.Line,
         ownerPos: { x: number; y: number },
         decoyCircles: Phaser.Geom.Circle[],
-    ): { point: Phaser.Math.Vector2 } | null {
-        let nearest: { point: Phaser.Math.Vector2 } | null = null;
+    ): { entry: Phaser.Math.Vector2; exit: Phaser.Math.Vector2 } | null {
+        let nearest: ReturnType<Radar['nearestChaffCrossing']> = null;
         let nearestDistSq = Infinity;
 
         for (const circle of decoyCircles) {
-            const points = Phaser.Geom.Intersects.GetLineToCircle(line, circle);
-            // A ray crossing a cloud yields one entry point; take the nearest.
-            const point = points?.sort((a, b) =>
-                Phaser.Math.Distance.Squared(line.x1, line.y1, a.x, a.y) -
-                Phaser.Math.Distance.Squared(line.x1, line.y1, b.x, b.y))[0];
-            if (!point) continue;
-            const dSq = Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, point.x, point.y);
-            if (dSq < nearestDistSq) {
-                nearestDistSq = dSq;
-                nearest = { point: new Phaser.Math.Vector2(point.x, point.y) };
-            }
+            const points = Phaser.Geom.Intersects.GetLineToCircle(line, circle) ?? [];
+            // A radar standing inside its own chaff has the cloud all round:
+            // the ray starts in it.
+            const inside = circle.contains(line.x1, line.y1);
+            const crossings = points
+                .map(p => new Phaser.Math.Vector2(p.x, p.y))
+                .sort((a, b) =>
+                    Phaser.Math.Distance.Squared(line.x1, line.y1, a.x, a.y)
+                    - Phaser.Math.Distance.Squared(line.x1, line.y1, b.x, b.y));
+            if (crossings.length === 0 && !inside) continue;
+
+            const entry = inside ? new Phaser.Math.Vector2(line.x1, line.y1) : crossings[0];
+            const exit = inside
+                ? (crossings[0] ?? new Phaser.Math.Vector2(line.x2, line.y2))
+                : (crossings[1] ?? new Phaser.Math.Vector2(line.x2, line.y2));
+            const dSq = Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, entry.x, entry.y);
+            if (dSq >= nearestDistSq) continue;
+            nearestDistSq = dSq;
+            nearest = { entry, exit };
         }
 
         return nearest;

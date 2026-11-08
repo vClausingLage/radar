@@ -73,6 +73,15 @@ type TrackingOptions = {
   // target evidence, so the track's confidence decays and, if the contact
   // never shows radial motion, it ages out like an unmatched one.
   mtiClutterDensity?: (point: { x: number; y: number }) => number;
+  // Single-target tracking (STT): the gate around the one track being
+  // followed does not pick a return, it follows the energy inside it. A real
+  // range/angle tracker's split gate steers to balance the energy in its two
+  // halves, so whatever echoes inside the gate together — the hull and a
+  // chaff cloud it just threw, two ships flying close — pull the track toward
+  // their amplitude-weighted centroid. The louder one wins the gate, and as
+  // the two separate the track goes with it: that is how chaff walks a lock
+  // off a target, and why it only manages it where it out-reflects the hull.
+  energyGate?: boolean;
 };
 
 export class TrackingComputer {
@@ -95,10 +104,14 @@ export class TrackingComputer {
       courseWindow = TRACK_COURSE_WINDOW_SCANS,
       courseFromMeasurements = false,
       mtiClutterDensity,
+      energyGate = false,
     }: TrackingOptions = {},
   ): Track[] {
     this.scan++;
-    const centroids = this.cluster(returns);
+    let centroids = this.cluster(returns);
+    if (energyGate && this.states.length === 1) {
+      centroids = this.fuseGate(centroids, this.predictedPos(this.states[0]));
+    }
     const matched = new Set<number>();
 
     for (const centroid of centroids) {
@@ -188,6 +201,21 @@ export class TrackingComputer {
     }
 
     return centroids;
+  }
+
+  // Everything inside the tracking gate around `gateCenter` becomes one
+  // measurement, at the energy centroid of what is in there (see
+  // TrackingOptions.energyGate); whatever lies outside the gate is left as
+  // it was.
+  private fuseGate(centroids: RadarReturn[], gateCenter: { x: number; y: number }): RadarReturn[] {
+    const inGate: RadarReturn[] = [];
+    const outside: RadarReturn[] = [];
+    for (const c of centroids) {
+      const inside = Phaser.Math.Distance.BetweenPoints(c.point, gateCenter) < TRACK_GATE_RADIUS_PX;
+      (inside ? inGate : outside).push(c);
+    }
+    if (inGate.length <= 1) return centroids;
+    return [this.weightedCentroid(inGate), ...outside];
   }
 
   // Amplitude-weighted centroid — the bearing measurement a monopulse

@@ -14,6 +14,7 @@ import {
   measurementJitterPx,
   returnSignal,
   sameResolutionCell,
+  stcRangePx,
 } from '../../data/signalPath';
 
 export class Receiver {
@@ -43,6 +44,14 @@ export class Receiver {
     return Math.random() > this.gasRoundTrip(from, to, gasVolumes);
   }
 
+  // What one reflection brings into this receiver: the energy budget
+  // (returnSignal) through the receiver's STC gain ramp (stcRangePx), so a
+  // reflector right on top of the antenna arrives no louder than one at the
+  // end of the ramp. Every measurement the receiver makes goes through here.
+  private echoSignal(rangePx: number, ratedRange: number, hit: BeamHit, gain: number): number {
+    return returnSignal(stcRangePx(rangePx), ratedRange, hit.crossSection, hit.transmission, gain);
+  }
+
   // The energy each reflection brought back, one entry per hit, measured
   // before integration, scintillation, CFAR or the detection roll touch it —
   // the same per-hit returnSignal processHits sums, without the decision.
@@ -59,7 +68,7 @@ export class Receiver {
       return {
         bearingDeg: Phaser.Math.RadToDeg(Math.atan2(dy, dx)),
         rangePx,
-        signal: returnSignal(rangePx, ratedRange, hit.crossSection, hit.transmission, gain),
+        signal: this.echoSignal(rangePx, ratedRange, hit, gain),
       };
     });
   }
@@ -84,7 +93,7 @@ export class Receiver {
       for (const hit of group) {
         const dx = hit.point.x - ownerPos.x;
         const dy = hit.point.y - ownerPos.y;
-        total += returnSignal(Math.hypot(dx, dy), ratedRange, hit.crossSection, hit.transmission, gain);
+        total += this.echoSignal(Math.hypot(dx, dy), ratedRange, hit, gain);
       }
       const effective = total / Math.pow(group.length, RADAR_INTEGRATION_GAIN_EXPONENT);
       if (effective > best) best = effective;
@@ -129,12 +138,19 @@ export class Receiver {
   // comparison rather than the floor side. Defaults to a flat 1 (no clutter
   // model) so a caller with nothing to say about the ground picture — a
   // missile seeker, say — is not forced to depend on one.
+  //
+  // `clutterFilter(point, radialSpeed)` is the Doppler half: the fraction of a
+  // hit's energy the clutter filter passes, judged per hit on the echo's own
+  // radial speed (CfarDetector.notchGain). It acts before integration, as a
+  // filter in the signal chain does — a notched hull simply brings less back —
+  // and defaults to passing everything, for a caller without a clutter filter.
   processHits(
     hits: BeamHit[],
     ownerPos: Vector2,
     ratedRange: number,
     gain: number = 1,
     localNoiseFloor: (point: Vector2) => number = () => 1,
+    clutterFilter: (point: { x: number; y: number }, radialSpeed: number) => number = () => 1,
   ): RadarReturn[] {
     const returns: RadarReturn[] = [];
 
@@ -171,7 +187,8 @@ export class Receiver {
         const dx = hit.point.x - ownerPos.x;
         const dy = hit.point.y - ownerPos.y;
         const range = Math.hypot(dx, dy);
-        const signal = returnSignal(range, ratedRange, hit.crossSection, hit.transmission, gain);
+        const signal = this.echoSignal(range, ratedRange, hit, gain)
+          * clutterFilter(hit.point, hit.radialSpeed);
         totalSignal += signal;
         weightedX += hit.point.x * signal;
         weightedY += hit.point.y * signal;

@@ -10,7 +10,7 @@ import { Loadout, Mode } from "../data/types";
 import { RadarRenderer } from "../renderer/radarRenderer";
 
 import { Vector2 } from "../../types";
-import { Missile, ActiveRadarMissile, MISSILE_FLIGHT } from "../../entities/missiles";
+import { Missile, ActiveRadarMissile, SARHMissile, MISSILE_FLIGHT } from "../../entities/missiles";
 import {
     PHYSICS_FPS,
     VIM220_WAYPOINT_FADE_MS,
@@ -331,6 +331,13 @@ export class FireControl {
         missile.owner = ship;
         const noCollideGroup = ship.getMissileNoCollideGroup();
         if (noCollideGroup !== undefined) missile.setCollisionGroup(noCollideGroup);
+    }
+
+    // Whether a VIM-177 this ship launched is still flying on its lock — the
+    // STT is then guiding, not merely tracking, and its emission says so
+    // (rwr.ts 'vim177-illuminator').
+    isGuidingSarh(): boolean {
+        return this.activeMissiles.some(m => m instanceof SARHMissile && m.active);
     }
 
     // Max range (px) of the currently selected weapon, for the range indicator.

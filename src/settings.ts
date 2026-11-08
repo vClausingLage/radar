@@ -11,8 +11,9 @@ export const world = {
 
 // STARFIELD — the sky (entities/starfield.ts). Scenery, invisible to every sensor.
 export const starfieldSettings = {
-    // The 1024 px source picture stretched over the 2500 px world.
-    NEBULA_SCALE: 2.5,
+    // The source picture is stretched over the scene's world, this much larger
+    // than the world's longer side, so its edge never shows at the border.
+    NEBULA_OVERSCAN: 1.024,
     // Canvas filter applied to the source: hides its blocky pixels and baked-in
     // stars, and holds the nebula well below the brightness of the radar's phosphor
     // lines. The hue turn keeps the dimmed core red: dimmed yellow reads as olive,

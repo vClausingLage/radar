@@ -142,6 +142,16 @@ different signal scan to scan. Both make a marginal contact fade in and out
 in bursts across several sweeps, closer to how a real return actually
 behaves than a single fixed number would.
 
+Every echo the ship radar's receiver measures goes through its **sensitivity
+time control** first (`signalPath.stcRangePx`, `RADAR_STC_RANGE_PX`): the
+receiver gain ramps up with R⁴ over the first stretch after each pulse, so
+inside that range an echo is no louder than the same reflector at the ramp's
+end. Without it the two-way range law makes the first range cells absurd — a
+chaff cloud blooming round the radar's own hull would echo hundreds of
+thousands of times the noise floor, through any Doppler notch, and the radar
+would track itself. The missile seeker has no STC; its job is the terminal
+end.
+
 The receiver also owns the way a return can be lost on the path rather than
 at the target:
 
@@ -154,11 +164,23 @@ at the target:
   geometry, not to out-power it. Applied to ship *and* terrain returns, so the
   ground map thins out over gas too.
 
-Chaff is not on this list any more: a decoy cloud is a *reflector* (see
-`Radar.nearestDecoyEcho` and the realism roadmap's chaff item) — it returns
-energy of its own, competes for the beam under the same nearest-wins rule
-terrain does, and paints a false contact the tracking computer cannot tell
-from a hull.
+Chaff is not on this list any more: a decoy cloud is *volume clutter*
+(`Radar.reflectorsAlong`, `Radar.chaffCells`). A ray crossing a cloud brings
+back one echo per range cell (`RADAR_PULSE_LENGTH_PX` deep), each priced by
+`signalPath.chaffCellCrossSection(range, depth)`: the cell's cross-range side
+is R·θ, so the slice of cloud in one cell — and its echo — grows linearly with
+range, while a hull is a point target and does not. The ray also carries on
+through the cloud (`decoySettings.ONE_WAY_TRANSMISSION`, paid twice), so a
+hull behind or inside it still answers. Nothing decides between the two by
+occlusion; they compete on energy. In STT that contest is local: the range
+gate (`STT_RANGE_GATE_PX`) keeps only echoes near the expected range, and
+`TrackingComputer`'s `energyGate` fuses whatever is inside the track gate into
+one measurement at its energy centroid — a split gate balancing its halves.
+Far out (beyond `BURN_THROUGH_REF_PX`-scaled burn-through) the cloud
+dominates and the lock walks onto it as the hull flies clear; close in the
+hull dominates and the lock holds. Every cloud a ray crosses is also logged
+as clutter (`CLUTTER_CHAFF_DENSITY`), which switches the Doppler filter in
+around it (below).
 
 ### `modules/trackingComputer.ts` — `TrackingComputer`
 The heart of the simulation. It builds **tracks purely from geometry** — there
@@ -282,10 +304,38 @@ rate is below the blind speed inside it is rejected as clutter itself — a
 parked hull in clutter never holds a stable track, while the same hull under
 way lifts out.
 
+The Doppler half acts earlier, per echo. Every `BeamHit` carries
+`radialSpeed` — the reflector's own Matter velocity projected on the line of
+sight (`signalPath.radialSpeed`), zero for terrain and chaff — and
+`CfarDetector.notchGain(point, radialSpeed)` is the fraction of its energy the
+clutter filter passes: 1 where the clutter map — the echo's own cell or the
+CFAR window around it — is below `MTI_ACTIVATION_DENSITY` (a
+clutter-map-controlled MTI only filters where it has to; unlike the CFAR
+threshold it may read the cell under test, since only clutter is ever logged
+there, never a hull), else the Gaussian notch `dopplerNotchGain` (`DOPPLER_NOTCH_WIDTH`,
+floor `DOPPLER_NOTCH_FLOOR`, i.e. 30 dB). `Receiver.processHits` multiplies it
+into each hit's signal before integration. So a hull beaming the radar among
+rocks, gas or chaff sinks with the clutter, the same hull in clear space does
+not, and the range law still buys burn-through. Search modes only (RWS, TWS,
+dome); STT does not filter. The VIM-220 seeker (`missileRadar.ts`) runs the
+same notch, switched in when a cloud or a rock's bounds lie within
+`SEEKER_CLUTTER_REACH_PX` of its target.
+
 ### `modules/rwr.ts` — `RwrReceiver`
 Radar Warning Receiver. A passive receiver: when another ship's emission hits
 this ship it records an `RwrContact` (bearing, locked?, jammer?, timestamp).
 Contacts age out after `CONTACT_TTL_MS`. The HUD reads these for the threat display.
+
+Each emission arrives with an `EmitterSignature` — what its pulse train
+measures as — and the RWR's own threat library maps it to a missile
+designation (`RwrContact.missile`): `vim220-seeker` (a VIM-220's active
+seeker, heard at the missile) is **22**; `vim177-illuminator` (an STT lock
+while its owner has a VIM-177 in flight, `FireControl.isGuidingSarh()`) is
+**7**, heard at the shooter, since a semi-active missile emits nothing of its
+own. A plain `ship-radar` is not a missile. The HUD draws a missile as a red
+triangle with its number in vector 7-segment strokes — not Phaser text, since
+every Text object draws 31 `Math.random` values and would shift the seeded
+test dice.
 
 A contact does not require standing in the exact instantaneous beam:
 `Radar.illuminateRwr()` also tests ships off to the side at

@@ -17,6 +17,27 @@ import { RWR_CONTACT_TTL_MS } from '../../data/radarGameSettings';
 // protocol cannot silently drift between the four.
 export const RWR_SEEKER_KEY_PREFIX = 'missile-';
 
+// What an emission's own signal parameters say about its source. A real RWR
+// does not know who is out there; it measures each pulse train's band, pulse
+// width and repetition rate and matches them against a threat library. Here
+// the emitter hands its signature over with the pulse, and the library below
+// is the RWR's — the emitter does not get to decide what it is drawn as.
+//   'ship-radar'         a ship's search or tracking radar
+//   'vim177-illuminator' a ship's STT switched to guidance: a VIM-177 rides the
+//                        energy it reflects off its target, so the lock changes
+//                        character the moment one is in flight. The missile
+//                        itself emits nothing — this is the only trace of it,
+//                        and it points at the shooter.
+//   'vim220-seeker'      a VIM-220's own active seeker, at the missile itself
+export type EmitterSignature = 'ship-radar' | 'vim177-illuminator' | 'vim220-seeker';
+
+// The threat library: signatures that mean a missile is guiding on us, and the
+// number the scope shows for each.
+const MISSILE_THREATS: Partial<Record<EmitterSignature, string>> = {
+  'vim177-illuminator': '7',
+  'vim220-seeker': '22',
+};
+
 export type RwrContact = {
   bearingDeg: number;
   isLocked: boolean;     // true when source is in STT (fire-control lock)
@@ -32,6 +53,10 @@ export type RwrContact = {
   // not displayed, not hunted. Only ever set on a search contact: a lock is
   // never marked friendly (see receive).
   friendly?: boolean;
+  // The threat library's answer for this emission: the missile designation
+  // ('7', '22') when its signature is a missile guiding on us, else unset —
+  // a ship's radar.
+  missile?: string;
 };
 
 export class RwrReceiver {
@@ -48,15 +73,24 @@ export class RwrReceiver {
   // Called by the Radar when it detects an incoming emission from a known
   // bearing. `key` uniquely identifies the emitter (e.g. entity id or
   // missile id as a string) so contacts can be deduplicated; `isJammer`
-  // marks a jamming strobe (registerJammingStrobes in systems/radar.ts).
-  receive(key: string, bearingDeg: number, isLocked: boolean, now: number, isJammer = false): void {
+  // marks a jamming strobe (registerJammingStrobes in systems/radar.ts);
+  // `signature` is what the pulse train measures as (see EmitterSignature).
+  receive(
+    key: string,
+    bearingDeg: number,
+    isLocked: boolean,
+    now: number,
+    isJammer = false,
+    signature: EmitterSignature = 'ship-radar',
+  ): void {
     // A lock is never a friend's: a flight's fire control cannot lock a
     // datalinked wingman (displayedTracks excludes them), so a lock on us is an
     // enemy's however well its bearing lines up with the wingman's - and
     // hiding it would blind EVADE exactly when an enemy shoots from behind
     // the wingman. A missile seeker is never a friend either.
     const friendly = !isLocked && !key.startsWith(RWR_SEEKER_KEY_PREFIX) && (this.friendFilter?.(bearingDeg) ?? false);
-    this.contacts.set(key, { bearingDeg, isLocked, isJammer, lastSeenAt: now, friendly });
+    const missile = MISSILE_THREATS[signature];
+    this.contacts.set(key, { bearingDeg, isLocked, isJammer, lastSeenAt: now, friendly, missile });
   }
 
   // Purge contacts whose signal has not been refreshed within the TTL.
