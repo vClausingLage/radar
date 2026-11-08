@@ -15,20 +15,12 @@ export type Pulse = {
 
 export class Emitter {
   private pulse: Pulse | null = null;
-  // Rated range: the range the radar's energy budget is quoted at, and the one
-  // the interface draws. Not where the pulse stops.
-  private range: number = 0;
   // How far the ray is actually traced, beyond which nobody can hear the pulse
   // and nothing can echo back off it.
   private reach: number = 0;
 
   constructor(range: number) {
-    this.range = range;
     this.reach = illuminationRangePx(range);
-  }
-
-  getRange(): number {
-    return this.range;
   }
 
   getReach(): number {

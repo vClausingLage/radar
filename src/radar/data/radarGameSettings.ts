@@ -19,6 +19,20 @@ export const RADAR_DEFAULT_SWEEP_WIDTH_DEG = 60;
 // per-step speed and per-second burn time into a max-range distance (px).
 export const PHYSICS_FPS = 60;
 
+// ── simulation clock (Game.update) ──
+// The radar, the tracker and the AI count in ticks, not in display frames:
+// every *_FRAMES constant here, the antenna's step per sweep and a ship's
+// turn rate per call were written for 60 of them a second. The scene runs
+// them on this fixed step whatever the display refreshes at, so a 144 Hz
+// monitor gets the same radar and the same opponent as a Steam Deck.
+export const SIM_STEP_MS = 1000 / PHYSICS_FPS;
+// A frame that took longer than this many ticks (a stalled tab) drops the
+// rest rather than catching up in one burst of simulation.
+export const SIM_MAX_TICKS_PER_FRAME = 5;
+// Float slack so a display delivering exactly 1000/60 ms never rounds down to
+// no tick at all.
+export const SIM_TICK_TOLERANCE_MS = 0.05;
+
 // TWS tracks at most this many targets simultaneously.
 export const MAX_TWS_TRACKS = 3;
 
@@ -321,9 +335,6 @@ export const MISSILE_SEEKER_SLEW_RATE_DEG_PER_SEC = 240;
 // Age missiles once per real second regardless of frame rate.
 export const MISSILE_AGE_TICK_MS = 1000;
 
-// Throttle active-radar missile debug logging to this interval.
-export const MISSILE_DEBUG_LOG_INTERVAL_MS = 500;
-
 // Missile age below this value is the boost phase: hold launch heading off the
 // rail before steering.
 export const MISSILE_BOOST_PHASE_MAX_AGE = 2;
@@ -584,8 +595,10 @@ export const SPEED_BUTTON_OFFSET_X_PX = 120;
 // Vertical offsets for warning text stacked above the ship.
 export const RADAR_WARNING_OFFSET_Y_PX = -100;
 export const LOCK_WARNING_OFFSET_Y_PX = -140;
-export const GO_STT_WARNING_OFFSET_Y_PX = -180;
-export const MISSILE_TTA_OFFSET_Y_PX = -220;
+export const SHOT_REFUSED_OFFSET_Y_PX = -180;
+export const SHOT_REFUSED_HINT_OFFSET_Y_PX = -212;
+// How long a refused-shot reason stays on the HUD.
+export const SHOT_REFUSED_SHOW_MS = 2000;
 
 // RWR contact marker sizing. The marker radius is relative to the widget size.
 export const RWR_MARKER_RADIUS_FACTOR = 0.35;

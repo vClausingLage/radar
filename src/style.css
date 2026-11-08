@@ -1,4 +1,15 @@
+html, body {
+    height: 100%;
+    overflow: hidden;
+}
+
 body {
     margin: 0;
     background-color: #101010;
+}
+
+/* An inline canvas sits on the text baseline and leaves a gap below it, which is
+   what gave the page scrollbars and shrank the game inside them. */
+canvas {
+    display: block;
 }

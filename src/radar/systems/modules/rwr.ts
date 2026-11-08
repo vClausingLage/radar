@@ -6,8 +6,8 @@
 // the bearing to the emitter and whether it is in a lock state.
 //
 // In this simulation the signal path is:
-//   Enemy Emitter hits this ship → RadarEventEmitter fires 'rwr-warn'/'rwr-lock'
-//   → RwrReceiver records a RwrContact → InterfaceRenderer displays it.
+//   Enemy Emitter hits this ship → receive() records a RwrContact
+//   → InterfaceRenderer displays it.
 
 import { RWR_CONTACT_TTL_MS } from '../../data/radarGameSettings';
 
@@ -103,11 +103,5 @@ export class RwrReceiver {
     if (all.length === 0) return null;
     // Locked contacts take priority; among equal priority, bearing is irrelevant.
     return all.sort((a, b) => (b.isLocked ? 1 : 0) - (a.isLocked ? 1 : 0))[0];
-  }
-
-  // Placeholder: missile time-to-active text for HUD.
-  // Populated when a missile is fired at this ship.
-  getLastFiredMissileHudText(): string | null {
-    return null;
   }
 }

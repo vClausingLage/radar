@@ -7,6 +7,7 @@ import { createGasCloudFactory } from "../entities/gasCloudFactory";
 import { createFlightFactory } from "../entities/flightFactory";
 import { Terrain } from "../radar/data/types";
 import { GasCloud } from "../entities/gasCloud";
+import { Starfield } from "../entities/starfield";
 import { PlayerShip, Target } from "../entities/ship";
 import { CAMERA_ZOOM, playerShipSettings, VISIBILITY_FADE_BAND_PX, VISIBILITY_RANGE_PX, world } from "../settings";
 import { createMissileFactory, MISSILE_SPAWNED_EVENT } from "../entities/missileFactory";
@@ -17,10 +18,18 @@ import { AudioPlayer } from "../audio/audioPlayer";
 import { RadarVoice } from "../audio/radarVoice";
 import { ShipStartup } from "../audio/startup";
 import { MissileCallout } from "../audio/missileCallout";
+import { SIM_MAX_TICKS_PER_FRAME, SIM_STEP_MS, SIM_TICK_TOLERANCE_MS } from "../radar/data/radarGameSettings";
+
+// The briefing column: where it sits on screen, how wide, how long it stays.
+const BRIEFING_LEFT_PX = 16;
+const BRIEFING_TOP_PX = 84;
+const BRIEFING_WIDTH_PX = 380;
+const BRIEFING_SHOW_MS = 25000;
+const EDGE_WARNING_TOP_PX = 200;
 
 // Anything in the world whose visibility fades with distance from the player:
-// ships and terrain (tracked below) plus one-off overlays a level registers
-// via registerFadeAsset() (the dish station's antenna picture).
+// ships and terrain (tracked below) plus the groups a level registers via
+// registerFadeGroup() (pad + surface, rock + dish).
 export type FadeableAsset = {
   setAlpha(value: number): unknown;
   getBounds(): Phaser.Geom.Rectangle;
@@ -73,8 +82,8 @@ export default class Game extends Phaser.Scene
   protected missileCallout?: MissileCallout;
   // Cold-start procedure — only run when requiresColdStart() opts in.
   private startup?: ShipStartup;
-  // Overlays that aren't ships or terrain but still fade with distance
-  // (see registerFadeAsset()).
+  // Groups that aren't ships or terrain but still fade with distance
+  // (see registerFadeGroup()).
   private extraFadeAssets: FadeableAsset[] = [];
   // Members of a fade group: faded through the group, never on their own.
   private groupedFadeAssets = new Set<FadeableAsset>();
@@ -82,6 +91,19 @@ export default class Game extends Phaser.Scene
   // fades with distance too. Its explosion is a separate sprite and does not —
   // a detonation is bright enough to be seen from anywhere on the map.
   private missiles = new Set<Missile>();
+  // Time owed to the simulation, and the fixed ticks this frame runs (see
+  // SIM_STEP_MS). A subclass that steps a radar of its own steps it that many
+  // times, with SIM_STEP_MS.
+  private simClockMs = 0;
+  // The briefing column, kept so B can bring it back.
+  private briefing?: Phaser.GameObjects.Text;
+  // The free-play verdict has been given (see hasObjective()).
+  private objectiveMet = false;
+  // "World edge" warning, shown while the ship presses against the boundary.
+  private edgeWarning?: Phaser.GameObjects.Text;
+  protected simTicks = 0;
+  // How much simulated time each of this frame's ticks carries.
+  protected simStepMs = SIM_STEP_MS;
 
   constructor(key = 'Game')
   {
@@ -99,7 +121,6 @@ export default class Game extends Phaser.Scene
     this.load.image('ship', 'ship.png');
     this.load.image('rwr', 'rwr_screen.png');
     this.load.image('missile', 'missile.png');
-    this.load.image('explosion', 'explosion.png');
     this.load.image('asteroid', 'asteroid.png');
     this.load.image('flares', 'flares.png');
     this.load.image('chaff', 'chaff.png');
@@ -141,6 +162,13 @@ export default class Game extends Phaser.Scene
   // Scenes that open with the ship powered down on the pad (campaign levels)
   // override this to run the cold-start procedure as their first step, before
   // flight controls are handed over. Free-play scenarios start ready to fly.
+  // Whether the scene dresses the world: the sky and the detonation effects.
+  // Pure looks, no sensor sees them; a scene that measures the simulation (the
+  // test scene) turns them off so they cost it no frame time and no dice.
+  protected hasScenery(): boolean {
+    return true;
+  }
+
   protected requiresColdStart(): boolean {
     return false;
   }
@@ -158,14 +186,21 @@ export default class Game extends Phaser.Scene
     this.extraFadeAssets = [];
     this.groupedFadeAssets = new Set();
     this.missiles = new Set();
+    this.simClockMs = 0;
+    this.simTicks = 0;
     // The scene's event bus outlives a restart, so the listener comes off at
     // shutdown — otherwise every run would add another one.
     const onMissileSpawned = (missile: Missile) => this.trackMissile(missile);
     this.events.on(MISSILE_SPAWNED_EVENT, onMissileSpawned);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.events.off(MISSILE_SPAWNED_EVENT, onMissileSpawned));
+    this.briefing = undefined;
+    this.objectiveMet = false;
+    this.edgeWarning = undefined;
     this.input.keyboard?.on('keydown-M', this.onMenu);
+    this.input.keyboard?.on('keydown-B', this.revealBriefing);
     this.input.gamepad?.on('down', this.onPadButtonDown);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.keyboard?.off('keydown-B', this.revealBriefing);
       this.input.keyboard?.off('keydown-M', this.onMenu);
       this.input.gamepad?.off('down', this.onPadButtonDown);
     });
@@ -180,9 +215,9 @@ export default class Game extends Phaser.Scene
 
     // WORLD
     this.matter.world.setBounds(0, 0, this.world.width, this.world.height);
-    this.physicsRenderer = new PhysicsRenderer(this);
+    this.physicsRenderer = new PhysicsRenderer(this, this.hasScenery());
     // ADD IMAGES
-    this.add.image(0, 0, 'universe').setOrigin(0).setScale(2.5);
+    if (this.hasScenery()) new Starfield(this);
     // GRAPHICS
     this.graphics = this.add.graphics();
 
@@ -280,13 +315,6 @@ export default class Game extends Phaser.Scene
     return body;
   }
 
-  // Opt a one-off visual (a station overlay, ...) into the same distance-based
-  // fade that ships and terrain already get for free by virtue of being
-  // tracked in this.targets/this.terrain.
-  protected registerFadeAsset(asset: FadeableAsset): void {
-    this.extraFadeAssets.push(asset);
-  }
-
   // Tie assets together so they fade as one (a pad and the ground under it).
   // Members already tracked elsewhere — terrain, ships — are taken out of
   // their own fade and follow the group's from here on.
@@ -313,32 +341,55 @@ export default class Game extends Phaser.Scene
 
   protected briefingMessage(): string {
     const messages: Record<ScenarioKey, string> = {
-      duel: 'There is an inactive drone in front of you. Use it to practise different radar modes and weapons.',
-      occluded: 'There is an inactive drone behind the asteroid. Use your VIM-220 with waypoints to destroy it.',
+      duel: 'There is a drone in front of you. It cannot move, but it works its radar, chaff and jammer to defend itself. Use it to practise different radar modes and weapons.',
+      occluded: 'There is a stationary drone behind the asteroid, out of your missiles\' reach from here. Close in, then use your VIM-220 with waypoints to go round the rock. It defends itself with chaff and jammer.',
       skirmish: 'Free scenario.',
     };
     return messages[this.scenario];
   }
 
-  // Short scenario briefing, pinned to the camera and removed after 10 s.
+  // Scenario briefing: a column down the left edge, below the tasking lines,
+  // clear of the radio subtitles along the top and of the ship in the middle.
+  // It stays up for BRIEFING_SHOW_MS and comes back on B - it is the only
+  // statement of the task, and the radio talks over the first reading of it.
   protected showBriefing(): void {
-    const cam = this.cameras.main;
-    const briefing = this.add.text(cam.width / 2, 60, this.briefingMessage(), {
-      font: '20px Courier',
+    this.briefing?.destroy();
+    this.briefing = this.add.text(0, 0, this.briefingMessage() + '\n\n[B] show this again', {
+      font: '16px Courier',
       color: '#00ff00',
-      align: 'center',
       backgroundColor: '#000000aa',
-      padding: { x: 16, y: 10 },
-      wordWrap: { width: Math.min(cam.width - 80, 700) },
-    }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(1000);
+      padding: { x: 12, y: 8 },
+      wordWrap: { width: BRIEFING_WIDTH_PX },
+    }).setOrigin(0, 0).setScrollFactor(0).setDepth(1000);
+    this.revealBriefing();
+  }
 
+  private revealBriefing = () => {
+    const briefing = this.briefing;
+    if (!briefing?.active) return;
+    this.tweens.killTweensOf(briefing);
+    briefing.setAlpha(1).setVisible(true);
     this.tweens.add({
       targets: briefing,
       alpha: 0,
-      delay: 9000,
+      delay: BRIEFING_SHOW_MS,
       duration: 1000,
-      onComplete: () => briefing.destroy(),
+      onComplete: () => briefing.setVisible(false),
     });
+  };
+
+  // Put a camera-fixed object at a screen position whatever the zoom. A
+  // scroll-factor-0 object is still zoomed about the camera centre, so the
+  // screen point is mapped back to the local point that lands on it (the same
+  // correction InterfaceRenderer.positionRwr() makes), and the object is
+  // counter-scaled to keep its size.
+  protected pinToScreen(object: Phaser.GameObjects.Text, screenX: number, screenY: number): void {
+    const cam = this.cameras.main;
+    const centreX = cam.width * cam.originX;
+    const centreY = cam.height * cam.originY;
+    object
+      .setScale(1 / cam.zoom)
+      .setPosition((screenX - centreX) / cam.zoom + centreX, (screenY - centreY) / cam.zoom + centreY);
   }
 
   // Whether the ship is up and flyable: always in free play, and in the
@@ -358,6 +409,11 @@ export default class Game extends Phaser.Scene
     player.setCurrentSpeed(0);
     player.shutDownEngines();
     player.controller?.setThrottleLocked(true);
+    // Nor is there power for the radar, the weapons, the chaff or the jammer:
+    // a transmitter that radiated before the battery was on would warn every
+    // listener of a ship that is supposed to be a cold hull on the pad.
+    player.controller?.setSystemsLocked(true);
+    player.radar.enterEmcon();
 
     const ui = player.radar.getInterfaceRenderer();
     ui?.setFlightControlsVisible(false);
@@ -372,6 +428,8 @@ export default class Game extends Phaser.Scene
         ui?.destroyStartupPanel();
         ui?.setFlightControlsVisible(true);
         player.controller?.setThrottleLocked(false);
+        player.controller?.setSystemsLocked(false);
+        player.radar.enterRws();
       },
     });
 
@@ -456,14 +514,32 @@ export default class Game extends Phaser.Scene
       this.registerTerrain(this.add.asteroid({
         position: { x, y },
         direction: Phaser.Math.Between(0, 359),
-        speed: Phaser.Math.FloatBetween(0.2, 1.2),
+        // A drifting rock, not a missile: per frame, 0.02-0.12 is 1-7 px/s,
+        // about the ship's own pace. At 0.2-1.2 (12-70 px/s, up to twelve
+        // times the ship) a rock could not be seen coming and ended most runs
+        // by ramming whoever happened to be in the way, the AI ships first.
+        speed: Phaser.Math.FloatBetween(0.02, 0.12),
       }));
     }
   }
 
+  // Fold this frame's time into the simulation clock and say how many fixed
+  // ticks it buys: none on a frame faster than the step, two on one twice as
+  // slow.
+  protected advanceSimClock(deltaMs: number): number {
+    this.simStepMs = SIM_STEP_MS;
+    this.simClockMs += Math.min(deltaMs, SIM_STEP_MS * SIM_MAX_TICKS_PER_FRAME);
+    const ticks = Math.floor((this.simClockMs + SIM_TICK_TOLERANCE_MS) / SIM_STEP_MS);
+    this.simClockMs -= ticks * SIM_STEP_MS;
+    return ticks;
+  }
+
   update(_: number, delta: number)
   {
-    this.graphics?.clear();
+    this.simTicks = this.advanceSimClock(delta);
+    // The scope marks are redrawn by the ticks. A frame that runs none leaves
+    // the last picture standing instead of blanking it for a frame.
+    if (this.simTicks > 0) this.graphics?.clear();
 
     const player = this.player;
     if (!player || !player.active || !player.body) {
@@ -499,24 +575,56 @@ export default class Game extends Phaser.Scene
     // Radar scan (pass all ships; radar excludes its owner internally).
     // Terrain is NOT trackable: it goes in as occluders — it blocks the beam
     // and is painted by the ground-mapping display instead.
-    const allShips = [player, ...this.targets];
     const iffOn = this.iffAvailable();
-    allShips.forEach(ship => {
-      ship.radar.setIffAvailable(iffOn);
-      ship.radar.update(delta, ship.getDirection(), allShips, this.graphics!, decoyCircles, this.terrain, gasVolumes);
-    });
+    for (let tick = 0; tick < this.simTicks; tick++) {
+      // A hull lost in an earlier tick of this frame takes no further part.
+      const allShips = [player, ...this.targets].filter(ship => ship.active && ship.body);
+      allShips.forEach(ship => {
+        ship.radar.setIffAvailable(iffOn);
+        ship.radar.update(this.simStepMs, ship.getDirection(), allShips, this.graphics!, decoyCircles, this.terrain, gasVolumes);
+      });
 
-    // Update AI continuous (every frame)
-    this.targets.forEach(t => {
-      t.controller?.updateContinuous();
-    });
+      // Update AI continuous (every tick)
+      this.targets.forEach(t => {
+        if (t.active && t.body) t.controller?.updateContinuous();
+      });
+    }
 
     // Player radio callouts (announces newly-formed radar tracks).
     this.radarVoice?.update(player);
 
+    if (this.briefing?.visible) this.pinToScreen(this.briefing, BRIEFING_LEFT_PX, BRIEFING_TOP_PX);
+    this.updateEdgeWarning(player);
+
+    if (!this.objectiveMet && this.hasObjective() && this.targets.length === 0) {
+      this.objectiveMet = true;
+      this.showOutcome('ALL TARGETS DESTROYED', '#00ff00');
+    }
+
     // Update interface with warnings
     if (player.radar) {
       this.player?.radar.getInterfaceRenderer()?.update();
+    }
+  }
+
+  // The boundary is a wall: a ship that presses on against it stays there
+  // for ever with nothing said. Warn while within the margin and heading out.
+  private updateEdgeWarning(player: PlayerShip): void {
+    const margin = world.BORDER_MARGIN;
+    const rad = Phaser.Math.DegToRad(player.angle);
+    const outward = (player.x < margin && Math.cos(rad) < 0) || (player.x > this.world.width - margin && Math.cos(rad) > 0)
+      || (player.y < margin && Math.sin(rad) < 0) || (player.y > this.world.height - margin && Math.sin(rad) > 0);
+    if (outward && !this.edgeWarning) {
+      this.edgeWarning = this.add.text(0, 0, 'WORLD EDGE - TURN BACK', {
+        font: '20px Courier',
+        color: '#000000',
+        backgroundColor: '#ffb000',
+        padding: { x: 12, y: 6 },
+      }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(1000);
+    }
+    if (this.edgeWarning) {
+      this.edgeWarning.setVisible(outward);
+      this.pinToScreen(this.edgeWarning, this.cameras.main.width / 2, EDGE_WARNING_TOP_PX);
     }
   }
 
@@ -576,17 +684,19 @@ export default class Game extends Phaser.Scene
 
     this.graphics?.destroy();
 
-    // Destroy targets and terrain
-    this.targets.forEach(target => target.destroy());
-    this.terrain.forEach(body => body.destroy());
-    this.gasClouds.forEach(cloud => cloud.destroy());
-    this.gasClouds = [];
+    // Freeze the world where the ship was lost instead of wiping it: the
+    // missile, the rock or the opponent that did it is the thing worth looking
+    // at, and a blank screen teaches nothing. The scene's update has already
+    // stopped (no player); this stops the bodies too. A restart builds a
+    // fresh Matter world, so the pause does not carry over.
+    this.matter.world.pause();
 
     this.showOutcome('SHIP DESTROYED', '#ff0000');
   }
 
   // The scenario's closing line — loss of the ship here, a mission's own
-  // pass/fail verdict in the campaign levels — pinned to the camera centre.
+  // pass/fail verdict in the campaign levels — pinned to the camera centre,
+  // with the keys that leave it.
   protected showOutcome(text: string, color: string): void {
     const cam = this.cameras.main;
     this.add.text(cam.centerX, cam.centerY, text, {
@@ -597,5 +707,23 @@ export default class Game extends Phaser.Scene
       padding: { x: 20, y: 12 },
       wordWrap: { width: Math.min(cam.width - 80, 800) },
     }).setOrigin(0.5, 0.5).setScrollFactor(0).setDepth(1000);
+    this.add.text(cam.centerX, cam.centerY + 60, this.outcomeHint(), {
+      font: '18px Courier',
+      color: '#aaaaaa',
+      backgroundColor: '#000000aa',
+      padding: { x: 12, y: 6 },
+    }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(1000);
+  }
+
+  // The line under the verdict naming the keys out of it. Free play has only
+  // the menu; the campaign adds retry and next.
+  protected outcomeHint(): string {
+    return 'M / SELECT  menu';
+  }
+
+  // Whether the scenario can be won: free play's practice scenarios end when
+  // everything hostile in them is destroyed; the open skirmish never ends.
+  protected hasObjective(): boolean {
+    return this.scenario === 'duel' || this.scenario === 'occluded';
   }
 }

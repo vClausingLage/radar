@@ -8,7 +8,6 @@ import {
   MISSILE_AGE_TICK_MS,
   MISSILE_BOOST_PHASE_MAX_AGE,
   LINK_TRACK_CORRELATION_PX,
-  MISSILE_DEBUG_LOG_INTERVAL_MS,
   VIM220_WAYPOINT_REACHED_DISTANCE_PX,
 } from '../../data/radarGameSettings';
 
@@ -58,7 +57,6 @@ export type GuidanceContext = {
 
 export class MissileGuidance {
   private ageTimer = 0;
-  private debugTimer = 0;
 
   update(missiles: Missile[], delta: number, ctx: GuidanceContext): Missile[] {
     // Age missiles once per real second regardless of frame rate.
@@ -100,23 +98,6 @@ export class MissileGuidance {
       const ny = currentDirY + (dir.y - currentDirY) * turn;
       const mag = Math.sqrt(nx * nx + ny * ny) || 1;
       missile.updateHeading(nx / mag, ny / mag);
-    }
-
-    // Throttled debug: report each active-radar VIM-220's tracking
-    // state after guidance has run, so the target id reflects this frame.
-    this.debugTimer += delta;
-    if (this.debugTimer >= MISSILE_DEBUG_LOG_INTERVAL_MS) {
-      this.debugTimer = 0;
-      for (const m of live) {
-        if (m instanceof ActiveRadarMissile && m.missileRadar.isActive()) {
-          const tracked = m.missileRadar.getLockedTargetId();
-          console.log(
-            tracked !== null
-              ? `VIM-220 active radar [STT]: tracking target ${tracked}`
-              : `VIM-220 active radar [RWS]: searching, no target`,
-          );
-        }
-      }
     }
 
     return live;

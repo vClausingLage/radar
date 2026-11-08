@@ -65,6 +65,9 @@ src/controller/flight.ts  Flight: a lead + wingman pair, their formation station
                          bracket geometry, shot token); the controllers ask it for
                          guidance, assignments and orders (decision_tree.md "Flights")
 src/entities/            Ship/PlayerShip/Target, missiles, asteroid, decoy, exhaust,
+                         gasCloud (the absorbing band), towLine (Level 2's tow),
+                         starfield (the sky: scenery no sensor sees; must not draw
+                         Math.random, see DEFAULT_TEST_SEED),
                          dishRadarStation, structure (static solid scenery: surface,
                          launchpad) + *Factory.ts registering scene.add.* factories
                          (flightFactory.ts: scene.add.flight, a two-ship flight with
@@ -77,6 +80,7 @@ src/radar/systems/radar.ts        The centre. Owns mode state, sweep, STT lock, 
 src/radar/systems/fireControl.ts  Weapons: launch, guidance ticks, waypoints, seeker cones
 src/radar/systems/modules/        Signal path: antenna → emitter → receiver → trackingComputer
                                   plus rwr, jammer, missileRadar, missileGuidance,
+                                  cfarDetector (clutter density for the MTI gate),
                                   terrainMapper, loadoutManager, iffInterrogator
                                   (IFF: question and answer are one-way physics,
                                   reply matched to a track by gate; the transponder is
@@ -84,6 +88,7 @@ src/radar/systems/modules/        Signal path: antenna → emitter → receiver 
                                   (PPLI friend tagging of tracks and RWR emitters;
                                   the shared track picture a flight sorts and
                                   launches on remote from)
+src/radar/systems/game/           radarEventEmitter ('missile-fired' for the Fox call)
 src/radar/data/                   track.ts, radarReturn.ts, types.ts (Entity, RadarHost, Mode),
                                   signalPath.ts (the energy budget every sensor asks),
                                   radarGameSettings.ts (all radar constants)
@@ -95,12 +100,13 @@ src/physics/                      ray.ts (raycast against Matter vertices), body
                                   slow + tail-first on ground = landed, else crash), collisionRegistrar
 src/math/, src/types/             Maths helpers, shared Vector2
 src/settings.ts                   Non-radar gameplay constants (world, ship, camera, loadouts)
-src/audio/                        audioPlayer, radarVoice (BRA callouts), startup, supportRadarComms,
+src/audio/                        audioPlayer, radarVoice (BRA callouts), missileCallout (Fox), startup, supportRadarComms,
                                   radioNet + radioScript.json (campaign story traffic, subtitled)
 public/                           Sprites; audio in public/audio
 desktop/                          Electron wrapper around dist/ (main.cjs). Its own package,
                                   workspace and lockfile, so the web deploy never installs it
-docs/                             radar.md, player.md, GCI.md, gci-comms.md
+docs/                             radar.md, player.md, GCI.md, gci-comms.md, SPRITE_PROMPTS.md
+                                  (art prompts, and what a new hull changes on the radar)
 TO_DO.md, decision_tree.md, cowork.md   Roadmap, AI behaviour spec, design intent
 ```
 
@@ -200,6 +206,12 @@ display-and-weapons concern.
 - Angles in **degrees** in game/entity code; use `Phaser.Math.DegToRad` /
   `RadToDeg` / `Angle.WrapDegrees` at the boundaries. Distances in world px;
   prefer `Distance.Squared` for comparisons.
+- **Time.** The radars, the tracker and the AI run on fixed 60 Hz simulation
+  ticks (`SIM_STEP_MS`, `Game.update()`), so every `_FRAMES` constant and every
+  per-call step (antenna sweep, AI turn rate) means the same on a 60 Hz and a
+  144 Hz display. A scene that steps a radar of its own steps it `this.simTicks`
+  times with `SIM_STEP_MS`. Anything drawn per tick is redrawn per tick; the
+  shared graphics is cleared only on a frame that runs one.
 - No global state — state lives on the owning scene, entity, controller or
   radar module. `window.game` is the only exception and is DEV-only.
 - Per-frame vector marks are drawn into the shared

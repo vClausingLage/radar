@@ -373,6 +373,18 @@ export class Flight {
     // flicker. Lazy - called by whoever asks for orders or an assignment -
     // because the Flight has no per-frame update of its own.
     private review(now: number): void {
+        // A tactic is a plan for two hulls. The moment one is gone the plan is
+        // void - at once, not after the dwell a settled change of mind needs: a
+        // bracket held through that dwell reads the dead hull's position (a
+        // destroyed Matter sprite has no body to read), and the throw stops the
+        // frame loop at the very moment the player scores. The survivor flies
+        // on as a single ship.
+        if (!this.wingAlive() || !this.leadAlive()) {
+            if (this.tactic !== 'formation') this.formationSince = now;
+            this.tactic = 'formation';
+            this.pending = null;
+            return;
+        }
         if (now - this.reviewedAt < tacticSettings.REVIEW_MS) return;
         this.reviewedAt = now;
 

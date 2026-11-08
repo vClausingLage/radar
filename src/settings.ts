@@ -1,13 +1,50 @@
 // GAME
-export const IMAGE_SCALE = 1
 export const CAMERA_ZOOM = .8
 
-// WORLD bounds (matches matter.world.setBounds in main.ts).
+// WORLD bounds (the scene sets matter.world.setBounds from these in Game.create()).
 export const world = {
     WIDTH: 2500,
     HEIGHT: 2500,
     // How close (px) to an edge a ship may get before AI steers away from it.
     BORDER_MARGIN: 300,
+}
+
+// STARFIELD — the sky (entities/starfield.ts). Scenery, invisible to every sensor.
+export const starfieldSettings = {
+    // The 1024 px source picture stretched over the 2500 px world.
+    NEBULA_SCALE: 2.5,
+    // Canvas filter applied to the source: hides its blocky pixels and baked-in
+    // stars, and holds the nebula well below the brightness of the radar's phosphor
+    // lines. The hue turn keeps the dimmed core red: dimmed yellow reads as olive,
+    // too near the scope's green.
+    NEBULA_CANVAS_FILTER: 'blur(16px) hue-rotate(-32deg) saturate(0.9) brightness(0.42)',
+    // How far past the canvas edge the picture is drawn, so the blur leaves no rim.
+    NEBULA_EDGE_BLEED_PX: 48,
+    // Far to near. scrollFactor is how fast a layer follows the camera (1 = the
+    // world itself); the nearest layer moves most, as parallax does.
+    LAYERS: [
+        { scrollFactor: 0.2, count: 520, minRadiusPx: 0.5, maxRadiusPx: 1.1 },
+        { scrollFactor: 0.5, count: 50, minRadiusPx: 1.0, maxRadiusPx: 1.7 },
+    ],
+}
+
+// EXPLOSION — a hull breaking up (physics/renderer/physicsRenderer.ts).
+export const explosionSettings = {
+    // Above ships and terrain, as the old explosion sprite was.
+    DEPTH: 1000,
+    FLASH_SCALE: 3.2,
+    FLASH_MS: 320,
+    SHELL_RADIUS_PX: 90,
+    SHELL_COLOR: 0xffd9a0,
+    SHELL_MS: 650,
+    FRAGMENT_COUNT: 48,
+    // Px per second at the fastest; fragments keep flying straight in vacuum.
+    FRAGMENT_SPEED: 170,
+    FRAGMENT_MS: 1100,
+    // Camera jolt, at full strength on top of the view centre, none beyond the range.
+    SHAKE_RANGE_PX: 500,
+    SHAKE_MS: 220,
+    SHAKE_INTENSITY: 0.006,
 }
 
 // PLAYER SHIP

@@ -1,8 +1,4 @@
 import Phaser from "phaser";
-import type { Ship, PlayerShip } from "../entities/ship";
-import type { Terrain } from "../radar/data/types";
-
-type Entity = Ship | PlayerShip | Terrain;
 
 // Anything with a Matter body can be raycast against. Structural on purpose:
 // the missile seeker (systems/modules/missileRadar.ts) measures hulls and
@@ -14,12 +10,6 @@ type Entity = Ship | PlayerShip | Terrain;
 // for before reading parts/vertices.
 type RayTarget = {
   body?: Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | MatterJS.BodyType | null;
-};
-
-type RayHit = {
-  entity: Entity;
-  point: Phaser.Math.Vector2;
-  distanceSq: number;
 };
 
 export class Ray {
@@ -68,29 +58,6 @@ export class Ray {
   // Whether a point lies inside a body's actual shape (any of its parts).
   contains(target: RayTarget, point: { x: number; y: number }): boolean {
     return this.getBodyParts(target).some(part => Phaser.Geom.Polygon.Contains(part, point.x, point.y));
-  }
-
-  getNearestBodyIntersection(
-    owner: Entity,
-    line: Phaser.Geom.Line,
-    origin: { x: number; y: number },
-    entities: Entity[],
-  ): RayHit | null {
-    let nearest: RayHit | null = null;
-
-    for (const entity of entities) {
-      if (entity === owner || !entity.body) continue;
-
-      const hit = this.nearestPartHit(line, entity);
-      if (!hit) continue;
-
-      const d2 = Phaser.Math.Distance.Squared(origin.x, origin.y, hit.point.x, hit.point.y);
-      if (!nearest || d2 < nearest.distanceSq) {
-        nearest = { entity, point: hit.point, distanceSq: d2 };
-      }
-    }
-
-    return nearest;
   }
 
   // Unit normal of the polygon edge a hit point lies on. Phaser's intersection

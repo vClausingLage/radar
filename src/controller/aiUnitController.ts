@@ -92,6 +92,14 @@ export type TacticalPicture = {
 // ── Tunables ───────────────────────────────────────────────────────────────
 const FIRE_COOLDOWN_MS = 2500;
 const STT_LOCK_DELAY_MS = 2500;       // lock must be held this long before firing
+// A shot is only worth taking inside the weapon's reach. The scope's ring (700)
+// is further out than a missile flies (nominally 450 for a VIM-220, 504 for a
+// VIM-177), so a pilot that fired the moment a track reached the ring spent
+// rounds that burned out short of the target, and could only hit a target
+// closing head-on. It shoots inside the nominal reach instead (a flight that
+// meets a target at the edge of it, as the sort test sets up, closes the last
+// few px first). Launch on remote is not held to this: it rides the ring.
+const FIRE_RANGE_FRACTION = 1.0;
 const INVESTIGATE_STT_MIN_AGE = 2;    // wait ~2 scans of a track before locking it
 const CRANK_DURATION_MS = 6000;       // how long to support/crank after a shot
 const CRANK_OFFSET_DEG = 25;          // STT: hold target this far off boresight (<30° cone)
@@ -257,13 +265,6 @@ export class AiUnitController {
     // a wing whose lead has been shot down - flies the ordinary doctrine.
     private inFormation(): boolean {
         return this.flight !== null && this.flightRole === 'wing' && this.flight.leadAlive();
-    }
-
-    public getTurnRate(): number {
-        return this.turnRate;
-    }
-    public setTurnRate(turnRate: number): void {
-        this.turnRate = turnRate;
     }
 
     // Replace the generated loop with a fixed itinerary whose last point is the
@@ -481,11 +482,18 @@ export class AiUnitController {
                 && engagementTrack.age >= INVESTIGATE_STT_MIN_AGE
                 && Boolean(this.radar?.canShootOnRemote(engagementTrack));
         }
+        if (engagementTrack !== null && !this.inReach(weapon, engagementTrack)) return false;
         return weapon === 'VIM-220'
             ? engagementTrack !== null
                 && engagementTrack.age >= INVESTIGATE_STT_MIN_AGE
                 && this.radar?.getMode() === 'tws'
             : engagementTrack !== null;
+    }
+
+    // Is the track inside the share of the weapon's reach worth firing at?
+    private inReach(weapon: 'VIM-220' | 'VIM-177', track: Track): boolean {
+        const reach = this.radar?.getMissileRange(weapon) ?? 0;
+        return track.dist <= reach * FIRE_RANGE_FRACTION;
     }
 
     // A shot at `track` is clear of the flight mate (Flight.clearToFire). Outside

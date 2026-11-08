@@ -21,10 +21,12 @@ const CAMPAIGN: { key: string; label: string }[] = [
 ];
 
 const CONTROLS = [
-    'A / D  turn left / right',
+    'A / D  turn      W / S  throttle up / down',
+    'R  RWS search   X  RWS > TWS > EMCON   E  STT lock   ESC  exit STT',
+    'F  pick next target (lock and TWS shot go to it)',
     'Q  cycle missiles      SPACE  fire',
-    'R  RWS search   E  STT lock   ESC  exit STT',
-    'T  deploy chaff      J  jammer      M  menu',
+    'T  deploy chaff      J  jammer      I  IFF      M  menu',
+    'C  ask Disco for a bogey dope (campaign)',
     'SHIFT + left click  set VIM-220 waypoint',
     'SHIFT + right click  clear VIM-220 waypoints',
 ];
@@ -38,6 +40,7 @@ const GAMEPAD_CONTROLS = [
     'L1  faster   L2  slower',
     'D-pad left  cycle missiles',
     'D-pad up  IFF',
+    'D-pad right  pick next target',
     'D-pad down  bogey dope',
     'START  cold start switch, next',
     'SELECT  back to menu',
@@ -46,6 +49,13 @@ const GAMEPAD_CONTROLS = [
 ];
 
 const REPO_URL ='https://github.com/vClausingLage/radar';
+
+// The menu is laid out on this fixed sheet and the camera zooms the sheet to
+// fit the window. Laid out against the window itself, a laptop screen (under
+// ~850 px tall) put the controls text on top of the campaign buttons and cut
+// the last entries off the bottom.
+const MENU_DESIGN_W_PX = 1100;
+const MENU_DESIGN_H_PX = 880;
 
 const PAD = Phaser.Input.Gamepad.Configs.XBOX_360;
 
@@ -79,7 +89,11 @@ export default class StartMenu extends Phaser.Scene {
     }
 
     create(): void {
-        const cx = this.scale.width / 2;
+        const cx = MENU_DESIGN_W_PX / 2;
+        this.fitToWindow();
+        const onResize = () => this.fitToWindow();
+        this.scale.on(Phaser.Scale.Events.RESIZE, onResize);
+        this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off(Phaser.Scale.Events.RESIZE, onResize));
         // Phaser reuses the scene instance: the campaign's M / ENTER bring the
         // menu back, and last run's buttons were destroyed with its display list.
         this.scenarioButtons = [];
@@ -149,14 +163,14 @@ export default class StartMenu extends Phaser.Scene {
         this.refreshScenarioButtons();
 
         // Controls — small, light gray, beneath the menu
-        this.add.text(cx, this.scale.height - 16, CONTROLS.join('\n'), {
+        this.add.text(cx, MENU_DESIGN_H_PX - 16, CONTROLS.join('\n'), {
             fontSize: '15px',
             color: '#aaaaaa',
             align: 'center',
             lineSpacing: 6,
         }).setOrigin(0.5, 1);
 
-        this.add.text(16, this.scale.height - 16, GAMEPAD_CONTROLS.join('\n'), {
+        this.add.text(16, MENU_DESIGN_H_PX - 16, GAMEPAD_CONTROLS.join('\n'), {
             fontSize: '15px',
             color: '#aaaaaa',
             lineSpacing: 6,
@@ -167,6 +181,14 @@ export default class StartMenu extends Phaser.Scene {
         this.padItems = [startButton, ...this.scenarioButtons, ...campaignButtons];
         if (desktopApp) this.padItems.push(this.createQuitButton(desktopApp.quit));
         this.setupPadCursor();
+    }
+
+    // Zoom the design sheet to the window, never above life size, centred.
+    private fitToWindow(): void {
+        const cam = this.cameras.main;
+        const fit = Math.min(1, this.scale.width / MENU_DESIGN_W_PX, this.scale.height / MENU_DESIGN_H_PX);
+        cam.setZoom(fit);
+        cam.centerOn(MENU_DESIGN_W_PX / 2, MENU_DESIGN_H_PX / 2);
     }
 
     private createQuitButton(quit: () => void): Phaser.GameObjects.Text {
@@ -249,7 +271,7 @@ export default class StartMenu extends Phaser.Scene {
     private createRepoLink(): void {
         const margin = 16;
         const logoHeight = 28;
-        const logo = this.add.image(this.scale.width - margin, this.scale.height - margin, 'github_logo')
+        const logo = this.add.image(MENU_DESIGN_W_PX - margin, MENU_DESIGN_H_PX - margin, 'github_logo')
             .setOrigin(1, 1)
             .setInteractive({ useHandCursor: true });
         logo.setScale(logoHeight / logo.height);

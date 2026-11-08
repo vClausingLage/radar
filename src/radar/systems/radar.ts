@@ -90,6 +90,11 @@ export class Radar {
     // knows about the target while locked comes back through the beam.
     private sttTrackId: number | null = null;
     private sttMissedFrames: number = 0;
+    // The track the pilot has picked to work (the target designation box). A
+    // lock and a TWS shot go to it before they go to the radar's own idea of
+    // the best or nearest contact; with none picked, or the pick gone from the
+    // scope, they fall back to that. Held by track id, which is never reused.
+    private designatedTrackId: number | null = null;
     // Frames left of the wide acquisition dwell that opens every lock.
     private sttAcquireFrames: number = 0;
 
@@ -261,12 +266,33 @@ export class Radar {
 
     // ── STT lock management ────────────────────────────────────────────────
 
-    // Lock the highest-confidence RWS track and enter STT.
+    // The designated track, if it is still one the scope shows.
+    designatedTrack(): Track | null {
+        if (this.designatedTrackId === null) return null;
+        return this.displayedTracks().find(t => t.id === this.designatedTrackId) ?? null;
+    }
+
+    // Step the designation to the next track outward from the ship, wrapping
+    // round to the nearest. Nearest first because that is the order a pilot
+    // wants them in: the one that can hurt first, then the ones behind it.
+    cycleDesignation(): void {
+        if (!this.owner) return;
+        const ownerPos = this.owner.getPosition();
+        const byRange = this.displayedTracks().sort((a, b) =>
+            Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, a.pos.x, a.pos.y)
+            - Phaser.Math.Distance.Squared(ownerPos.x, ownerPos.y, b.pos.x, b.pos.y));
+        if (byRange.length === 0) { this.designatedTrackId = null; return; }
+        const at = byRange.findIndex(t => t.id === this.designatedTrackId);
+        this.designatedTrackId = byRange[(at + 1) % byRange.length].id;
+    }
+
+    // Lock the designated track, else the highest-confidence RWS track, and
+    // enter STT.
     enterStt(): void {
         const tracks = this.displayedTracks();
         if (tracks.length === 0) return;
 
-        const best = tracks.reduce((a, b) =>
+        const best = this.designatedTrack() ?? tracks.reduce((a, b) =>
             b.confidence > a.confidence ? b : a
         );
 
@@ -285,8 +311,6 @@ export class Radar {
         this.trackingComputer.setTracks([best]);
         this.sweepBuffer = [];
         this.falseAlarmBuffer = [];
-
-        this.eventEmitter.emitLockEvent();
     }
 
     exitStt(): void {
@@ -579,13 +603,20 @@ export class Radar {
     // sorted group does not spend a round on the other member's.
     shoot(only?: Track): boolean {
         const tracks = this.displayedTracks();
-        const fired = this.fireControl.shoot(this.mode, {
+        const ctx = {
             ship: this.ownerShip(),
             sttTrack: this.displayedSttTrack(),
             tracks: only ? tracks.filter(t => t.id === only.id) : tracks,
-        });
+            designatedId: this.designatedTrack()?.id ?? null,
+        };
+        const fired = this.fireControl.shoot(this.mode, ctx);
         if (fired) {
             this.eventEmitter.emitMissileFired(fired);
+        } else {
+            // Only the player's radar has a HUD to tell: an AI shot that is
+            // refused is simply not taken.
+            const why = this.fireControl.refusalReason(this.mode, ctx);
+            this.interfaceRenderer?.showShotRefused(why.reason, why.hint);
         }
         return fired !== null;
     }
@@ -607,11 +638,6 @@ export class Radar {
             this.eventEmitter.emitMissileFired(fired);
         }
         return fired !== null;
-    }
-
-    // Max range (px) of the currently selected weapon, for the range indicator.
-    getActiveMissileRange(): number | null {
-        return this.fireControl.getActiveMissileRange();
     }
 
     // Max range (px) of a given weapon type, selected or not — lets an AI judge
@@ -728,7 +754,7 @@ export class Radar {
         this.radarRenderer?.update({
             graphics, radarPosition: ownerPos, radarRange: this.range,
             scanStartAngle, scanEndAngle,
-            activeMissiles: [], loadout: this.fireControl.getLoadout(),
+            loadout: this.fireControl.getLoadout(),
             vim220Waypoints: this.fireControl.getWaypoints(), pulse,
             vim220TimeToActive: this.fireControl.getLastVim220TimeToActive(),
             missileRange: this.fireControl.getActiveMissileRange(),
@@ -882,8 +908,9 @@ export class Radar {
             this.sweepJamming = null;
         }
 
+        const designated = this.designatedTrack()?.id;
         for (const track of this.displayedTracks()) {
-            this.radarRenderer?.renderRwsContacts(graphics, track);
+            this.radarRenderer?.renderRwsContacts(graphics, track, track.id === designated);
         }
     }
 
@@ -956,7 +983,7 @@ export class Radar {
         this.radarRenderer?.update({
             graphics, radarPosition: ownerPos, radarRange: this.range,
             scanStartAngle: shipDirection - rwsHalfAz, scanEndAngle: shipDirection + rwsHalfAz,
-            activeMissiles: [], loadout: this.fireControl.getLoadout(),
+            loadout: this.fireControl.getLoadout(),
             vim220Waypoints: this.fireControl.getWaypoints(), pulse, sttMode: true,
             vim220TimeToActive: this.fireControl.getLastVim220TimeToActive(),
             missileRange: this.fireControl.getActiveMissileRange(),
@@ -1033,7 +1060,7 @@ export class Radar {
         }
 
         // Lock illumination: any ship in the beam detects a locked (red) RWR
-        // contact and fires its lock-warning event. STT stares rather than
+        // contact. STT stares rather than
         // sweeps, so it has no natural once-per-leg cadence to gate a sidelobe
         // roll on — left off here rather than rolled every frame (see
         // illuminateRwr); a ship not the lock's target still gets the plain
@@ -1124,7 +1151,7 @@ export class Radar {
         this.radarRenderer?.update({
             graphics, radarPosition: ownerPos, radarRange: this.range,
             scanStartAngle, scanEndAngle,
-            activeMissiles: [], loadout: this.fireControl.getLoadout(),
+            loadout: this.fireControl.getLoadout(),
             vim220Waypoints: this.fireControl.getWaypoints(),
             vim220TimeToActive: this.fireControl.getLastVim220TimeToActive(),
             missileRange: this.fireControl.getActiveMissileRange(),
@@ -1218,11 +1245,10 @@ export class Radar {
             );
             // A sidelobe leak reads as an ordinary (green) search contact even
             // during STT — it is catching leakage off a beam not aimed at it,
-            // not the beam itself, so it does not earn the lock warning or the
-            // event. Only a ship the main beam is actually resting on gets that.
+            // not the beam itself, so it does not earn the lock warning. Only a
+            // ship the main beam is actually resting on gets that.
             const locked = isLocked && inMainBeam;
             entity.radar.rwrReceiver.receive(String(this.owner?.id ?? 'unknown'), bearingDeg, locked, now);
-            if (locked) entity.radar.eventEmitter.onRwrLock();
         }
     }
 

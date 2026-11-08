@@ -3,7 +3,7 @@ import { world } from '../settings';
 
 // One versus two: the player against a two-ship flight of hostile cruisers,
 // nose to nose across the world at half its height — player on the west edge
-// facing east, the flight on the east edge facing west, wingman abeam of its
+// facing east, the flight 1200 px in from the east edge facing west, wingman abeam of its
 // lead. Nothing else emits, reflects or occludes, so the whole exchange is one
 // radar against a pair: who detects first, whether two ships read as one
 // contact at range, who locks, who shoots, who jams. A clean stage for showing
@@ -27,6 +27,11 @@ export default class OneOnOne extends Game {
             speed: .1,
         });
         this.targets.push(...flight.members());
+    }
+
+    // Won when both of the flight are down.
+    protected hasObjective(): boolean {
+        return true;
     }
 
     protected briefingMessage(): string {

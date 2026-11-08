@@ -5,9 +5,7 @@ import { Ship } from "../../entities/ship";
 import { StartupStepKey, STARTUP_STEPS } from "../../audio/startup";
 import { landingSettings } from "../../settings";
 import {
-    GO_STT_WARNING_OFFSET_Y_PX,
     LOCK_WARNING_OFFSET_Y_PX,
-    MISSILE_TTA_OFFSET_Y_PX,
     RADAR_BUTTON_SPACING_X_PX,
     RADAR_BUTTON_SPACING_Y_PX,
     RADAR_WARNING_OFFSET_Y_PX,
@@ -21,6 +19,9 @@ import {
     RWR_THREAT_SPIKES,
     RWR_WIDGET_HEIGHT_PX,
     RWR_WIDGET_MARGIN_PX,
+    SHOT_REFUSED_HINT_OFFSET_Y_PX,
+    SHOT_REFUSED_OFFSET_Y_PX,
+    SHOT_REFUSED_SHOW_MS,
     SPEED_BUTTON_OFFSET_X_PX,
 } from "../data/radarGameSettings";
 
@@ -44,8 +45,11 @@ export class InterfaceRenderer {
     private zoomOutBtn?: Phaser.GameObjects.Text;
     private warningText?: Phaser.GameObjects.Text;
     private lockWarningText?: Phaser.GameObjects.Text;
-    private goSttWarning?: Phaser.GameObjects.Text;
-    private missileTtaText?: Phaser.GameObjects.Text;
+    // Why the trigger did nothing (see FireControl.refusalReason): a shot that
+    // is refused must not fail silently, or the weapon/mode rules read as a bug.
+    private shotRefusedText?: Phaser.GameObjects.Text;
+    private shotRefusedHint?: Phaser.GameObjects.Text;
+    private shotRefusedTimer?: Phaser.Time.TimerEvent;
     private rwrImage?: Phaser.GameObjects.Image;
     private rwrDirectionGraphics?: Phaser.GameObjects.Graphics;
     // Cold-start switches (campaign only). Present instead of the flight
@@ -232,7 +236,7 @@ export class InterfaceRenderer {
         .setOrigin(0.5)
         .setVisible(false);
 
-        this.goSttWarning = this.scene.add.text(0, 0, 'GO STT', {
+        this.shotRefusedText = this.scene.add.text(0, 0, '', {
             font: '24px Courier',
             color: '#000000',
             backgroundColor: '#ff0000',
@@ -241,11 +245,14 @@ export class InterfaceRenderer {
         .setOrigin(0.5)
         .setVisible(false);
 
-        this.missileTtaText = this.scene.add.text(0, 0, '', {
-            font: '20px Courier',
-            color: '#00ff88',
-            backgroundColor: '#001a11',
-            padding: { x: 10, y: 5 }
+        // The key that helps, above the reason. (Two text objects, not one with
+        // two lines, on purpose: the HUD's text count is part of the seeded dice
+        // stream the radar tests run on - see DEFAULT_TEST_SEED.)
+        this.shotRefusedHint = this.scene.add.text(0, 0, '', {
+            font: '16px Courier',
+            color: '#ffffff',
+            backgroundColor: '#000000cc',
+            padding: { x: 8, y: 3 }
         })
         .setOrigin(0.5)
         .setVisible(false);
@@ -434,14 +441,11 @@ export class InterfaceRenderer {
             this.lockWarningText.setPosition(shipX, lockWarningY);
         }
 
-        if (this.goSttWarning) {
-            const goSttY = shipY + GO_STT_WARNING_OFFSET_Y_PX;
-            this.goSttWarning.setPosition(shipX, goSttY);
+        if (this.shotRefusedText) {
+            this.shotRefusedText.setPosition(shipX, shipY + SHOT_REFUSED_OFFSET_Y_PX);
         }
-
-        if (this.missileTtaText) {
-            const missileTtaY = shipY + MISSILE_TTA_OFFSET_Y_PX;
-            this.missileTtaText.setPosition(shipX, missileTtaY);
+        if (this.shotRefusedHint) {
+            this.shotRefusedHint.setPosition(shipX, shipY + SHOT_REFUSED_HINT_OFFSET_Y_PX);
         }
 
         // Keep RWR widget pinned to camera bottom-left
@@ -479,8 +483,11 @@ export class InterfaceRenderer {
         if (this.lockWarningText) {
             this.lockWarningText.setVisible(isLocked);
             
-            // Blinking effect for lock warning
+            // Blinking effect for lock warning. Started once per lock, not
+            // once per frame: this runs every frame, and a repeat:-1 tween
+            // added each time piles up for as long as the lock lasts.
             if (isLocked) {
+                if (this.scene.tweens.isTweening(this.lockWarningText)) return;
                 this.scene.tweens.add({
                     targets: this.lockWarningText,
                     alpha: 0.3,
@@ -501,13 +508,8 @@ export class InterfaceRenderer {
 
         const signals = this.playerRadar.rwrReceiver.getRwrSignals();
         const primaryContact = this.playerRadar.rwrReceiver.getPrimaryRwrContact();
-        const missileHudText = this.playerRadar.rwrReceiver.getLastFiredMissileHudText();
 
         this.updateWarnings(Boolean(primaryContact), Boolean(primaryContact?.isLocked));
-        if (this.missileTtaText) {
-            this.missileTtaText.setText(missileHudText ?? '');
-            this.missileTtaText.setVisible(Boolean(missileHudText));
-        }
         this.renderRwrDirectionDiamonds(signals);
     }
 
@@ -600,18 +602,17 @@ export class InterfaceRenderer {
         g.lineBetween(centerX, centerY, markerX, markerY);
     }
 
-    showGoSttWarning(): void {
-        if (this.goSttWarning) {
-            this.goSttWarning.setVisible(true);
-            this.goSttWarning.setAlpha(1);
-            
-            // Auto-hide after 2 seconds
-            this.scene.time.delayedCall(2000, () => {
-                if (this.goSttWarning) {
-                    this.goSttWarning.setVisible(false);
-                }
-            });
-        }
+    // Say why the trigger did nothing, for a couple of seconds. A second
+    // refusal inside that window restarts the clock rather than stacking one.
+    showShotRefused(reason: string, hint: string): void {
+        if (!this.shotRefusedText || !this.shotRefusedHint) return;
+        this.shotRefusedText.setText(reason).setVisible(true);
+        this.shotRefusedHint.setText(hint).setVisible(true);
+        this.shotRefusedTimer?.remove();
+        this.shotRefusedTimer = this.scene.time.delayedCall(SHOT_REFUSED_SHOW_MS, () => {
+            this.shotRefusedText?.setVisible(false);
+            this.shotRefusedHint?.setVisible(false);
+        });
     }
 
     destroy(): void {
@@ -629,8 +630,9 @@ export class InterfaceRenderer {
         this.zoomOutBtn?.destroy();
         this.warningText?.destroy();
         this.lockWarningText?.destroy();
-        this.goSttWarning?.destroy();
-        this.missileTtaText?.destroy();
+        this.shotRefusedTimer?.remove();
+        this.shotRefusedText?.destroy();
+        this.shotRefusedHint?.destroy();
         this.rwrImage?.destroy();
         this.rwrDirectionGraphics?.destroy();
         this.sttBtn = undefined;
@@ -646,8 +648,9 @@ export class InterfaceRenderer {
         this.zoomOutBtn = undefined;
         this.warningText = undefined;
         this.lockWarningText = undefined;
-        this.goSttWarning = undefined;
-        this.missileTtaText = undefined;
+        this.shotRefusedTimer = undefined;
+        this.shotRefusedText = undefined;
+        this.shotRefusedHint = undefined;
         this.rwrImage = undefined;
         this.rwrDirectionGraphics = undefined;
     }

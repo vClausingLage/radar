@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import Game from "./game";
 import { DishRadarStation } from "../entities/dishRadarStation";
+import { FlightDatalink } from "../radar/systems/modules/flightDatalink";
 import { PlayerShip, Target } from "../entities/ship";
 import { Track } from "../radar/data/track";
 import { AudioPlayer } from "../audio/audioPlayer";
@@ -76,6 +77,9 @@ const AIRBORNE_DISTANCE_PX = 40;
 // Radio subtitles sit along the top edge of the screen, above the tasking
 // line — the bottom belongs to the RWR and the cold-start switches.
 const RADIO_HUD_TOP_MARGIN_PX = 12;
+// The tasking lines in the top-left corner; the comms echo below the subtitles.
+const MISSION_HUD_MARGIN_PX = 16;
+const COMMS_HUD_TOP_PX = 130;
 const RADIO_HUD_WIDTH_PX = 760;
 
 // A campaign level: the shared theatre — surface and pad, the friendly dish
@@ -367,6 +371,18 @@ export default abstract class CampaignLevel extends Game {
         return raider;
     }
 
+    // Put ships on one datalink, as the two halves of a real element are: each
+    // broadcasts its position and each radar tags a track on a member as a
+    // friend. IFF is off in the campaign, which only removes the interrogation;
+    // without this the raiders — which cannot tell friend from foe any better
+    // than the player — shoot each other down before the player fires a round.
+    // Returns the net, so a member that joins later (a staggered second raider)
+    // can be put on the same one.
+    protected linkElement(ships: Target[], net = new FlightDatalink()): FlightDatalink {
+        ships.forEach(ship => ship.radar.setDatalink(net));
+        return net;
+    }
+
     // A friendly ship on the scene's books.
     protected addFriendly(ship: Target, callsign: string): Target {
         this.setCallsign(ship, callsign);
@@ -452,13 +468,11 @@ export default abstract class CampaignLevel extends Game {
     // screen point is mapped back to the local point that lands on it (the
     // same correction InterfaceRenderer.positionRwr() makes).
     private pinRadioHud(): void {
-        if (!this.radioHud?.visible) return;
-        const cam = this.cameras.main;
-        const centreX = cam.width * cam.originX;
-        const centreY = cam.height * cam.originY;
-        this.radioHud
-            .setScale(1 / cam.zoom)
-            .setPosition(centreX, (RADIO_HUD_TOP_MARGIN_PX - centreY) / cam.zoom + centreY);
+        if (this.radioHud?.visible) this.pinToScreen(this.radioHud, this.cameras.main.width / 2, RADIO_HUD_TOP_MARGIN_PX);
+        // The tasking lines sit in the corner and the comms echo under the
+        // subtitles, at any zoom.
+        if (this.missionHud) this.pinToScreen(this.missionHud, MISSION_HUD_MARGIN_PX, MISSION_HUD_MARGIN_PX);
+        if (this.commsHud?.visible) this.pinToScreen(this.commsHud, this.cameras.main.width / 2, COMMS_HUD_TOP_PX);
     }
 
     private updateMissionHud(): void {
@@ -483,10 +497,12 @@ export default abstract class CampaignLevel extends Game {
         // (not the friendly player) and is occluded by the same terrain list,
         // its own rock included. The dish shoots through the same gas the
         // player does.
-        this.station?.update(
-            delta, this.targets, this.terrain, this.graphics,
-            this.gasClouds.map(cloud => cloud.getVolume()),
-        );
+        for (let tick = 0; tick < this.simTicks; tick++) {
+            this.station?.update(
+                this.simStepMs, this.targets, this.terrain, this.graphics,
+                this.gasClouds.map(cloud => cloud.getVolume()),
+            );
+        }
 
         this.drawIdentified(this.graphics);
         // Arrivals land whatever the mission state. The verdict takes the
@@ -522,8 +538,12 @@ export default abstract class CampaignLevel extends Game {
     }
 
     // Visual identification: anything inside VID range is identified — a
-    // friendly by its hull, a hostile declared on sight ("tally").
+    // friendly by its hull, a hostile declared on sight ("tally"). Only from
+    // the air: a hull parked cold on the pad has nobody looking out of it, and
+    // traffic that sets down beside it would otherwise be "identified" by a
+    // pilot who never touched a switch.
     private updateIdentification(player: PlayerShip): void {
+        if (this.airborneAt === undefined) return;
         const inVid = (ship: Target) => ship.active && ship.body
             && Phaser.Math.Distance.Between(player.x, player.y, ship.x, ship.y) <= VID_RANGE_PX;
 
@@ -614,7 +634,12 @@ export default abstract class CampaignLevel extends Game {
                 Phaser.Math.Distance.Squared(track.pos.x, track.pos.y, player.x, player.y) <= hullSq,
             );
             if (seen) {
-                this.failMission('DETECTED BY A HOSTILE PICKET BEHIND THE GAS', 'fail-detected');
+                // Where it happened is part of the lesson: the big player hull
+                // is a brighter echo than the AI's cruisers, so a picket's
+                // reach can extend out of the shadow before the gas does.
+                const where = this.isInGas({ x: player.x, y: player.y }) ? 'IN THE GAS'
+                    : behind ? 'BEHIND THE GAS' : 'EAST OF THE GAS - THEIR REACH RUNS PAST THE BAND';
+                this.failMission(`DETECTED BY A HOSTILE PICKET ${where}`, 'fail-detected');
                 return;
             }
         }
@@ -644,18 +669,11 @@ export default abstract class CampaignLevel extends Game {
         this.showOutcome(`MISSION COMPLETE — ${text}`, '#00ff00');
     }
 
-    protected showOutcome(text: string, color: string): void {
-        super.showOutcome(text, color);
+    protected outcomeHint(): string {
         const next = this.outcome === 'complete'
             ? (this.nextLevel() ? 'ENTER/START  next mission' : 'ENTER/START  campaign complete — back to menu')
             : 'ENTER/START  retry';
-        const cam = this.cameras.main;
-        this.add.text(cam.centerX, cam.centerY + 60, `${next}      M/SELECT  menu`, {
-            font: '18px Courier',
-            color: '#aaaaaa',
-            backgroundColor: '#000000aa',
-            padding: { x: 12, y: 6 },
-        }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(1000);
+        return `${next}      M/SELECT  menu`;
     }
 
     private onContinue = () => {
@@ -765,7 +783,5 @@ export default abstract class CampaignLevel extends Game {
             this.radio?.interrupt('fail-lost');
         }
         super.destroyPlayer();
-        this.station?.destroy();
-        this.station = undefined;
     }
 }

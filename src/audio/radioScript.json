@@ -30,6 +30,7 @@
     "l1-mule24":         { "speaker": "mule24",   "text": "Mule 2-4. And before anyone asks — 2-3 is late again. Probably stopped for gas. The other kind.", "say": "Mule two-four. And before anyone asks, two-three is late again. Probably stopped for gas. The other kind." },
     "l1-complete":       { "speaker": "disco",    "text": "Flatspin, Disco. All three Mules identified. Picture clean. Nice work." },
     "l1-complete-2":     { "speaker": "anvil",    "text": "Anvil copies. The coffee is safe. As of now you're the most popular pilot on this rock, Flatspin." },
+    "l1-fail-unidentified": { "speaker": "anvil", "text": "Flatspin, Anvil. The Mules are all down and you never looked at them. I can't tell you what is sitting on my pad. Land, and we'll go through it." },
 
     "l2-brief-1":        { "speaker": "anvil",    "text": "Flatspin, Anvil. The survey ship Lantern 5 went quiet an hour ago, mapping the far edge of the gas. Disco has a weak return drifting out of it. No drive, no transponder, no answer.", "say": "Flatspin, Anvil. The survey ship Lantern Five went quiet an hour ago, mapping the far edge of the gas. Disco has a weak return drifting out of it. No drive, no transponder, no answer." },
     "l2-brief-2":        { "speaker": "anvil",    "text": "Find her, put eyes on her, get a tow line across and drag her home. And Flatspin — something put her in that state. Assume it's still out there." },

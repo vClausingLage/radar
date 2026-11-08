@@ -48,12 +48,12 @@ export class Asteroid extends Phaser.Physics.Matter.Sprite {
             fitBodyToOutline(this, params.outline);
         } else {
             // A Matter circle is internally a ~25-gon, so terrain returns trace
-            // the round silhouette — and getCircle() matches exactly.
+            // the round silhouette.
             this.setBody({ type: 'circle', radius: nativeRadius });
         }
         // Scale sprite + body together to the requested world radius. setScale
         // runs Matter.Body.scale under the hood, so the body stays matched to
-        // the display and getCircle() still lines up with the raycast body.
+        // the display and the raycast body stay matched.
         if (params.bodyRadius !== undefined) {
             this.setScale(params.bodyRadius / nativeRadius);
         }
@@ -74,12 +74,5 @@ export class Asteroid extends Phaser.Physics.Matter.Sprite {
             // crashing into it does not nudge it off its station.
             this.setStatic(true);
         }
-    }
-
-    // The circle inscribing the texture: exact for a circle body, a bounding
-    // circle for a polygon one.
-    getCircle(): Phaser.Geom.Circle {
-        const radius = Math.max(this.width, this.height) / 2;
-        return new Phaser.Geom.Circle(this.x, this.y, radius);
     }
 }

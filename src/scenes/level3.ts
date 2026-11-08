@@ -3,6 +3,7 @@ import CampaignLevel, { PAD_POSITION, STATION_POSITION } from "./campaignLevel";
 import { Target } from "../entities/ship";
 import { RadioLineKey } from "../audio/radioNet";
 import { Vector2 } from "../types";
+import { FlightDatalink } from "../radar/systems/modules/flightDatalink";
 
 // Mule 2-3 comes through the middle of the band, heading for the pad. It is a
 // hauler with a dead transponder: to every sensor it is a bogey, exactly like
@@ -24,6 +25,12 @@ const RAID_SPACING_PX = 170;
 const RAID_DEPTH_PX = 120;
 const RAID_MULE_LEAD_PX = 550;
 const RAID_LATEST_MS = 90000;
+// The second raider follows the first by this long. Abreast and together they
+// were One versus Two with a hauler to protect and a pad behind: the first
+// version of this level let them shoot each other down (no IFF, no common net),
+// which is the only reason it ever looked winnable. Now they know each other;
+// the stagger gives the player the first one alone to deal with.
+const RAID_STAGGER_MS = 30000;
 // One goes for the pad, one for the dish. Their route ends short of the
 // target: a raider over the target is the loss, not one parked on it.
 const RAID_TARGETS: { destination: Vector2; name: string }[] = [
@@ -47,6 +54,9 @@ export default class Level3 extends CampaignLevel {
     private raidDueAt?: number;
     private muleSeen = false;
     private raidSeen = false;
+    // The raiders' common net, and how many of the raid have been launched.
+    private raidNet?: FlightDatalink;
+    private raidersLaunched = 0;
 
     constructor() {
         super('Level3');
@@ -68,6 +78,8 @@ export default class Level3 extends CampaignLevel {
         this.raidDueAt = undefined;
         this.muleSeen = false;
         this.raidSeen = false;
+        this.raidNet = undefined;
+        this.raidersLaunched = 0;
         // No pickets: they are the raid.
     }
 
@@ -75,7 +87,7 @@ export default class Level3 extends CampaignLevel {
         if (!this.mule) return 'TASKING — HOLD BETWEEN THE GAS AND THE PAD';
         const splashed = this.raiders.filter(r => !r.ship.active).length;
         const mule = this.landed.has(this.mule.id) ? 'DOWN' : this.identified.has(this.mule.id) ? 'IDENTIFIED' : 'BOGEY';
-        const raid = this.raiders.length > 0 ? `   RAIDERS SPLASHED ${splashed}/${this.raiders.length}` : '';
+        const raid = this.raiders.length > 0 ? `   RAIDERS SPLASHED ${splashed}/${RAID_TARGETS.length}` : '';
         return `TASKING — MULE 2-3: ${mule}${raid}`;
     }
 
@@ -110,7 +122,7 @@ export default class Level3 extends CampaignLevel {
 
     private checkComplete(): void {
         if (!this.mule || !this.landed.has(this.mule.id)) return;
-        if (this.raiders.length === 0 || this.raiders.some(r => r.ship.active)) return;
+        if (this.raidersLaunched < RAID_TARGETS.length || this.raiders.some(r => r.ship.active)) return;
         this.completeMission('THE DOOR HELD', 'l3-complete', 'l3-complete-2');
     }
 
@@ -121,7 +133,7 @@ export default class Level3 extends CampaignLevel {
             this.spawnMule();
             this.raidDueAt = now + RAID_LATEST_MS;
         }
-        if (this.raiders.length === 0 && this.raidDueAt !== undefined && this.raidIsDue(now)) {
+        if (this.raidersLaunched === 0 && this.raidDueAt !== undefined && this.raidIsDue(now)) {
             this.spawnRaid();
         }
 
@@ -134,10 +146,12 @@ export default class Level3 extends CampaignLevel {
                 this.radio?.say('l3-popup-mule');
             }
         }
+        // Each raider is declared the moment the dish holds it, the second
+        // one 30 s after the first.
+        for (const r of this.raiders) if (this.stationTracks(r.ship)) this.declaredHostile.add(r.ship.id);
         if (!this.raidSeen && this.raiders.some(r => this.stationTracks(r.ship))) {
             this.raidSeen = true;
-            this.raiders.forEach(r => this.declaredHostile.add(r.ship.id));
-            this.showCommsHud('DISCO — TWO NEW CONTACTS — HOSTILE, HOSTILE. CLEARED HOT');
+            this.showCommsHud('DISCO — NEW CONTACTS — HOSTILE. CLEARED HOT');
             this.radio?.say('l3-popup-raid', 'l3-condition-red');
         }
 
@@ -176,11 +190,19 @@ export default class Level3 extends CampaignLevel {
     }
 
     private spawnRaid(): void {
-        RAID_TARGETS.forEach(({ destination, name }, i) => {
-            const along = MULE_ALONG_PX + (i === 0 ? -RAID_SPACING_PX : RAID_SPACING_PX);
-            const ship = this.spawnRaider(along, RAID_DEPTH_PX, destination);
-            this.setCallsign(ship, `RAIDER ${i + 1}`);
-            this.raiders.push({ ship, name });
+        this.launchRaider(0);
+        this.time.delayedCall(RAID_STAGGER_MS, () => {
+            if (!this.outcome) this.launchRaider(1);
         });
+    }
+
+    private launchRaider(i: number): void {
+        const { destination, name } = RAID_TARGETS[i];
+        const along = MULE_ALONG_PX + (i === 0 ? -RAID_SPACING_PX : RAID_SPACING_PX);
+        const ship = this.spawnRaider(along, RAID_DEPTH_PX, destination);
+        this.setCallsign(ship, `RAIDER ${i + 1}`);
+        this.raiders.push({ ship, name });
+        this.raidersLaunched++;
+        this.raidNet = this.linkElement([ship], this.raidNet);
     }
 }

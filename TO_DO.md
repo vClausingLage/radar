@@ -128,7 +128,7 @@ Under browser automation the tests need frames supplied by hand
 (`window.stepGame(n)`) — a backgrounded tab throttles requestAnimationFrame to a
 crawl, and a run that falls back on it reports failures that are the frame
 supply's fault and not the radar's. Give the suite plenty (~16000 frames for the
-current seven tests, the first scene start alone costing a few hundred while
+current sixty-odd tests, the first scene start alone costing a few hundred while
 assets load), and read the returned report rather than the on-screen one.
 
 - radar effectiveness tests

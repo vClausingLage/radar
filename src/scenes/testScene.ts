@@ -28,9 +28,22 @@ export class TestScene extends Game {
         return this.iffEnabled;
     }
 
+    // A test counts frames, and was written against one radar update per frame
+    // carrying that frame's own time: it asks for "100 frames" and expects 100
+    // sweeps' worth of radar. So the test scene steps once per frame, whatever
+    // the browser's frame time (a swiftshader run is far slower than 60 Hz),
+    // instead of the fixed 60 Hz ticks the game itself runs on.
+    protected advanceSimClock(deltaMs: number): number {
+        this.simStepMs = deltaMs;
+        return 1;
+    }
+
     // A test owns the whole world: no scenario ships, no briefing overlay.
     protected buildScenario(): void {}
     protected showBriefing(): void {}
+    // Nor sky or detonation effects: they are looks, and the suite is calibrated
+    // to this scene's bare frame time and to its seeded Math.random stream.
+    protected hasScenery(): boolean { return false; }
 
     create(): void {
         super.create();

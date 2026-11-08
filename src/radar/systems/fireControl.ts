@@ -23,6 +23,8 @@ export type ShootContext = {
     ship: (PlayerShip | Target) | null;
     sttTrack: Track | null;
     tracks: Track[];
+    // The track the pilot picked, if any: a TWS shot goes to it first.
+    designatedId?: number | null;
 };
 
 // The weapons system. The radar produces tracks; FireControl consumes them to
@@ -175,6 +177,31 @@ export class FireControl {
         return null;
     }
 
+    // Why `shoot` came back empty, as a short HUD line and the key that helps.
+    // Mirrors the checks in shoot() in the order a pilot would fix them: the
+    // mode, then the weapon that mode fires, then the rail, then the picture. A
+    // refusal that says nothing reads as a broken trigger; the rules (VIM-177
+    // rides an STT lock, VIM-220 fires from TWS) are the lesson, so the line
+    // names the way out.
+    refusalReason(mode: Mode, ctx: ShootContext): { reason: string; hint: string } {
+        const active = this.loadoutManager.getActiveType();
+        if (mode === 'stt') {
+            if (active !== 'VIM-177') return { reason: 'STT FIRES VIM-177', hint: 'Q - cycle the weapon' };
+            if (this.getWeaponLoad('VIM-177') <= 0) return { reason: 'NO VIM-177 LEFT', hint: 'ESC - back to search' };
+            return { reason: 'LOCK OUTSIDE RANGE RING', hint: 'close the range' };
+        }
+        if (mode === 'tws') {
+            if (active !== 'VIM-220') return { reason: 'VIM-177 NEEDS STT - GO STT', hint: 'E - lock a track, or Q for VIM-220' };
+            if (this.getWeaponLoad('VIM-220') <= 0) return { reason: 'NO VIM-220 LEFT', hint: 'E - lock a track for the VIM-177' };
+            return ctx.tracks.length === 0
+                ? { reason: 'NO TRACK TO SHOOT', hint: 'wait for a contact, or set a two-point route' }
+                : { reason: 'ALL TRACKS ENGAGED', hint: 'F - pick another, or wait' };
+        }
+        return mode === 'emcon'
+            ? { reason: 'EMCON - RADAR OFF', hint: 'R - search, X - step the mode' }
+            : { reason: 'GO STT OR TWS', hint: 'E - lock a track, X - step to TWS' };
+    }
+
     // VIM-177 (SARH): requires an STT lock; rides the ship's illumination.
     // Returns whether the missile actually left the rail.
     private fireVim177(ctx: ShootContext): boolean {
@@ -229,8 +256,9 @@ export class FireControl {
                 .map(m => m.targetId)
                 .filter((id): id is number => id !== undefined),
         );
-        const target = ctx.tracks
-            .filter(t => !engaged.has(t.id))
+        // A track the pilot designated goes first, if it is still free.
+        const free = ctx.tracks.filter(t => !engaged.has(t.id));
+        const target = free.find(t => t.id === ctx.designatedId) ?? free
             .sort((a, b) =>
                 Phaser.Math.Distance.Between(ownerPos.x, ownerPos.y, a.pos.x, a.pos.y) -
                 Phaser.Math.Distance.Between(ownerPos.x, ownerPos.y, b.pos.x, b.pos.y))[0];

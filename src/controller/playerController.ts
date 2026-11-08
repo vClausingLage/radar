@@ -9,6 +9,14 @@ export class PlayerController {
   private turn = 0;
   // Set while the ship is cold: no engines, no throttle to step.
   private throttleLocked = false;
+  // Set while the ship is cold: no power for the radar, weapons, chaff or
+  // jammer either. A key for any of them does nothing until the crew is done.
+  private systemsLocked = false;
+
+  // The ship is there to be commanded, and has the power to do it.
+  private canOperate(): boolean {
+    return this.ship.active && Boolean(this.ship.scene) && !this.systemsLocked;
+  }
 
   // ── Movement ──────────────────────────────────────────────────────────
   private onKeyDownA = () => { this.turn = -playerShipSettings.TURN_SPEED; };
@@ -19,17 +27,17 @@ export class PlayerController {
   // ── Radar mode ────────────────────────────────────────────────────────
   // E → enter STT (lock best track)
   private onKeyDownE = () => {
-    if (!this.ship.active || !this.ship.scene) return;
+    if (!this.canOperate()) return;
     this.ship.radar.enterStt();
   };
   // R → RWS search
   private onKeyDownR = () => {
-    if (!this.ship.active || !this.ship.scene) return;
+    if (!this.canOperate()) return;
     this.ship.radar.enterRws();
   };
   // T → deploy a decoy (chaff). TWS remains available via its on-screen button.
   private onKeyDownT = () => {
-    if (!this.ship.active || !this.ship.scene) return;
+    if (!this.canOperate()) return;
     this.ship.deployDecoy();
   };
   // Escape → exit STT, return to RWS
@@ -44,21 +52,28 @@ export class PlayerController {
   };
   // J → activate the jammer (10 s burst, 20 s cooldown from activation)
   private onKeyDownJ = () => {
-    if (!this.ship.active || !this.ship.scene) return;
+    if (!this.canOperate()) return;
     this.ship.radar.activateJammer();
+  };
+
+  // F → designate: step the pick to the next track outward. A lock (E) and a
+  // TWS shot go to the pick before the radar's own choice.
+  private onKeyDownF = () => {
+    if (!this.canOperate()) return;
+    this.ship.radar.cycleDesignation();
   };
 
   // I → interrogate (IFF) every track on the scope. Does nothing without a
   // track to point at, or while the interrogator is still cycling.
   private onKeyDownI = () => {
-    if (!this.ship.active || !this.ship.scene) return;
+    if (!this.canOperate()) return;
     this.ship.radar.interrogate();
   };
 
   // ── Weapons ───────────────────────────────────────────────────────────
   // Space → fire (VIM-177 requires STT lock)
   private onKeyDownSpace = () => {
-    if (!this.ship.active || !this.ship.scene) return;
+    if (!this.canOperate()) return;
     this.ship.radar.shoot();
   };
 
@@ -76,11 +91,11 @@ export class PlayerController {
     this.ship.radar.addVim220Waypoint({ x: pointer.worldX, y: pointer.worldY });
   };
 
-  // ── Gamepad ───────────────────────────────────────────────────────────
-  // R1 → step the search loop RWS → TWS → EMCON → RWS. A lock is not a stop on
-  // the loop: from STT the button breaks it and drops back to RWS, like Esc.
+  // ── Gamepad (and the keys that share its steps) ───────────────────────
+  // R1 / X → step the search loop RWS → TWS → EMCON → RWS. A lock is not a stop
+  // on the loop: from STT the button breaks it and drops back to RWS, like Esc.
   private onPadCycleRadarMode = () => {
-    if (!this.ship.active || !this.ship.scene) return;
+    if (!this.canOperate()) return;
     const radar = this.ship.radar;
     const mode = radar.getMode();
     if (mode === 'rws') radar.enterTws();
@@ -88,8 +103,8 @@ export class PlayerController {
     else radar.enterRws();
   };
 
-  // L1 / L2 → one throttle setting up / down, the same settings the touch
-  // buttons offer. There is no stop among them: below 1/3 is astern, and that
+  // L1 / L2 / W / S → one throttle setting up / down, the same settings the
+  // on-screen buttons offer. There is no stop among them: below 1/3 is astern, and that
   // is the landing approach (see landingSettings).
   private stepThrottle(direction: 1 | -1): void {
     if (this.throttleLocked || !this.ship.active || !this.ship.scene) return;
@@ -114,6 +129,7 @@ export class PlayerController {
     [PAD.LT]: this.onPadThrottleDown,
     [PAD.LEFT]: this.onKeyDownQ,
     [PAD.UP]: this.onKeyDownI,
+    [PAD.RIGHT]: this.onKeyDownF,
   };
 
   private onPadButtonDown = (_pad: Phaser.Input.Gamepad.Gamepad, button: Phaser.Input.Gamepad.Button) => {
@@ -129,6 +145,10 @@ export class PlayerController {
 
   setThrottleLocked(locked: boolean): void {
     this.throttleLocked = locked;
+  }
+
+  setSystemsLocked(locked: boolean): void {
+    this.systemsLocked = locked;
   }
 
   // L2 is an analog trigger and Phaser only counts a button as down at full
@@ -164,6 +184,10 @@ export class PlayerController {
     kb?.on('keydown-Q', this.onKeyDownQ);
     kb?.on('keydown-J', this.onKeyDownJ);
     kb?.on('keydown-I', this.onKeyDownI);
+    kb?.on('keydown-F', this.onKeyDownF);
+    kb?.on('keydown-X', this.onPadCycleRadarMode);
+    kb?.on('keydown-W', this.onPadThrottleUp);
+    kb?.on('keydown-S', this.onPadThrottleDown);
     kb?.on('keydown-SPACE', this.onKeyDownSpace);
     this.scene.input.gamepad?.on('down', this.onPadButtonDown);
     this.scene.input.on('pointerdown', this.onPointerDown);
@@ -185,6 +209,10 @@ export class PlayerController {
     kb?.off('keydown-Q', this.onKeyDownQ);
     kb?.off('keydown-J', this.onKeyDownJ);
     kb?.off('keydown-I', this.onKeyDownI);
+    kb?.off('keydown-F', this.onKeyDownF);
+    kb?.off('keydown-X', this.onPadCycleRadarMode);
+    kb?.off('keydown-W', this.onPadThrottleUp);
+    kb?.off('keydown-S', this.onPadThrottleDown);
     kb?.off('keydown-SPACE', this.onKeyDownSpace);
     this.scene.input.gamepad?.off('down', this.onPadButtonDown);
     this.scene.input.off('pointerdown', this.onPointerDown);

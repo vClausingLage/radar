@@ -136,10 +136,6 @@ export class DishRadarStation implements RadarHost {
         return 0;
     }
 
-    getRange(): number {
-        return this.range;
-    }
-
     // The station's solid bodies, for the scene to register as terrain and to
     // fade as one: rock and dish show and hide together.
     getTerrain(): Terrain[] {

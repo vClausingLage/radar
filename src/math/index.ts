@@ -23,10 +23,6 @@ export class GameMath {
         return 'cold';
     }
 
-    static getDistance(x1: number, y1: number, x2: number, y2: number): number {
-        return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-    }
-
     // Area centroid of a simple polygon (shoelace formula), independent of
     // winding. This is the point Matter puts a fromVertices body's position at
     // (Vertices.centre), so a sprite whose origin sits here lines up with its

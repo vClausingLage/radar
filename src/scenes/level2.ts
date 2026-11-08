@@ -10,7 +10,12 @@ import { playerShipSettings } from "../settings";
 // this far out of the band on the friendly side, drifting back towards it.
 // The drift is slow, but it is the clock: the player has to cold-start, cross
 // to her and pass a line before she slides back into the gas.
-const LANTERN_ALONG_PX = 1080;
+//
+// Low on the spine on purpose: from the upper half she lay inside the reach of
+// the picket line (a big hull is a bright echo, well past the gas), so the
+// briefed task of reaching her was itself the way to fail it. Down here she is
+// ~1000 px clear of the nearest station the pickets may take.
+const LANTERN_ALONG_PX = 800;
 const LANTERN_OFFSET_PX = gasCloudSettings.RADIUS + 360;
 const LANTERN_DRIFT_SPEED = 0.018;
 
@@ -31,9 +36,20 @@ const LANTERN_TOUCHDOWN = { x: 1280, y: 2290 };
 // The raider that crippled her comes out of the gas once she is under tow —
 // out of the southern stretch of the band, well clear of the picket line
 // (which is kept off that stretch so none of them has it in its cone).
-const RAIDER_ALONG_PX = 650;
+//
+// It is further down the band than the tow and stirs RAIDER_DELAY_MS after the
+// line is fast: it spawned at the hook-up, ~510 px from the hulk and already
+// inside its own ring when it left the gas, which left the player 20-30 s to
+// find it, lock it and shoot with a hulk on the line that cannot defend itself.
+// Now the player has the time to drag her out of its reach, and the lead to
+// meet it with a shot instead of an answer.
+const RAIDER_ALONG_PX = 350;
 const RAIDER_DEPTH_PX = 40;
-const PICKET_KEEP_CLEAR_PX = 700;
+const RAIDER_DELAY_MS = 25000;
+// Wide enough to clear the Lantern too (her station is 800 up the spine): a
+// picket's reach runs ~900 px past its depth, and the first rig of this level
+// failed 3 runs in 8 with her merely being fetched.
+const PICKET_KEEP_CLEAR_PX = 1300;
 
 type Phase = 'search' | 'alongside' | 'tow' | 'home';
 
@@ -51,6 +67,7 @@ export default class Level2 extends CampaignLevel {
     private towLine?: TowLine;
     private phase: Phase = 'search';
     private hookupMs = 0;
+    private raiderDueAt?: number;
     private raiderSeen = false;
 
     constructor() {
@@ -74,6 +91,7 @@ export default class Level2 extends CampaignLevel {
         this.raider = undefined;
         this.phase = 'search';
         this.hookupMs = 0;
+        this.raiderDueAt = undefined;
         this.raiderSeen = false;
 
         this.spawnPickets(2, { along: RAIDER_ALONG_PX, halfWidth: PICKET_KEEP_CLEAR_PX });
@@ -152,6 +170,9 @@ export default class Level2 extends CampaignLevel {
         if (this.phase === 'alongside') this.passTowLine(player, lantern, delta);
 
         if (this.phase === 'tow') {
+            if (!this.raider && this.raiderDueAt !== undefined && this.time.now >= this.raiderDueAt) {
+                this.raider = this.spawnRaider(RAIDER_ALONG_PX, RAIDER_DEPTH_PX, PAD_POSITION);
+            }
             this.watchRaider();
             if (Phaser.Math.Distance.Between(lantern.x, lantern.y, PAD_POSITION.x, PAD_POSITION.y) <= HOME_RADIUS_PX) {
                 this.phase = 'home';
@@ -164,7 +185,10 @@ export default class Level2 extends CampaignLevel {
     // Station-keeping while the line goes across: close, slow, and steady.
     private passTowLine(player: PlayerShip, lantern: Target, delta: number): void {
         const close = Phaser.Math.Distance.Between(player.x, player.y, lantern.x, lantern.y) <= HOOKUP_RANGE_PX;
-        const slow = Math.abs(player.getCurrentSpeed()) <= HOOKUP_MAX_SPEED;
+        // Astern is slower than a third ahead (the sign is the direction): the
+        // slow-astern setting is a legitimate way to hold station, and its
+        // magnitude is just over the limit.
+        const slow = player.getCurrentSpeed() <= HOOKUP_MAX_SPEED;
         this.hookupMs = close && slow ? this.hookupMs + delta : 0;
         if (this.hookupMs < HOOKUP_MS) return;
 
@@ -174,7 +198,7 @@ export default class Level2 extends CampaignLevel {
         this.radio?.say('l2-hooked');
 
         // Whoever did this has been waiting for someone to come for her.
-        this.raider = this.spawnRaider(RAIDER_ALONG_PX, RAIDER_DEPTH_PX, PAD_POSITION);
+        this.raiderDueAt = this.time.now + RAIDER_DELAY_MS;
     }
 
     // The raider pops up on Disco's scope as it leaves the gas: declared on

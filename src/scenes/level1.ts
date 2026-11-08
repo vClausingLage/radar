@@ -48,7 +48,7 @@ export default class Level1 extends CampaignLevel {
     }
 
     protected briefingMessage(): string {
-        return 'LEVEL 1 — MULE TRAIN. Cold ship on the pad: run BAT, ENG1, ENG2, SYS. Tasking: friendly cargo traffic is inbound from the north to this pad. Radar cannot tell friend from bogey — close to visual range and identify each one. Disco (cyan datalink) calls new contacts and answers C with a bogey dope. The gas band to the west is a no-go line: Disco has no picture behind it and hostile pickets hold there. If a picket tracks you, or you shoot the traffic, the mission is over.';
+        return 'LEVEL 1 — MULE TRAIN. Cold ship on the pad: run BAT, ENG1, ENG2, SYS. Tasking: friendly cargo traffic is inbound from the north to this pad. Radar cannot tell friend from bogey — close to visual range and identify each one. Disco (cyan datalink) calls new contacts and answers C with a bogey dope. The gas band to the west is a no-go line: Disco has no picture behind it and hostile pickets hold there. If a picket tracks you, or you shoot the traffic, the mission is over. Your RWR rings for every radar that touches you, the haulers\' included: a tone from the west is a picket\'s. Your hull is bigger than theirs, and a bigger hull is seen from further off.';
     }
 
     protected buildMission(): void {
@@ -94,6 +94,17 @@ export default class Level1 extends CampaignLevel {
         this.radio?.say('l1-vid', ...(reply ? [reply] : []));
         if (this.friendlies.every(cargo => this.identified.has(cargo.id))) {
             this.completeMission('ALL INBOUND TRAFFIC IDENTIFIED', 'l1-complete', 'l1-complete-2');
+        }
+    }
+
+    // The traffic is down. If the player never put eyes on every hauler the
+    // tasking can no longer be done, and the mission would otherwise sit open
+    // forever with no verdict - and, since a mission is left through its
+    // verdict, no way out but closing the game.
+    protected onFriendlyLanded(): void {
+        if (this.friendlies.every(cargo => this.landed.has(cargo.id))
+            && !this.friendlies.every(cargo => this.identified.has(cargo.id))) {
+            this.failMission('TRAFFIC LANDED UNIDENTIFIED', 'l1-fail-unidentified');
         }
     }
 

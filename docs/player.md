@@ -43,8 +43,11 @@ See [radar.md](radar.md) for how the simulation actually works under the hood.
 | Input | Action |
 |-------|--------|
 | **A / D** | Turn left / right |
+| **W / S** | Throttle one setting up / down: REV → 1/3 → 2/3 → FULL |
 | **R** | Switch to **RWS** (search) |
-| **E** | Enter **STT** — lock the best current track |
+| **X** | Step the radar mode: RWS → TWS → EMCON → RWS (from STT: break the lock, back to RWS) |
+| **F** | Pick the next track outward from you (a white bracket on the scope). **E** and a TWS shot go to the pick first |
+| **E** | Enter **STT** — lock the picked track, or else the best current track |
 | **Esc** | Break STT lock, return to RWS |
 | **Q** | Cycle active weapon (VIM-177 ↔ VIM-220) |
 | **Space** | Fire the active weapon |
@@ -53,6 +56,8 @@ See [radar.md](radar.md) for how the simulation actually works under the hood.
 | **I** | Interrogate (IFF) every track on the scope - needs at least one track |
 | **Shift + Click** | Place a VIM-220 mid-course waypoint (VIM-220 selected) |
 | **Mouse + / −** buttons | Zoom the camera |
+| **B** | Show the briefing again (it stays up for 25 s at the start) |
+| **C** | Campaign: bogey dope call to Disco |
 | **M** | Back to the menu: any time in free play and One versus Two, after the verdict in the campaign |
 
 ## Gamepad / Steam Deck
@@ -69,6 +74,7 @@ See [radar.md](radar.md) for how the simulation actually works under the hood.
 | **L2** | Throttle one setting down: FULL → 2/3 → 1/3 → REV |
 | **D-pad left** | Cycle active weapon |
 | **D-pad up** | Interrogate (IFF) |
+| **D-pad right** | Pick the next track outward from you |
 | **D-pad down** | Campaign: bogey dope call to Disco |
 | **Start** | Cold start: throw the next switch. Campaign, after the verdict: next mission / retry |
 | **Select** | Back to the menu: any time in free play and One versus Two, after the verdict in the campaign |
@@ -131,11 +137,14 @@ off again. Missiles fly over ground and are stopped only by rocks and towers.
 ## Decoys (chaff)
 
 You carry **5** decoys. Press **T** to drop a chaff cloud at your current
-position. A cloud lingers for a few seconds and fades out. While a radar beam
-passes through a cloud, the return may be lost — so if you manoeuvre so a cloud
-sits **between your ship and a threat radar (or an incoming missile)**, you can
-break its lock. It's probabilistic: a single cloud won't always work, and
-stacking several in the line improves your odds.
+position. A cloud lingers for a few seconds and fades out. A cloud is a
+**reflector**: it returns energy of its own, and where it sits **nearer than
+your hull on a beam's line it swallows that return** and paints a false
+contact in its place. So it works by geometry — put the cloud **between your
+ship and the threat radar (or an incoming missile's seeker)** and run cold.
+Dropped beside you with the threat off to the side, it does nothing. A held
+**STT lock** is much harder to shake with it: the cloud and the hull usually
+sit inside the same lock gate, and the missile on that lock goes for the pair.
 
 ## Jammer (active deception)
 
@@ -186,11 +195,14 @@ A few things to keep in mind:
    The route is drawn in yellow and is handed to each VIM-220 you fire. It
    fades away once the missile carrying it passes the first waypoint or is
    destroyed.
-4. Press **Space**. Each press launches one missile at the **nearest**
-   un-engaged track; the next press takes the next-nearest, and so on.
+4. Press **Space**. Each press launches one missile at the track you picked
+   with **F**, if it is still free; otherwise at the **nearest** un-engaged
+   track, then the next-nearest, and so on. A press that launches nothing says
+   why in red above the ship (wrong weapon for the mode, no rounds, no track).
+   Two ships closer together than the tracker's gate can read as one contact.
 5. The missile flies the waypoints / its assigned track until its own radar
-   activates — the **TTA** (time-to-active) countdown next to the radar cone
-   shows the seconds remaining, then reads **RADAR ACTIVE**. After that the
+   activates — it arms by closing range, so there is no countdown; the cone
+   readout shows **RADAR ACTIVE** once the seeker is up. After that the
    missile homes itself; you can break off.
 
 ---
@@ -199,7 +211,8 @@ A few things to keep in mind:
 
 - **Contact boxes** — tracked targets. Red = your STT lock.
 - **Cone-edge readout** — active weapon name, remaining rounds, current range,
-  and the **TTA** line for the last VIM-220 fired (right edge of the cone).
+  and **RADAR ACTIVE** once the last VIM-220 fired has its seeker up (right
+  edge of the cone).
 - **Jammer status** — on the **left** edge of the cone: green `JAM RDY` when
   available, red `JAM 9s` counting down while active, grey `JAM CD 14s` during
   cooldown.
@@ -217,4 +230,6 @@ A few things to keep in mind:
   cone, prefer the VIM-220.
 - Asteroids reflect the beam too. A "contact" that never manoeuvres and drifts
   ballistically is probably a rock.
-- Throttle down to turn tighter and keep a fast crosser inside your cone.
+- Throttle changes how fast you turn, not how tight: the turn *radius* is the
+  same at every setting (a lower throttle just turns slower on the spot). Use
+  it to hold station or to slow down for a landing, not to tighten a turn.

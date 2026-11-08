@@ -31,7 +31,6 @@ export type GuidanceTarget = {
   getSpeed(): number;
   radar?: {
     rwrReceiver: { receive(key: string, bearingDeg: number, isLocked: boolean, now: number): void };
-    eventEmitter: { onRwrLock(): void };
   };
 };
 
@@ -91,7 +90,6 @@ export class MissileRadar {
   private readonly raycaster = new Ray();
 
   isActive(): boolean { return this.mode !== 'off'; }
-  getMode(): MissileRadarMode { return this.mode; }
   getLockedTargetId(): number | null { return this.lockedTargetId; }
   // Seeker envelope, exposed so the HUD can draw the "what the missile sees"
   // cone once the radar is live.
@@ -290,11 +288,10 @@ export class MissileRadar {
     }
   }
 
-  // Lock (STT) illumination: red RWR contact + lock-warning event on the victim.
+  // Lock (STT) illumination: a red RWR contact on the victim.
   private illuminateLock(pos: Vector2, t: GuidanceTarget, now: number): void {
     if (!t.radar) return;
     t.radar.rwrReceiver.receive(this.emitterKey, this.bearingFrom(pos, t), true, now);
-    t.radar.eventEmitter.onRwrLock();
   }
 
   // Search (RWS) illumination: green, unlocked RWR contact.

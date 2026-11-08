@@ -94,9 +94,13 @@ function addStartMenuButton(game: Phaser.Game, run: () => void): void {
     if (!menu) return;
 
     const attach = (scene: Phaser.Scene): void => {
+        // The menu zooms its design sheet to the window (StartMenu.fitToWindow),
+        // so the window's corner is found through the camera, not as a size.
+        const cam = scene.cameras.main;
+        const corner = cam.getWorldPoint(scene.scale.width - START_MENU_BUTTON_MARGIN_PX, START_MENU_BUTTON_MARGIN_PX);
         const button = scene.add.text(
-            scene.scale.width - START_MENU_BUTTON_MARGIN_PX,
-            START_MENU_BUTTON_MARGIN_PX,
+            corner.x,
+            corner.y,
             'RUN RADAR TESTS',
             {
                 fontSize: '16px',
@@ -104,7 +108,7 @@ function addStartMenuButton(game: Phaser.Game, run: () => void): void {
                 backgroundColor: '#001a11',
                 padding: { x: 12, y: 6 },
             },
-        ).setOrigin(1, 0).setInteractive();
+        ).setOrigin(1, 0).setScale(1 / cam.zoom).setInteractive();
 
         button.on('pointerdown', run);
         button.on('pointerover', () => button.setStyle({ backgroundColor: '#00ff88', color: '#001a11' }));

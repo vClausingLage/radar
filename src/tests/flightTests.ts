@@ -870,6 +870,39 @@ const bracketMirrored: GameTest = {
     },
 };
 
+// (n2) A member shot down mid-bracket. The plan is for two hulls; once one is
+// gone the survivor must be handed orders without anything reading the dead
+// hull. (In play this was a TypeError in the frame loop that stopped the whole
+// game at the moment the player scored the kill.)
+const bracketSurvivesALoss: GameTest = {
+    name: 'Tactic bracket: losing a member mid-bracket voids the plan and the loop runs on',
+    description: 'A flight brackets a drone, then the wing is destroyed. The tactic falls back to formation at '
+        + 'once and the survivor is given orders - nothing throws, and it is free to shoot.',
+    async run(ctx) {
+        const { flight } = comingUponDrone(ctx, 1);
+        let bracketed = false;
+        for (let f = 0; f < 5000 && !bracketed; f += 2) {
+            await ctx.frames(2);
+            bracketed = flight.tactic === 'bracket';
+        }
+        ctx.check('the flight chose bracket', bracketed);
+        if (!bracketed) return;
+
+        flight.wing.destroy();
+        let thrown = '';
+        let orders = null as ReturnType<Flight['ordersFor']> | null;
+        try {
+            await ctx.frames(120);
+            orders = flight.ordersFor(flight.lead, ctx.scene.time.now);
+        } catch (err) {
+            thrown = String(err);
+        }
+        ctx.check('nothing threw in the frame loop or the orders', thrown === '', thrown);
+        ctx.check('the plan is void: formation', flight.tactic === 'formation', flight.tactic);
+        ctx.check('the survivor may shoot', orders?.mayShoot === true);
+    },
+};
+
 // Shots as they happen: which member's rails lost a round, in order.
 type ShotLog = { who: 'lead' | 'wing'; otherArmed: boolean; tactic: string }[];
 
@@ -1299,6 +1332,7 @@ export const flightTests: GameTest[] = [
     shooterCoverWingShoots,
     bracketSplitsAndCloses,
     bracketMirrored,
+    bracketSurvivesALoss,
     grinderAlternates,
     tacticHolds,
     wingCuesLead,

@@ -1,7 +1,5 @@
 import Phaser from "phaser";
 import { Track, iffStateOf } from "../../radar/data/track";
-import { Asteroid } from "../../entities/asteroid";
-import { Missile } from "../../entities/missiles";
 import { Loadout } from "../data/types";
 
 import { Pulse } from "../systems/modules/emitter";
@@ -30,11 +28,13 @@ export type RadarRendererFrame = {
   radarRange: number;
   scanStartAngle: number;
   scanEndAngle: number;
-  activeMissiles: Missile[];
   loadout: Loadout;
   vim220Waypoints: Vector2[];
   pulse?: Pulse;
   sttMode?: boolean;
+  // 0 once the last-fired VIM-220's own seeker is up ("RADAR ACTIVE"), null
+  // when none is in flight. The seeker arms by closing range, so there is no
+  // countdown to show.
   vim220TimeToActive?: number | null;
   missileRange?: number | null;
   jammerStatus?: JammerHudStatus | null;
@@ -85,7 +85,7 @@ export class RadarRenderer {
     const {
       graphics, radarPosition, radarRange,
       scanStartAngle: startAngle, scanEndAngle: endAngle,
-      activeMissiles, loadout,
+      loadout,
       vim220Waypoints = [],
       vim220TimeToActive = null,
       jammerStatus = null,
@@ -110,10 +110,9 @@ export class RadarRenderer {
             this.rangeText.setText('\n RDR STDBY');
             this.rangeText.setColor('#ffff00');
         } else {
-            const missileAge = activeMissiles?.length && activeMissiles[0].missileAge > 0 ? activeMissiles[0].missileAge : '';
             // IFF indicator: only while there is a track to ask about.
             this.iffHintShown = iffHint;
-            this.rangeText.setText(`\n ${radarRange}\n ${missileAge}${iffHint ? '\n IFF [I]' : ''}`);
+            this.rangeText.setText(`\n ${radarRange}${iffHint ? '\n\n IFF [I]' : ''}`);
             this.rangeText.setColor('#00ff00');
         }
     }
@@ -145,12 +144,8 @@ export class RadarRenderer {
           loadoutText += `${missileType}\n ${missileData.load} `;
         }
       }
-      // Time-to-active readout for the last-fired VIM-220, beneath the loadout.
-      if (vim220TimeToActive !== null) {
-        loadoutText += vim220TimeToActive > 0
-          ? `\n TTA ${vim220TimeToActive}s`
-          : `\n RADAR ACTIVE`;
-      }
+      // The last-fired VIM-220's seeker is up: say so beneath the loadout.
+      if (vim220TimeToActive === 0) loadoutText += `\n RADAR ACTIVE`;
       if (this.activeLoadout) {
         this.activeLoadout.setText(`\n\n\n ${loadoutText}`);
       }
@@ -279,7 +274,7 @@ export class RadarRenderer {
     }
   }
 
-  renderRwsContacts(graphics: Phaser.GameObjects.Graphics, track: Track): void {
+  renderRwsContacts(graphics: Phaser.GameObjects.Graphics, track: Track, designated = false): void {
     const { x, y } = track.pos;
     const halfMarker = RADAR_CONTACT_MARKER_SIZE_PX / 2;
 
@@ -296,6 +291,12 @@ export class RadarRenderer {
     graphics.fillStyle(color, 0.7);
     graphics.fillRect(x - halfMarker, y - halfMarker, RADAR_CONTACT_MARKER_SIZE_PX, RADAR_CONTACT_MARKER_SIZE_PX);
     this.renderIffMark(graphics, track);
+    // The pilot's pick: a white bracket round the box, so a shot or a lock
+    // that is about to go to it can be read off the scope.
+    if (designated) {
+      graphics.lineStyle(2, 0xffffff, 1);
+      graphics.strokeRect(x - halfMarker - 5, y - halfMarker - 5, RADAR_CONTACT_MARKER_SIZE_PX + 10, RADAR_CONTACT_MARKER_SIZE_PX + 10);
+    }
 
     // Velocity vector line
     if (track.dir && track.speed > 0) {
@@ -366,18 +367,6 @@ export class RadarRenderer {
       graphics.lineStyle(2, 0xff0000, 1);
       graphics.lineBetween(x, y, x + Math.cos(rad) * RADAR_TRACK_VECTOR_LENGTH_PX, y + Math.sin(rad) * RADAR_TRACK_VECTOR_LENGTH_PX);
     }
-  }
-
-  renderMissiles(missiles: Missile[]): void {
-    // Physics updates position; keep rotation consistent if needed
-    missiles.forEach(m => {
-      m.setAngle(Phaser.Math.RadToDeg(Math.atan2(m.direction.y, m.direction.x)));
-    });
-  }
-
-  renderAsteroids(asteroids: Asteroid[]): void {
-    // Currently unused: reserved for terrain-like rendering pass
-    void asteroids;
   }
 
   destroy(): void {
