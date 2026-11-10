@@ -91,13 +91,13 @@ function selectedWeapon(ctx: TestContext): string | undefined {
 }
 
 const r1StepsTheModeLoop: GameTest = {
-    name: 'Gamepad: R1 steps RWS, TWS, EMCON and back, once per press',
+    name: 'Gamepad: R1 steps RWS, TWS, IRST, EMCON and back, once per press',
     description: 'R1 is held for several polls at each step, so a press that repeated would skip a mode.',
     async run(ctx) {
         await withPad(ctx, async pad => {
             const radar = ctx.player.radar;
             radar.enterRws();
-            for (const expected of ['tws', 'emcon', 'rws']) {
+            for (const expected of ['tws', 'irst', 'emcon', 'rws']) {
                 await pad.press(ctx, PAD.RB);
                 ctx.check(`R1 steps to ${expected}`, radar.getMode() === expected, radar.getMode());
             }

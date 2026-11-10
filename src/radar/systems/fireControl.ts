@@ -11,20 +11,30 @@ import { RadarRenderer } from "../renderer/radarRenderer";
 
 import { Vector2 } from "../../types";
 import { Missile, ActiveRadarMissile, SARHMissile, MISSILE_FLIGHT } from "../../entities/missiles";
+import { IrSeeker } from "./modules/irSeeker";
+import type { IrSource } from "../data/infraredPath";
+import type { GasVolume, Terrain } from "../data/types";
 import {
+    IR_SEEKER_GIMBAL_DEG,
     PHYSICS_FPS,
     VIM220_WAYPOINT_FADE_MS,
 } from "../data/radarGameSettings";
 
 // Context the radar (sensor) hands the fire-control system each time the player
 // pulls the trigger: the owning ship plus the current track picture. STT lock →
-// VIM-177 (SARH), TWS track → VIM-220 (ARH).
+// VIM-177 (SARH), TWS track → VIM-220 (ARH); VIM-90 (IR) on either cue below.
 export type ShootContext = {
     ship: (PlayerShip | Target) | null;
     sttTrack: Track | null;
     tracks: Track[];
     // The track the pilot picked, if any: a TWS shot goes to it first.
     designatedId?: number | null;
+    // The IRST's lock, as a line of sight (deg, absolute), or null. The other
+    // cue a VIM-90's seeker can be uncaged on, with the radar silent.
+    irstLockBearing?: number | null;
+    // What the VIM-90's seeker would look into at the rail: the hot hulls, the
+    // gas between, the terrain. Only the IR shot reads it.
+    irWorld?: { sources: IrSource[]; gasVolumes: GasVolume[]; terrain: Terrain[] };
 };
 
 // The weapons system. The radar produces tracks; FireControl consumes them to
@@ -169,6 +179,11 @@ export class FireControl {
     // rejected (no lock, no ammo, wrong weapon selected, ...) — the radar uses
     // this to decide whether to key the player's Fox call over the radio.
     shoot(mode: Mode, ctx: ShootContext): string | null {
+        // The IR missile cares about the cue, not the radar mode: an STT line of
+        // sight or the IRST's lock (IRST mode, transmitter silent).
+        if (this.loadoutManager.getActiveType() === 'VIM-90') {
+            return this.fireVim90(mode, ctx) ? 'VIM-90' : null;
+        }
         if (mode === 'stt') {
             return this.fireVim177(ctx) ? 'VIM-177' : null;
         } else if (mode === 'tws') {
@@ -185,6 +200,13 @@ export class FireControl {
     // names the way out.
     refusalReason(mode: Mode, ctx: ShootContext): { reason: string; hint: string } {
         const active = this.loadoutManager.getActiveType();
+        if (active === 'VIM-90') {
+            if (this.getWeaponLoad('VIM-90') <= 0) return { reason: 'NO VIM-90 LEFT', hint: 'Q - cycle the weapon' };
+            const cue = this.irCue(mode, ctx);
+            if (cue === null) return { reason: 'VIM-90 NEEDS A LOCK', hint: 'X - IRST mode, E - lock' };
+            if (!this.withinSeekerGimbal(ctx, cue)) return { reason: 'TARGET OFF BORESIGHT', hint: 'point the nose' };
+            return { reason: 'NO TONE', hint: 'close the range, get behind it' };
+        }
         if (mode === 'stt') {
             if (active !== 'VIM-177') return { reason: 'STT FIRES VIM-177', hint: 'Q - cycle the weapon' };
             if (this.getWeaponLoad('VIM-177') <= 0) return { reason: 'NO VIM-177 LEFT', hint: 'ESC - back to search' };
@@ -197,9 +219,9 @@ export class FireControl {
                 ? { reason: 'NO TRACK TO SHOOT', hint: 'wait for a contact, or set a two-point route' }
                 : { reason: 'ALL TRACKS ENGAGED', hint: 'F - pick another, or wait' };
         }
-        return mode === 'emcon'
-            ? { reason: 'EMCON - RADAR OFF', hint: 'R - search, X - step the mode' }
-            : { reason: 'GO STT OR TWS', hint: 'E - lock a track, X - step to TWS' };
+        if (mode === 'emcon') return { reason: 'EMCON - RADAR OFF', hint: 'R - search, X - step the mode' };
+        if (mode === 'irst') return { reason: 'IRST - RADAR OFF', hint: 'Q - VIM-90, or R - radar search' };
+        return { reason: 'GO STT OR TWS', hint: 'E - lock a track, X - step to TWS' };
     }
 
     // VIM-177 (SARH): requires an STT lock; rides the ship's illumination.
@@ -234,6 +256,60 @@ export class FireControl {
         this.activeMissiles.push(missile);
         this.loadoutManager.decrementLoad('VIM-177');
         return true;
+    }
+
+    // VIM-90 (IR): lock-on before launch. The seeker is uncaged on the cue -
+    // the radar's STT line of sight if there is one, else the IRST's - and
+    // must find heat there above its own threshold (tone) before the round is
+    // released. The cue only points the seeker; once off the rail the missile
+    // needs nothing more from the ship. Returns whether it left the rail.
+    private fireVim90(mode: Mode, ctx: ShootContext): boolean {
+        const ship = ctx.ship;
+        if (!ship || !ctx.irWorld) return false;
+        if (this.getWeaponLoad('VIM-90') <= 0) return false;
+        const cue = this.irCue(mode, ctx);
+        if (cue === null || !this.withinSeekerGimbal(ctx, cue)) return false;
+
+        const ownerPos = ship.getPosition();
+        const seeker = new IrSeeker();
+        const { sources, gasVolumes, terrain } = ctx.irWorld;
+        if (!seeker.acquire(ownerPos, cue, sources, gasVolumes, terrain)) return false;
+
+        const rad = Phaser.Math.DegToRad(ship.getDirection());
+        const missile = this.scene.add.infraredMissile({
+            x: ownerPos.x,
+            y: ownerPos.y,
+            dirX: Math.cos(rad),
+            dirY: Math.sin(rad),
+        });
+        missile.seeker = seeker;
+        missile.lastLosDeg = seeker.getLookDeg();
+        this.armMissile(missile, ship);
+
+        this.activeMissiles.push(missile);
+        this.loadoutManager.decrementLoad('VIM-90');
+        return true;
+    }
+
+    // Where the VIM-90's seeker is pointed at the rail: the radar's STT line of
+    // sight while it holds a lock (the more precise cue: it has range too),
+    // otherwise the IRST's. Null with neither.
+    private irCue(mode: Mode, ctx: ShootContext): number | null {
+        const ship = ctx.ship;
+        if (!ship) return null;
+        if (mode === 'stt' && ctx.sttTrack) {
+            const p = ship.getPosition();
+            return Phaser.Math.RadToDeg(Math.atan2(ctx.sttTrack.pos.y - p.y, ctx.sttTrack.pos.x - p.x));
+        }
+        return ctx.irstLockBearing ?? null;
+    }
+
+    // The seeker sits in the missile's nose and the missile leaves along the
+    // ship's: a cue further off the nose than the gimbal reaches cannot be
+    // looked at.
+    private withinSeekerGimbal(ctx: ShootContext, cueDeg: number): boolean {
+        if (!ctx.ship) return false;
+        return Math.abs(Phaser.Math.Angle.WrapDegrees(cueDeg - ctx.ship.getDirection())) <= IR_SEEKER_GIMBAL_DEG;
     }
 
     // VIM-220 (ARH): TWS fire — assigns the missile to the next un-engaged

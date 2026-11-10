@@ -328,9 +328,10 @@ const rwrBearingIsHunted: GameTest = {
         const silent = await ctx.waitUntil(() => drone.radar.rwrReceiver.getRwrSignals().length === 0, 400);
         const before = stub.pictures.length;
         await ctx.frames(30);
-        // The claim is "never back to PATROL", not "only HUNT": the drone may
-        // still chase a thermal false alarm (RADAR_FALSE_ALARM_RATE) into
-        // INVESTIGATE — that is the doctrine working, as in (a).
+        // The claim is "never back to PATROL", not "only HUNT": a thermal
+        // false alarm painted twice is a confirmed track and may still pull it
+        // into INVESTIGATE — that is the doctrine working, as in (a). A single
+        // paint no longer does (scriptedState).
         const after = [...new Set(stub.pictures.slice(before).map(p => p.currentState))];
         ctx.check('the RWR has gone silent', silent);
         ctx.check('it keeps after the bearing instead of patrolling', !after.includes('PATROL'),

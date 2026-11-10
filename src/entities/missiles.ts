@@ -3,6 +3,7 @@ import type { Ship } from './ship';
 import { missileSettings } from './entitySettings';
 import type { Vector2 } from '../types';
 import { MissileRadar } from '../radar/systems/modules/missileRadar';
+import { IrSeeker } from '../radar/systems/modules/irSeeker';
 import { Exhaust, EXHAUST_NOZZLES, MISSILE_EXHAUST } from './exhaust';
 
 // Single source of truth for missile flight envelopes. `speed` is per physics
@@ -12,6 +13,7 @@ import { Exhaust, EXHAUST_NOZZLES, MISSILE_EXHAUST } from './exhaust';
 export const MISSILE_FLIGHT = {
     'VIM-177': { speed: missileSettings['VIM-177'].SPEED, burnTime: missileSettings['VIM-177'].BURN_TIME, turnSpeed: missileSettings['VIM-177'].TURN_SPEED },
     'VIM-220': { speed: missileSettings['VIM-220'].SPEED, burnTime: missileSettings['VIM-220'].BURN_TIME, turnSpeed: missileSettings['VIM-220'].TURN_SPEED },
+    'VIM-90': { speed: missileSettings['VIM-90'].SPEED, burnTime: missileSettings['VIM-90'].BURN_TIME, turnSpeed: missileSettings['VIM-90'].TURN_SPEED },
 } as const;
 
 export interface BaseMissile {
@@ -30,7 +32,7 @@ export interface BaseMissile {
     missileWarhead: 'high-explosive' | 'fragmentation';
 }
 
-export type Missile = SARHMissile | ActiveRadarMissile;
+export type Missile = SARHMissile | ActiveRadarMissile | InfraredMissile;
 
 export class SARHMissile extends Phaser.Physics.Matter.Sprite implements BaseMissile {
     direction: { x: number; y: number; };
@@ -117,6 +119,56 @@ export class ActiveRadarMissile extends Phaser.Physics.Matter.Sprite implements 
         this.setVelocity(this.direction.x * this.missileSpeed, this.direction.y * this.missileSpeed);
     }
     
+    constructor(scene: Phaser.Scene, params: { x: number; y: number; dirX: number; dirY: number }) {
+        super(scene.matter.world, params.x, params.y, 'missile');
+        this.direction = { x: params.dirX, y: params.dirY };
+        scene.add.existing(this);
+        this.setFrictionAir(0); // Remove air friction for space physics
+        this.updateHeading(params.dirX, params.dirY);
+        this.exhaust = new Exhaust(scene, this, EXHAUST_NOZZLES.missile, MISSILE_EXHAUST);
+    }
+
+    preUpdate(time: number, delta: number): void {
+        super.preUpdate(time, delta);
+        this.exhaust.update();
+    }
+
+    destroy(fromScene?: boolean): void {
+        this.exhaust?.destroy();
+        super.destroy(fromScene);
+    }
+}
+
+// VIM-90 (IR): fire-and-forget on its own heat seeker. Launched with tone - the
+// seeker already looking at the target (FireControl.fireVim90) - it needs
+// nothing from the ship after the rail: no illumination, no datalink. It
+// emits nothing either, so the target's RWR never hears it coming.
+export class InfraredMissile extends Phaser.Physics.Matter.Sprite implements BaseMissile {
+    direction: { x: number; y: number; };
+    targetId?: number;
+    owner?: Ship;
+    missileType = 'VIM-90' as const;
+    missileGuidance = 'infrared' as const;
+    missileBurnTime = MISSILE_FLIGHT['VIM-90'].burnTime;
+    missileSpeed = MISSILE_FLIGHT['VIM-90'].speed;
+    // Turn-rate limit (deg/s) on what proportional navigation commands.
+    missileTurnSpeed = MISSILE_FLIGHT['VIM-90'].turnSpeed;
+    missileAge: number = 0;
+    missileWarhead: 'high-explosive' | 'fragmentation' = 'fragmentation';
+    // The seeker, handed over from the rail already looking at its source.
+    seeker = new IrSeeker();
+    // Line of sight the seeker measured last tick: proportional navigation
+    // steers on how fast it turns.
+    lastLosDeg: number | null = null;
+    private readonly exhaust: Exhaust;
+
+    updateHeading(dirX: number, dirY: number): void {
+        const mag = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
+        this.direction = { x: dirX / mag, y: dirY / mag };
+        this.setAngle(Phaser.Math.RadToDeg(Math.atan2(this.direction.y, this.direction.x)));
+        this.setVelocity(this.direction.x * this.missileSpeed, this.direction.y * this.missileSpeed);
+    }
+
     constructor(scene: Phaser.Scene, params: { x: number; y: number; dirX: number; dirY: number }) {
         super(scene.matter.world, params.x, params.y, 'missile');
         this.direction = { x: params.dirX, y: params.dirY };

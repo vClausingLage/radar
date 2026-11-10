@@ -2,7 +2,7 @@ Decision Tree
 
 DEF patrolRoute => A patrol route is flying a horizontal or vertical line for 500 units, then turn left or right for 150 units and turn in the same direction as last turn. Then fly the same length back again and turn two times as above but on the other direction as before. So we have a search track that covers a wide area.
 
-DEF crank => After shooting a missile turn left or right to bring the target next to the start or end angle of the radar to maximize geometric distance to target.
+DEF crank => After shooting a missile turn left or right to bring the target next to the start or end angle of the radar to maximize geometric distance to target - next to it, never past it (SCOPE_EDGE_MARGIN_DEG inside the edge), or the radar loses the target.
 
 DEF skate => After the missile hit or missed skate away (turn away from target and fly away). 
 
@@ -24,17 +24,33 @@ Patrol -> radar set mode RWS -> track ?
 							-> skate/banzai
 
 Patrol -> rwr warning ?
-	-> Hunt: remember the warning's bearing (20 s after it was last heard) and
-	   fly down it. An RWR gives a bearing, never a range, and hears an enemy
-	   radar far beyond the range our radar can paint it at (emission ~ range²,
-	   echo ~ range⁴), so the warning is a lead worth following, not a scare.
+	-> Hunt: fly down the warning's bearing until the radar makes a real track.
+	   An RWR gives a bearing, never a range, and hears an enemy radar far
+	   beyond the range our radar can paint it at (emission ~ range², echo ~
+	   range⁴), so the warning is a lead worth following, not a scare.
+	   The bearing is remembered as a line SEGMENT: from where we heard it, out
+	   to the RWR horizon of a search radar (signalPath.rwrHorizonPx, ~1180 px)
+	   or the world edge if nearer - the emitter cannot be further than that, or
+	   it could not have been heard. The ship steers ONTO the line (a point
+	   200 px ahead on it), so a border turn does not leave it searching a strip
+	   beside it. Every new hearing redraws the segment from where we are.
 		-> aggressive: radar searching (RWS) all the way in
 		-> defensive: radar silent (EMCON) for the first 8 s, listening only,
 		   then radiate. Only a hunt begun from patrol opens silent; one resumed
 		   after losing a contact keeps radiating.
-		-> track ?
-			-> investigate -> lock and shoot (see above)
-		-> bearing not heard again for 20 s -> Patrol
+		-> confirmed track (painted twice, age >= 2) ?
+			-> plan the attack (investigate): close on it in TWS - heard by the
+			   target as a plain search, never a lock
+				-> VIM-220: shoot from TWS once in reach
+				-> VIM-177: take the STT lock only once the track is in the
+				   177's reach (504 px); a lock from further out only hands the
+				   target an early spike. A lock already held is kept.
+				-> lock and shoot (see above)
+		-> a single unconfirmed return (false alarm, flicker): keep hunting -
+		   the beam sweeps down the bearing, a real target matures by itself
+		-> whole segment flown, still no track -> Patrol
+		   (no clock: at the 6 px/s patrol speed the old 20 s timer turned
+		   back after ~120 px, a tenth of the way to where the emitter can be)
 	(Missile seekers are not hunted — their bearing points at the weapon.
 	 Radar cannot tell sides, so a friendly's radar is hunted too.)
 
@@ -316,6 +332,28 @@ orders (`Flight.ordersFor`: may it shoot, must it stay silent) and the geometry
   (`Flight.outboardSide`), not toward the world centre, so two ships that fire
   together do not turn across one another. Break-away (above) still guards the
   hulls in every tactic.
+- Keeping the contact on the scope (all tactics, every member): whenever a
+  member turns its nose off a contact its own radar holds - the crank, the
+  bracket's split - it turns no further than keeps the contact
+  SCOPE_EDGE_MARGIN_DEG (6) inside the edge of the cone its radar can hold it in
+  (`Radar.holdingHalfAzimuthDeg`: 30 in RWS and STT, 22.5 in TWS). The crank
+  offset *is* that edge (24 / 16.5 deg), and the controller clamps the heading
+  `Flight.closing` asks for to it (`AiUnitController.closeOn`), so the bracket
+  opens as wide as the member's scope allows and no wider. The margin is there
+  because the bearing it steers by is a scan old, a crossing target walks on,
+  and the turn rate lags the command. Past the edge the beam never visits the
+  contact again, the track ages out, and the attack used to stop there. A
+  contact worked off the link, or with the transmitter off, has no cone of the
+  member's own to keep and is not clamped.
+- REACQUIRE (flight members only): a member that loses its own matured contact
+  anyway (out-turned anyway, chaff, a rock) remembers where it last held it and
+  turns back in towards that point, radar in RWS, for REACQUIRE_MEMORY_MS
+  (10 s): from CRANK while the crank window is still open, and in place of
+  FORMATION / HUNT / PATROL otherwise. It ends when the contact is back on the
+  scope (INVESTIGATE), the memory runs out, or the member gets within
+  REACQUIRE_ARRIVAL_PX (150) of the point. Turning away on purpose (SKATE,
+  EVADE) forgets the contact. A lone ship keeps the old doctrine: lost track
+  after the shot means skate.
 - Hysteresis: the doctrine is reviewed every REVIEW_MS (500 ms) and a new answer
   must stand for DWELL_MS (1.5 s) before the flight acts on it; a blink of the
   picture is "no opinion" and leaves a change of mind in progress alone. A track

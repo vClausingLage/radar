@@ -87,10 +87,17 @@ src/radar/systems/modules/        Signal path: antenna → emitter → receiver 
                                   the ship's, Ship.iffCode from Side), flightDatalink
                                   (PPLI friend tagging of tracks and RWR emitters;
                                   the shared track picture a flight sorts and
-                                  launches on remote from)
+                                  launches on remote from), irst (passive
+                                  infrared search and track, its own radar
+                                  mode 'irst': transmitter silent, narrow
+                                  window off the nose, bearing-only contacts,
+                                  E locks),
+                                  irSeeker (the VIM-90's heat seeker)
 src/radar/systems/game/           radarEventEmitter ('missile-fired' for the Fox call)
 src/radar/data/                   track.ts, radarReturn.ts, types.ts (Entity, RadarHost, Mode),
                                   signalPath.ts (the energy budget every sensor asks),
+                                  infraredPath.ts (the passive IR budget: hull
+                                  signature by aspect/throttle, range², gas),
                                   radarGameSettings.ts (all radar constants)
 src/radar/renderer/               radarRenderer (scope marks), interfaceRenderer (HUD),
                                   terrainRenderer (ground map), receiverVideoRenderer (raw
@@ -244,7 +251,7 @@ display-and-weapons concern.
 Package manager is **pnpm**; the deploy workflow builds
 on push to `main`, so a broken build ships. A test scene is in `src/scenes/testScene.ts` and a test suite in `src/tests/radarTests.ts`
 (signal path), `src/tests/tacticianTests.ts` (the AI's tactician seam — stubbed, no
-network) and `src/tests/iffTests.ts` (IFF), `src/tests/flightTests.ts` (formation, PPLI friend tagging, shared picture, sort, launch on remote, tactics; all scripted), `src/tests/gamepadTests.ts` (pad bindings, through a fake `navigator.getGamepads`);
+network) and `src/tests/iffTests.ts` (IFF), `src/tests/flightTests.ts` (formation, PPLI friend tagging, shared picture, sort, launch on remote, tactics; all scripted), `src/tests/gamepadTests.ts` (pad bindings, through a fake `navigator.getGamepads`), `src/tests/irTests.ts` (IR signature, IRST, VIM-90);
 `window.runRadarTests(seed?, nameRegex?)` runs them all.
 
 ```bash

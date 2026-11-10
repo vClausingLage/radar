@@ -207,9 +207,15 @@ frame):
    moves it. This is the bearing estimate a monopulse comparator forms, and
    it replaces the old discrete α-trim — the trim falls out of the
    amplitudes instead of being a flat geometric rule.
-3. **Association** — each centroid is matched to the nearest existing track
-   within `GATE_RADIUS`, where the gate is centred on the track's
-   **velocity-predicted** position (not its last position).
+3. **Association** — one-to-one global nearest neighbour (`associate()`):
+   every (centroid, track) pair inside `TRACK_GATE_RADIUS_PX` of the track's
+   **velocity-predicted** position, shortest first; each track takes at most
+   one plot per update and each plot feeds at most one track. A plot whose
+   nearest track is already taken starts a track of its own. So the gate
+   only decides *which* track a plot belongs to — whether two hulls are one
+   contact or two is settled by step 1's resolution cell alone. (Before, every
+   plot inside a gate fed that track, and the 200 px gate merged pairs the
+   receiver had resolved, e.g. a flight 80 px abreast.)
 4. **α-β filter** — the matched track's position and velocity are smoothed:
    ```
    innovation = measurement − predicted
@@ -534,6 +540,47 @@ PPLI picture of its flight each frame (see *Seeker PPLI* above). Guidance phases
 
 `interceptVector()` solves the quadratic time-of-flight; `pursue()` is the
 fallback that simply points at the target's current position.
+
+### Infrared: `data/infraredPath.ts`, `modules/irst.ts`, `modules/irSeeker.ts`
+The passive side of the sensor suite. Nothing is transmitted, so nothing is
+ever warned: no RWR contact for the IRST, its lock, or a VIM-90 in flight.
+
+- **Signature** (`Ship.irIntensityToward()` → `irSignature()`): a warm hull
+  (`IR_HULL_INTENSITY`) from every aspect, plus the engines
+  (`IR_PLUME_INTENSITY`) scaled by throttle × share of engines lit, and by
+  aspect — `IR_PLUME_FRONT_VISIBILITY` of it from dead ahead, all of it from
+  dead astern. Reference (= 1) is full throttle tail-on.
+- **Budget** (`irSignal()`): one-way, falling with range² (a point source's
+  irradiance), against a sensor's rated range; `irTransmission()` is the same
+  Beer-Lambert `gasTransmission()` the radar pays, at
+  `IR_GAS_ATTENUATION_PER_PX` (~4x the radar's), so gas blinds IR long before
+  it blinds the radar. Terrain blocks the line of sight (`Ray.isOccluded()`,
+  shared with the VIM-220 seeker). Hard threshold, no Pd roll: thermal
+  emission is incoherent and does not scintillate like a radar echo.
+- **IRST** (`Irst`, fitted to the player's ship by the factory, owned by
+  `Radar` like the RWR). Its own radar mode, `'irst'` (`Radar.enterIrst()`):
+  the transmitter is as silent as in EMCON (`Radar.isTransmitting()`), and the
+  head runs only in that mode — leaving it calls `Irst.reset()`, so contacts
+  and lock go with it. It scans the narrow `IRST_FIELD_OF_REGARD_DEG` window
+  off the nose every `IRST_SCAN_FRAMES` ticks into
+  **bearing-only** contacts (no range — drawn as amber lines), merged within
+  `IRST_RESOLUTION_DEG`, associated one-to-one by bearing. `lock()` (E, the lock key, in IRST mode)
+  takes the contact nearest the nose and tracks it every tick in a
+  `IRST_TRACK_FOV_DEG` window with an α-β on bearing; it breaks after
+  `IRST_LOCK_BREAK_FRAMES` without the source or at the field-of-regard edge.
+- **VIM-90** (`InfraredMissile` + `IrSeeker`): lock-on before launch.
+  `FireControl.fireVim90()` uncages the seeker on the cue — the radar's STT
+  line of sight if locked, else the IRST lock — and releases only with tone
+  (a source above `IR_SEEKER_MIN_SIGNAL` in `IR_SEEKER_FOV_DEG`, within
+  `IR_SEEKER_GIMBAL_DEG` of the nose). In flight the seeker follows the
+  strongest heat in its window by geometry; `MissileGuidance.guideInfrared()`
+  flies proportional navigation (`IR_PN_NAVIGATION_CONSTANT` × line-of-sight
+  rate, capped by the airframe's turn limit) — the guidance law that needs
+  only an angle. The STT cue is bound by the ring like every radar weapon
+  input; the IRST cue has no range at all, and the seeker's own threshold is
+  what limits the shot.
+- Known simplifications: missiles and chaff carry no heat (only ships are IR
+  sources); AI ships have no IRST and never fire the VIM-90.
 
 ### `renderer/radarRenderer.ts` — `RadarRenderer`
 Draws the cone, sweep/lock beam, contact boxes, the loadout/range/TTA readout

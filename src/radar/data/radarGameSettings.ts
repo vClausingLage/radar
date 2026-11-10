@@ -215,6 +215,9 @@ export const ANTENNA_AZIMUTH_DEG_BY_MODE = {
   dome: 360,
   // Transmitter off — the antenna never sweeps, so this value is never read.
   emcon: 0,
+  // Transmitter off as well: the IRST looks, not the antenna. Its own window is
+  // IRST_FIELD_OF_REGARD_DEG.
+  irst: 0,
 } as const;
 
 // Beam width the rest of the energy budget is quoted for — RWS, this radar's
@@ -364,6 +367,103 @@ export const MISSILE_BOOST_PHASE_MAX_AGE = 2;
 // A waypoint counts as reached within this distance (px).
 export const VIM220_WAYPOINT_REACHED_DISTANCE_PX = 24;
 
+// ── Infrared: signature, IRST, IR seeker (data/infraredPath.ts,
+//    systems/modules/irst.ts, systems/modules/irSeeker.ts) ──────────────────
+// Infrared is passive: nothing is transmitted, so nothing is warned (no RWR
+// contact, ever) and nothing comes back but the target's own heat. Two things
+// follow, and they are the whole difference from the radar. The budget is
+// one-way, falling with range² (a point source's irradiance) rather than the
+// echo's range⁴. And there is no range measurement: an IR sensor sees *where
+// in angle* a hot thing is, never how far — so an IRST contact is a bearing.
+//
+// Intensities are ratios to a reference source: one cruiser at full
+// throttle seen dead astern is 1. A sensor's rated range is quoted against
+// that source, so a signal of 1 is exactly that source at exactly that range.
+
+// What a warm hull radiates from every aspect with the engines cold: skin
+// and radiators, no plume. A parked or coasting ship is nearly invisible.
+export const IR_HULL_INTENSITY = 0.04;
+// What the engines add at full throttle, seen from dead astern — the hot
+// nozzle metal plus the plume. Scales with throttle and with the share of
+// engines lit (a cold start's ship has none).
+export const IR_PLUME_INTENSITY = 0.96;
+// Share of the plume still seen from dead ahead: the hull hides the nozzles
+// and most of the plume behind itself, only the plume's far end shows past
+// it. So a ship coming at you is a tenth the target the same ship running
+// away is - the reason a rear-aspect shot is the classic IR shot.
+export const IR_PLUME_FRONT_VISIBILITY = 0.1;
+// How sharply the plume comes into view as the aspect swings from nose to
+// tail: 1 is a plain cosine blend, higher keeps it hidden across the beam
+// and shows it mostly in the rear quarter, where the nozzles look at you.
+export const IR_PLUME_ASPECT_EXPONENT = 1.5;
+
+// Gas absorbs infrared far harder than it absorbs the radar's band: one-way
+// optical depth per px of path through density 1.0, against the radar's
+// gasCloudSettings.ATTENUATION_PER_PX (0.008). Through the middle of a
+// default cloud (280 px at density 0.8) exp(-280 x 0.8 x 0.03) leaves 0.1 %
+// of the heat, and with a range² law that cuts a sensor's reach to about
+// 3 % - blind, where the radar keeps ~40 % of its range. Clipping the edge
+// (80 px) still costs well over half the reach.
+export const IR_GAS_ATTENUATION_PER_PX = 0.03;
+
+// IRST: range (px) at which the reference source sits exactly at the
+// detection threshold. Longer than the radar's ring - a hot tail is visible a
+// long way - but a nose-on contact at full throttle is seen only to ~0.37 of
+// it, and a ship at stop to 0.2.
+export const IRST_RATED_RANGE_PX = 900;
+// Signal (ratio to the threshold the rated range is quoted at) a source
+// must clear to be detected. A hard threshold, not a Pd roll: thermal
+// emission is incoherent, so it does not scintillate the way a radar echo's
+// coherent glint does; what an IR focal plane sees one frame it sees the
+// next.
+export const IRST_MIN_SIGNAL = 1;
+// Field of regard (deg, full width) the sensor head can look across, centred
+// on the nose. Narrow: an IR focal plane resolves fine angles because each
+// element sees a sliver of sky, so covering a wide sector costs either many
+// elements or a slow mechanical scan. This head buys its resolution with a
+// small window - the pilot points the ship to search, and a lock breaks when
+// the source drifts out of it.
+export const IRST_FIELD_OF_REGARD_DEG = 20;
+// Ticks per scan of the field of regard: the search picture refreshes this
+// often. A locked contact is tracked every tick (it has the head to itself).
+export const IRST_SCAN_FRAMES = 20;
+// Angular resolution (deg): two sources closer in bearing than this fall on
+// one detector element and are one contact, at their heat-weighted bearing.
+export const IRST_RESOLUTION_DEG = 0.5;
+// Bearing gate (deg) a scan's detection must fall in to update a contact.
+export const IRST_BEARING_GATE_DEG = 4;
+// Scans without a detection before a search contact is dropped.
+export const IRST_MAX_MISSED_SCANS = 2;
+// Instantaneous field of view (deg, full width) of the tracking head once
+// locked: it follows the source inside this window around its prediction.
+export const IRST_TRACK_FOV_DEG = 3;
+// Ticks without the source in the tracking window before the lock breaks.
+export const IRST_LOCK_BREAK_FRAMES = 30;
+
+// IR seeker (VIM-90): range (px) at which the reference source is exactly
+// at the seeker's threshold. Short - a small uncooled-optics seeker sees a hot
+// tail to here, a nose-on target only to ~150 px, a ship at stop to ~80 px.
+export const IR_SEEKER_RATED_RANGE_PX = 400;
+// Seeker detection threshold, as IRST_MIN_SIGNAL.
+export const IR_SEEKER_MIN_SIGNAL = 1;
+// Instantaneous field of view (deg, full width). Uncaged on the cue (the
+// radar's STT line of sight or the IRST lock) it must find the source inside
+// this window - "tone" - or the round is not released.
+export const IR_SEEKER_FOV_DEG = 6;
+// Gimbal limit (deg off the missile's nose, either side).
+export const IR_SEEKER_GIMBAL_DEG = 45;
+// Track rate (deg/s) the seeker head can slew at.
+export const IR_SEEKER_SLEW_RATE_DEG_PER_SEC = 60;
+// Ticks without a source in the seeker's window before it gives up and the
+// missile flies on ballistic.
+export const IR_SEEKER_LOST_FRAMES = 20;
+// Proportional navigation: the missile turns N times the line-of-sight
+// rate the seeker measures. Needs no range and no target velocity - only the
+// angle, which is all an IR seeker has. 3-5 is the textbook band.
+export const IR_PN_NAVIGATION_CONSTANT = 4;
+// (The airframe's turn-rate limit on what PN may command is part of the
+// flight envelope: missileSettings['VIM-90'].TURN_SPEED, in deg/s.)
+
 // ── RWR receiver (systems/modules/rwr.ts) ──────────────────────────────────
 
 // How long (ms) to keep a contact alive without a refresh signal.
@@ -417,12 +517,13 @@ export const LINK_TRACK_MIN_AGE_SCANS = 2;
 export const LINK_TRACK_STALE_MS = 500;
 
 // Two shared tracks are one target when they lie within this distance (px) -
-// the same gate the tracking computer uses to merge returns into one track
-// (TRACK_GATE_RADIUS_PX). Two radars measuring one ship disagree by their
-// jitter (up to RADAR_MEASUREMENT_JITTER_MAX_PX each) plus the ground it covered
-// between their sweeps, which sits well inside the gate; and anything the gate
-// would have merged inside one radar is one group to the flight too, which is
-// what lets the sort treat a close pair as a single thing to shoot at.
+// the tracking computer's association gate (TRACK_GATE_RADIUS_PX). Two radars
+// measuring one ship disagree by their jitter (up to
+// RADAR_MEASUREMENT_JITTER_MAX_PX each) plus the ground it covered between
+// their sweeps, which sits well inside the gate. Inside one radar the gate no
+// longer merges a resolved pair (association is one-to-one), but across the
+// link it still does: two tracks this close are one group to the flight,
+// which is what lets the sort treat a close pair as a single thing to shoot at.
 export const LINK_TRACK_CORRELATION_PX = TRACK_GATE_RADIUS_PX;
 
 // ── IFF (systems/modules/iffInterrogator.ts) ───────────────────────────────
@@ -560,6 +661,15 @@ export const RADAR_TRACK_HISTORY_DOT_RADIUS_PX = 1.5;
 
 // Length of the perpendicular caps on the selected missile max-range indicator.
 export const MISSILE_RANGE_CAP_LENGTH_PX = 12;
+
+// IRST marks on the scope: a bearing line, never a point - the sensor has no
+// range to put one at. Amber, apart from the radar's green and the IFF blue.
+export const IRST_COLOR = 0xffa040;
+// Where the line starts, as a fraction of the ring's radius out from the
+// ship, so it does not bury the own-ship symbol.
+export const IRST_LINE_INNER_FRACTION = 0.12;
+// Size (px) of the tick the locked line ends in, just outside the ring.
+export const IRST_LOCK_TICK_PX = 10;
 
 // ── Receiver video ring (renderer/receiverVideoRenderer.ts) ────────────────
 // The receiver's raw output drawn as a ring around the ship: bearing around

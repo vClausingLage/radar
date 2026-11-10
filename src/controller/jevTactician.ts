@@ -70,6 +70,9 @@ const STATE_CRITERIA: Record<TacticalStateName, string> = {
     SKATE: 'Turn away and run from the last known target position to open range. Choose after our shot once the '
         + 'track is lost, or when out of missiles, and keep choosing it while the skate is still opening range. '
         + 'Once range is opened, return to the engagement cycle.',
+    REACQUIRE: 'Turn back towards where our own radar last held the contact, in wide search, to find it again. '
+        + 'Choose when we lost a contact we were working a moment ago - turned it off the edge of our cone - '
+        + 'and we are not locked. Only in a flight.',
     EVADE: 'Defend: drop chaff and turn cold or beam. Choose only when an enemy fire-control radar has locked us '
         + 'or a missile is inbound. Against a radar that is only searching, chaff is wasted.',
 };

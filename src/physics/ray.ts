@@ -55,6 +55,30 @@ export class Ray {
     return nearest;
   }
 
+  // Whether any of `occluders` stands between `from` and `to`: the line of
+  // sight every sensor needs, radar seeker and infrared alike. A body the
+  // sensor stands inside cannot block it (the player parked on the pad), and
+  // only a strike nearer than `to` counts - a rock past the target is behind
+  // it, not in front of it.
+  isOccluded(
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    occluders: (RayTarget & { active: boolean })[],
+  ): boolean {
+    if (occluders.length === 0) return false;
+    const line = new Phaser.Geom.Line(from.x, from.y, to.x, to.y);
+    const rangeSq = Phaser.Math.Distance.Squared(from.x, from.y, to.x, to.y);
+    for (const body of occluders) {
+      if (!body.active || !body.body) continue;
+      if (this.contains(body, from)) continue;
+      const hit = this.nearestPartHit(line, body);
+      if (hit && Phaser.Math.Distance.Squared(from.x, from.y, hit.point.x, hit.point.y) < rangeSq) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Whether a point lies inside a body's actual shape (any of its parts).
   contains(target: RayTarget, point: { x: number; y: number }): boolean {
     return this.getBodyParts(target).some(part => Phaser.Geom.Polygon.Contains(part, point.x, point.y));

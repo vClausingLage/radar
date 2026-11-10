@@ -260,17 +260,20 @@ const stillFights: GameTest = {
     },
 };
 
-// (e) What the player's radar makes of the pair. Abreast and 80 px apart,
-// a flight is not two contacts to a nose-on radar even at 500 px: the tracking
-// computer associates every return within TRACK_GATE_RADIUS_PX (200) of an
-// existing track with that track, so the pair is held as one track riding
-// between the two hulls. (The resolution cell, S / tan(beamwidth) ~ 1500 px,
-// would be the limit only if the gate did not get there first.) Pull the wing
-// out past the gate and the same radar holds two.
+// (e) What the player's radar makes of the pair. Whether two hulls are one
+// contact or two is the resolution cell's answer (sameResolutionCell: the
+// pulse length in range, RADAR_BEAM_WIDTH_DEG across), not the association
+// gate's: the tracker pairs plots with tracks one-to-one, so a second plot
+// inside a track's gate starts a track of its own. Abreast at the 80 px
+// station and 500 px out, the pair is ~9 degrees wide with ~6 degrees of
+// empty sky between the hulls (each ~28 px across) - two plots, two tracks.
+// Closed up to 36 px, the gap between the hulls is under a degree, less than
+// one beamwidth: the beam paints both at once, there is no gap in the echo
+// for the plot extractor to split them at, and the pair is one contact.
 const pairReadsAsOneContact: GameTest = {
-    name: 'A flight in formation reads as one contact; split up it reads as two',
-    description: 'The player looks nose-on at an abreast pair 500 px away: its radar holds one track riding '
-        + 'between the hulls. With the wing 240 px out it holds two, one on each ship.',
+    name: 'A flight in formation reads as two contacts; closed inside a beamwidth it reads as one',
+    description: 'The player looks nose-on at an abreast pair 500 px away: at the 80 px formation station its radar '
+        + 'holds a track on each ship. With the wing pulled in to 36 px abeam it holds one track riding between the hulls.',
     async run(ctx) {
         const boresight = ctx.player.getDirection();
         const rangePx = 500;
@@ -299,27 +302,28 @@ const pairReadsAsOneContact: GameTest = {
                 maxTracks = Math.max(maxTracks, around.length);
                 const within = (t: { pos: { x: number; y: number } }, ship: Target, px: number): boolean =>
                     Phaser.Math.Distance.Between(t.pos.x, t.pos.y, ship.x, ship.y) < px;
-                if (around.some(t => within(t, flight.lead, formationSettings.SPACING_PX)
-                    && within(t, flight.wing, formationSettings.SPACING_PX))) sharedTrack = true;
-                const onLead = around.find(t => within(t, flight.lead, 60));
-                const onWing = around.find(t => within(t, flight.wing, 60));
+                const spacing = Phaser.Math.Distance.Between(flight.lead.x, flight.lead.y, flight.wing.x, flight.wing.y);
+                if (around.some(t => within(t, flight.lead, spacing) && within(t, flight.wing, spacing))) sharedTrack = true;
+                const onLead = around.find(t => within(t, flight.lead, spacing / 2));
+                const onWing = around.find(t => within(t, flight.wing, spacing / 2));
                 if (onLead && onWing && onLead.id !== onWing.id) onEach = true;
             }
             return { maxTracks, sharedTrack, onEach };
         };
 
+        const apart = await picture();
+        ctx.check(`at the ${formationSettings.SPACING_PX} px station it holds a track on each ship`, apart.onEach,
+            `most tracks held near the pair: ${apart.maxTracks}`);
+
+        // Wing pulled in abeam of the lead, inside one beamwidth of it. The
+        // old tracks age out over TRACK_MAX_MISSED_SCANS sweeps first.
+        const side = Phaser.Math.DegToRad(boresight + 90);
+        flight.wing.setPosition(flight.lead.x + Math.cos(side) * 36, flight.lead.y + Math.sin(side) * 36);
+        await ctx.frames(FRAMES_PER_SWEEP * 6);
         const together = await picture();
-        ctx.check('in formation the pair is one track', together.maxTracks === 1,
+        ctx.check('closed up the pair is one track', together.maxTracks === 1,
             `most tracks held near the pair: ${together.maxTracks}`);
         ctx.check('that track rides between the hulls', together.sharedTrack);
-
-        // Wing out to the side, past the association gate but still inside
-        // the 60 degree cone (at 500 px, 240 px abeam is 26 degrees off).
-        const side = Phaser.Math.DegToRad(boresight + 90);
-        flight.wing.setPosition(flight.lead.x + Math.cos(side) * 240, flight.lead.y + Math.sin(side) * 240);
-        const apart = await picture();
-        ctx.check('240 px apart it holds a track on each ship', apart.onEach,
-            `most tracks held near the pair: ${apart.maxTracks}`);
     },
 };
 
@@ -1151,7 +1155,7 @@ function seekerRig(ctx: TestContext, flight: Flight, owner: Target | undefined, 
 function guide(ctx: TestContext, flight: Flight, missile: ActiveRadarMissile, guidance: MissileGuidance): void {
     guidance.update([missile], 1000 / 60, {
         sttTrack: null, tracks: [], remoteTracks: [],
-        targets: [flight.wing], decoyCircles: [], gasVolumes: [], terrain: [],
+        targets: [flight.wing], irSources: [], decoyCircles: [], gasVolumes: [], terrain: [],
         datalink: flight.datalink,
         now: ctx.scene.time.now,
     });
@@ -1187,7 +1191,7 @@ const seekerKeepsOffWingman: GameTest = {
             await ctx.frames(1);
             // The control has no flight behind it: it is handed no datalink.
             guidance.update([control], 1000 / 60, {
-                sttTrack: null, tracks: [], remoteTracks: [], targets: [flight.wing], decoyCircles: [],
+                sttTrack: null, tracks: [], remoteTracks: [], targets: [flight.wing], irSources: [], decoyCircles: [],
                 gasVolumes: [], terrain: [], datalink: null, now: ctx.scene.time.now,
             });
             control.setVelocity(0, 0);
@@ -1315,6 +1319,99 @@ const tacticsKeepClear: GameTest = {
     },
 };
 
+// (q) Keeping the contact on the scope. A pair brackets a drone it came upon
+// and then fights it; at every sample where a member is working the drone on
+// its own radar (its own hostile track on it, transmitter on), the drone lies
+// inside that radar's cone. A split or crank that turned it past the edge
+// would lose the track and stop the attack.
+const keepsContactOnScope: GameTest = {
+    name: 'Tactics keep the contact inside each member\'s own radar cone',
+    description: 'A flight closes on one drone from 950 px and brackets it. At every sample where a member holds '
+        + 'its own track on the drone in INVESTIGATE, ENGAGE or CRANK, the drone is within the half-azimuth '
+        + 'of that member\'s radar mode (RWS/STT 30, TWS 22.5) plus 3 degrees of turn lag, in nearly every sample.',
+    async run(ctx) {
+        const { flight, drone } = comingUponDrone(ctx, 1);
+        const working = ['INVESTIGATE', 'ENGAGE', 'CRANK'];
+        let samples = 0;
+        let outside = 0;
+        let worst = '';
+        let worstOff = 0;
+        for (let f = 0; f < 3600; f += SAMPLE_EVERY_FRAMES) {
+            await ctx.frames(SAMPLE_EVERY_FRAMES);
+            noteSeparation(flight, 'scope');
+            if (!flight.leadAlive() || !flight.wing.active || !flight.wing.body) break;
+            for (const ship of [flight.lead, flight.wing]) {
+                const state = ship.controller?.getStateName() ?? '';
+                const half = ship.radar.holdingHalfAzimuthDeg();
+                if (!working.includes(state) || half === null) continue;
+                const holds = ship.radar.getHostileTracks().some(t =>
+                    Phaser.Math.Distance.Between(t.pos.x, t.pos.y, drone.x, drone.y) <= PPLI_CORRELATION_PX);
+                if (!holds) continue;
+                samples++;
+                const bearing = Phaser.Math.RadToDeg(Math.atan2(drone.y - ship.y, drone.x - ship.x));
+                const off = Math.abs(Phaser.Math.Angle.WrapDegrees(bearing - ship.angle));
+                if (off > half + 3) outside++;
+                if (off - half > worstOff) {
+                    worstOff = off - half;
+                    worst = `${ship === flight.lead ? 'lead' : 'wing'} ${state} ${ship.radar.getMode()} ${off.toFixed(1)} deg off`;
+                }
+            }
+        }
+        ctx.check('the members worked the drone on their own radars', samples > 100, `${samples} samples`);
+        ctx.check('the drone stayed inside the working member\'s cone', outside <= samples * 0.02,
+            `${outside}/${samples} samples outside; worst ${worst || 'none'}`);
+    },
+};
+
+// (r) Reacquire. Both members of a flight that holds a drone are swung round
+// at once, the drone well behind them: their own tracks age out. Rather than
+// give up, they turn back to where they last held it, and the lead holds the
+// drone on its own radar again.
+const lostContactIsReacquired: GameTest = {
+    name: 'A flight member that loses its contact turns back to its last known position',
+    description: 'A pair holds one drone 400 px ahead. Its rails emptied, both are turned 160 degrees away. Within 25 s '
+        + 'a member enters REACQUIRE, and the lead\'s own radar holds the drone again.',
+    async run(ctx) {
+        const { flight, drone, picture } = await oneDroneRig(ctx, 400);
+        ctx.check('the lead holds the drone on the link before the turn', picture);
+        // Rails emptied first: a round already on its way to the drone would
+        // turn round behind a pair swung away from it and fly through whoever
+        // turns back in - the rig's doing, not the doctrine's. Finding the
+        // contact again is the question, not shooting it.
+        for (const ship of [flight.lead, flight.wing]) {
+            const loadout = ship.radar['fireControl'].getLoadout();
+            for (const slot of Object.values(loadout)) slot.load = 0;
+            ship.setAngle(ship.angle + 160);
+        }
+
+        let reacquired = false;
+        const leadHolds = (): boolean => flight.lead.radar.getHostileTracks().some(t =>
+            Phaser.Math.Distance.Between(t.pos.x, t.pos.y, drone.x, drone.y) <= PPLI_CORRELATION_PX);
+        let lostOnce = false;
+        let regained = false;
+        const trail: string[] = [];
+        for (let f = 0; f < 1500 && !regained; f += SAMPLE_EVERY_FRAMES) {
+            await ctx.frames(SAMPLE_EVERY_FRAMES);
+            if (!flight.leadAlive() || !flight.wing.active || !flight.wing.body) {
+                trail.push(`casualty@${f}: lead alive ${flight.leadAlive()}, wing alive ${flight.wing.active}`);
+                break;
+            }
+            noteSeparation(flight, 'reacquire');
+            for (const ship of [flight.lead, flight.wing]) {
+                if (ship.controller?.getStateName() === 'REACQUIRE') reacquired = true;
+            }
+            const step = `L ${flight.lead.controller?.getStateName()}/${flight.lead.radar.getMode()} W ${flight.wing.controller?.getStateName()}`;
+            const d = Phaser.Math.Distance.Between(flight.lead.x, flight.lead.y, drone.x, drone.y).toFixed(0);
+            if (trail[trail.length - 1]?.split('@')[0] !== step) trail.push(`${step}@${f} d${d} h${flight.lead.angle.toFixed(0)}`);
+            if (!leadHolds()) lostOnce = true;
+            else if (lostOnce) regained = true;
+        }
+        ctx.check('the lead lost the drone off its scope', lostOnce);
+        ctx.check('a member turned back for it (REACQUIRE)', reacquired, trail.join(' > '));
+        ctx.check('the lead holds the drone on its own radar again', regained, trail.join(' > '));
+    },
+};
+
 export const flightTests: GameTest[] = [
     holdsStationThroughTurns,
     clearsLeadInTightTurns,
@@ -1341,4 +1438,7 @@ export const flightTests: GameTest[] = [
     staleUplinkLosesFriends,
     shooterHoldsFireForMate,
     tacticsKeepClear,
+    // Last, so the dice the tests above were tuned against are not shifted.
+    keepsContactOnScope,
+    lostContactIsReacquired,
 ];

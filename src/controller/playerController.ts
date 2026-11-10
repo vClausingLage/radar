@@ -25,10 +25,14 @@ export class PlayerController {
   private onKeyUpD   = () => { this.turn = 0; };
 
   // ── Radar mode ────────────────────────────────────────────────────────
-  // E → enter STT (lock best track)
+  // E → lock: in a radar mode, STT on the best track; in IRST mode, the IRST
+  // onto the heat source nearest the nose. One lock key, whichever sensor the
+  // mode has given the scope to.
   private onKeyDownE = () => {
     if (!this.canOperate()) return;
-    this.ship.radar.enterStt();
+    const radar = this.ship.radar;
+    if (radar.getMode() === 'irst') radar.lockIrst();
+    else radar.enterStt();
   };
   // R → RWS search
   private onKeyDownR = () => {
@@ -40,10 +44,13 @@ export class PlayerController {
     if (!this.canOperate()) return;
     this.ship.deployDecoy();
   };
-  // Escape → exit STT, return to RWS
+  // Escape → break the lock: STT back to RWS; in IRST mode the IRST lets go
+  // and searches again, the transmitter staying silent.
   private onKeyDownEsc = () => {
     if (!this.ship.active || !this.ship.scene) return;
-    if (this.ship.radar.getMode() === 'stt') this.ship.radar.exitStt();
+    const radar = this.ship.radar;
+    if (radar.getMode() === 'stt') radar.exitStt();
+    else if (radar.getMode() === 'irst') radar.unlockIrst();
   };
   // Q → cycle active weapon
   private onKeyDownQ = () => {
@@ -92,14 +99,16 @@ export class PlayerController {
   };
 
   // ── Gamepad (and the keys that share its steps) ───────────────────────
-  // R1 / X → step the search loop RWS → TWS → EMCON → RWS. A lock is not a stop
-  // on the loop: from STT the button breaks it and drops back to RWS, like Esc.
+  // R1 / X → step the search loop RWS → TWS → IRST → EMCON → RWS (IRST only on
+  // a ship that carries one). A lock is not a stop on the loop: from STT the
+  // button breaks it and drops back to RWS, like Esc.
   private onPadCycleRadarMode = () => {
     if (!this.canOperate()) return;
     const radar = this.ship.radar;
     const mode = radar.getMode();
     if (mode === 'rws') radar.enterTws();
-    else if (mode === 'tws') radar.enterEmcon();
+    else if (mode === 'tws' && radar.getIrst()) radar.enterIrst();
+    else if (mode === 'tws' || mode === 'irst') radar.enterEmcon();
     else radar.enterRws();
   };
 

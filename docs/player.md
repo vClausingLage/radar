@@ -48,11 +48,11 @@ See [radar.md](radar.md) for how the simulation actually works under the hood.
 | **A / D** | Turn left / right |
 | **W / S** | Throttle one setting up / down: REV → 1/3 → 2/3 → FULL |
 | **R** | Switch to **RWS** (search) |
-| **X** | Step the radar mode: RWS → TWS → EMCON → RWS (from STT: break the lock, back to RWS) |
+| **X** | Step the radar mode: RWS → TWS → IRST → EMCON → RWS (from STT: break the lock, back to RWS) |
 | **F** | Pick the next track outward from you (a white bracket on the scope). **E** and a TWS shot go to the pick first |
-| **E** | Enter **STT** — lock the picked track, or else the best current track |
-| **Esc** | Break STT lock, return to RWS |
-| **Q** | Cycle active weapon (VIM-177 ↔ VIM-220) |
+| **E** | Lock. In RWS/TWS: enter **STT** on the picked track, or else the best current track. In **IRST** mode: lock the IRST onto the heat source nearest your nose |
+| **Esc** | Break the lock: STT back to RWS; in IRST mode, drop the IRST lock |
+| **Q** | Cycle active weapon (VIM-177 → VIM-220 → VIM-90) |
 | **Space** | Fire the active weapon |
 | **T** | Deploy a decoy (chaff) |
 | **J** | Activate the jammer (10 s burst, 20 s cooldown) |
@@ -69,10 +69,10 @@ See [radar.md](radar.md) for how the simulation actually works under the hood.
 |-------|--------|
 | **Left stick** | Turn left / right, proportional to deflection |
 | **A** | Fire the active weapon |
-| **B** | Enter **STT** — lock the best current track |
+| **B** | Lock: **STT** on the best current track, or the IRST lock in IRST mode |
 | **X** | Deploy a decoy (chaff) |
 | **Y** | Activate the jammer |
-| **R1** | Step the radar mode: RWS → TWS → EMCON → RWS. From STT: break the lock, back to RWS |
+| **R1** | Step the radar mode: RWS → TWS → IRST → EMCON → RWS. From STT: break the lock, back to RWS |
 | **L1** | Throttle one setting up: REV → 1/3 → 2/3 → FULL |
 | **L2** | Throttle one setting down: FULL → 2/3 → 1/3 → REV |
 | **D-pad left** | Cycle active weapon |
@@ -221,11 +221,35 @@ A few things to keep in mind:
    with **F**, if it is still free; otherwise at the **nearest** un-engaged
    track, then the next-nearest, and so on. A press that launches nothing says
    why in red above the ship (wrong weapon for the mode, no rounds, no track).
-   Two ships closer together than the tracker's gate can read as one contact.
+   Two ships read as one contact only when the radar cannot resolve them:
+   less than a beamwidth (3°) apart in bearing *and* within a pulse length
+   (10 px) in range. A pair 80 px abreast stays two contacts well past the
+   range ring (they merge only around 1000 px and beyond).
 5. The missile flies the waypoints / its assigned track until its own radar
    activates — it arms by closing range, so there is no countdown; the cone
    readout shows **RADAR ACTIVE** once the seeker is up. After that the
    missile homes itself; you can break off.
+
+### With the VIM-90 (IR — short range, silent)
+1. Get a cue. Either lock it with the radar (**E**, STT), or step the mode
+   (**X**) to **IRST**: the transmitter goes silent, as in EMCON, and the
+   infrared sensor searches a narrow 20° window straight ahead — point the
+   nose to look. IRST contacts are amber lines on the scope: a passive sensor
+   knows the *direction* of the heat, not its range. **E** locks the IRST onto
+   the contact nearest your nose; **Esc** lets go. Leaving IRST mode drops its
+   contacts and lock.
+2. Press **Q** until **VIM-90** is active.
+3. Press **Space**. The missile's own seeker looks down the cue and must see
+   heat there (*tone*) before the round is released — otherwise the shot is
+   refused with **NO TONE**. The cue must also be within 45° of your nose.
+4. Once off the rail it needs nothing from you: it steers itself onto the
+   heat by proportional navigation. No RWR warning goes off on the target —
+   neither the IRST nor the missile emits anything.
+
+Heat depends on what the target is doing: hottest from behind at full
+throttle, a tenth of that nose-on, almost nothing stopped. The seeker sees a
+hot tail to ~400 px, a nose to ~150 px. Gas blinds infrared far sooner than
+radar; rocks block it outright.
 
 ---
 
@@ -239,6 +263,8 @@ A few things to keep in mind:
   available, red `JAM 9s` counting down while active, grey `JAM CD 14s` during
   cooldown.
 - **Yellow dots / line** — your placed VIM-220 waypoints and the direction leg.
+- **Amber lines** — IRST contacts (bearing only, no range). A thick line with
+  a bracket outside the ring is your IRST lock.
 - **RWR panel (bottom-left)** — diamonds on bearings where something is
   emitting at you; red means you are locked; a red triangle with **7** or
   **22** is a missile guiding on you.

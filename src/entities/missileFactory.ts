@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SARHMissile, ActiveRadarMissile } from './missiles';
+import { SARHMissile, ActiveRadarMissile, InfraredMissile } from './missiles';
 import type { Ship } from './ship';
 
 const missileCategoryByScene = new WeakMap<Phaser.Scene, number>();
@@ -34,6 +34,7 @@ declare global {
     interface GameObjectFactory {
       sarhMissile(params: { x: number; y: number; dirX: number; dirY: number; owner?: Ship }): SARHMissile;
       activeRadarMissile(params: { x: number; y: number; dirX: number; dirY: number; owner?: Ship }): ActiveRadarMissile;
+      infraredMissile(params: { x: number; y: number; dirX: number; dirY: number; owner?: Ship }): InfraredMissile;
     }
   }
 }
@@ -61,6 +62,19 @@ export const createMissileFactory = () => {
     missile.owner = params.owner;
     configureMissileCollisionFilter(this.scene, missile);
     // Matter physics doesn't use onCollide flag like Arcade
+    missile.addToDisplayList();
+    missile.addToUpdateList();
+    this.scene.events.emit(MISSILE_SPAWNED_EVENT, missile);
+    return missile;
+  });
+
+  Phaser.GameObjects.GameObjectFactory.register('infraredMissile', function(
+    this: Phaser.GameObjects.GameObjectFactory,
+    params: { x: number; y: number; dirX: number; dirY: number; owner?: Ship }
+  ) {
+    const missile = new InfraredMissile(this.scene, params);
+    missile.owner = params.owner;
+    configureMissileCollisionFilter(this.scene, missile);
     missile.addToDisplayList();
     missile.addToUpdateList();
     this.scene.events.emit(MISSILE_SPAWNED_EVENT, missile);

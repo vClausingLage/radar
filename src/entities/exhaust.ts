@@ -108,6 +108,12 @@ export class Exhaust {
     return this.emitters.length;
   }
 
+  // How many engines are lit — what the hull's infrared signature counts
+  // (Ship.irIntensityToward), whether or not the plume is on screen.
+  get runningCount(): number {
+    return this.running.filter(Boolean).length;
+  }
+
   // Light or shut down a single nozzle's plume. Out-of-range indices are ignored.
   setNozzleRunning(index: number, running: boolean): void {
     if (index < 0 || index >= this.running.length) return;

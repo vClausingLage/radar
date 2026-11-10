@@ -6,6 +6,7 @@ import { InterfaceRenderer } from '../radar/renderer/interfaceRenderer';
 import { RadarRenderer } from '../radar/renderer/radarRenderer';
 import { TerrainRenderer } from '../radar/renderer/terrainRenderer';
 import { ReceiverVideoRenderer } from '../radar/renderer/receiverVideoRenderer';
+import { Irst } from '../radar/systems/modules/irst';
 import { AiUnitController, UnitActivity } from '../controller/aiUnitController';
 import { JevTactician } from '../controller/jevTactician';
 import { PlayerController } from '../controller/playerController';
@@ -67,6 +68,9 @@ export const createPlayerShipFactory = () => {
     // Matter physics doesn't use onCollide flag like Arcade
     ship.radar.attachTo(ship);
     ship.radar.start();
+    // The player's ship carries an IRST beside the radar. AI ships have none
+    // yet: nothing in their doctrine would look at it.
+    ship.radar.fitIrst(new Irst());
 
     // Only the player's radar renders; target radars track silently.
     const radarRenderer = new RadarRenderer();

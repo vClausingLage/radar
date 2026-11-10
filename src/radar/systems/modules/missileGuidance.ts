@@ -1,12 +1,14 @@
 import Phaser from 'phaser';
 import type { GasVolume, Terrain } from '../../data/types';
-import { Missile, SARHMissile, ActiveRadarMissile } from '../../../entities/missiles';
+import { Missile, SARHMissile, ActiveRadarMissile, InfraredMissile } from '../../../entities/missiles';
+import type { IrSource } from '../../data/infraredPath';
 import { Track } from '../../data/track';
 import type { GuidanceTarget } from './missileRadar';
 import type { FlightDatalink } from './flightDatalink';
 import {
   MISSILE_AGE_TICK_MS,
   MISSILE_BOOST_PHASE_MAX_AGE,
+  IR_PN_NAVIGATION_CONSTANT,
   LINK_TRACK_CORRELATION_PX,
   VIM220_WAYPOINT_REACHED_DISTANCE_PX,
 } from '../../data/radarGameSettings';
@@ -28,6 +30,9 @@ export type GuidanceContext = {
   // thing an ordinary shot can be guided onto.
   remoteTracks: Track[];
   targets: GuidanceTarget[];
+  // Every hot hull but the launcher's, for the VIM-90's heat seeker. Chaff is
+  // not in it: chaff is a radar reflector and has no heat to offer.
+  irSources: IrSource[];
   decoyCircles: Phaser.Geom.Circle[];
   // Gas clouds in the world. A seeker is a radar like any other: the medium
   // costs it energy, so a missile fired into a cloud goes in half blind.
@@ -53,6 +58,10 @@ export type GuidanceContext = {
 // comes online — searching (RWS) then locking and tracking (STT) a target it
 // finds, after which it guides itself.
 //
+// VIM-90 (IR): its own heat seeker, from the rail on. Proportional navigation
+// on the line-of-sight rate the seeker measures — the only guidance law here
+// that needs nothing but an angle (see guideInfrared).
+//
 // Boost phase (age < 2): hold launch heading off the rail before steering.
 
 export class MissileGuidance {
@@ -76,6 +85,13 @@ export class MissileGuidance {
     }
 
     for (const missile of live) {
+      // The IR seeker has to keep its head on the source through the boost,
+      // so the VIM-90 runs its own loop from the rail on.
+      if (missile instanceof InfraredMissile) {
+        this.guideInfrared(missile, delta, ctx);
+        continue;
+      }
+
       const currentDirX = missile.direction.x;
       const currentDirY = missile.direction.y;
 
@@ -101,6 +117,33 @@ export class MissileGuidance {
     }
 
     return live;
+  }
+
+  // VIM-90 proportional navigation: turn N times as fast as the line of sight
+  // to the source turns. If the bearing to the target holds still, the two
+  // are on a collision course and the missile flies straight; if it drifts,
+  // the missile turns into the drift faster than the drift, which leads a
+  // crossing target without ever knowing its range or speed — the reason PN
+  // is the IR missile's law. The airframe's turn limit caps the command; a
+  // target that out-turns it walks out of the seeker's gimbal. The seeker
+  // tracks through the boost; the airframe only starts manoeuvring after it.
+  private guideInfrared(missile: InfraredMissile, delta: number, ctx: GuidanceContext): void {
+    const headingDeg = Phaser.Math.RadToDeg(Math.atan2(missile.direction.y, missile.direction.x));
+    const los = missile.seeker.update(
+      { x: missile.x, y: missile.y }, headingDeg, delta, ctx.irSources, ctx.gasVolumes, ctx.terrain,
+    );
+    const previous = missile.lastLosDeg;
+    missile.lastLosDeg = los;
+
+    let turnDeg = 0;
+    if (los !== null && previous !== null && missile.missileAge >= MISSILE_BOOST_PHASE_MAX_AGE) {
+      const maxTurn = missile.missileTurnSpeed * (delta / 1000);
+      turnDeg = Phaser.Math.Clamp(
+        IR_PN_NAVIGATION_CONSTANT * Phaser.Math.Angle.WrapDegrees(los - previous), -maxTurn, maxTurn,
+      );
+    }
+    const rad = Phaser.Math.DegToRad(headingDeg + turnDeg);
+    missile.updateHeading(Math.cos(rad), Math.sin(rad));
   }
 
   // SARH (VIM-177): homes on energy the launching ship reflects off the target,

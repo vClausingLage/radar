@@ -4,6 +4,8 @@ import { RWR_SEEKER_KEY_PREFIX } from '../radar/systems/modules/rwr';
 import { Target } from '../entities/ship';
 import { Track, iffStateOf } from '../radar/data/track';
 import { world } from '../settings';
+import { rwrHorizonPx } from '../radar/data/signalPath';
+import { ANTENNA_AZIMUTH_DEG_BY_MODE, RADAR_DEFAULT_RANGE_PX } from '../radar/data/radarGameSettings';
 import type { WorldSize } from '../types';
 import { Flight, FlightBriefing, FlightRole, FlightTactic, Orders } from './flight';
 
@@ -21,6 +23,7 @@ enum AIState {
     EVADE,       // Being locked by an enemy — defend the shot
     HUNT,        // No contact, but an enemy radar was heard — fly down its bearing
     FORMATION,   // Wingman: hold station on the flight lead
+    REACQUIRE,   // Flight member lost its own contact mid-attack — turn back to where it was
 }
 
 // What a tactician may choose between. FORMATION is the wingman's standing
@@ -103,8 +106,22 @@ const STT_LOCK_DELAY_MS = 2500;       // lock must be held this long before firi
 const FIRE_RANGE_FRACTION = 1.0;
 const INVESTIGATE_STT_MIN_AGE = 2;    // wait ~2 scans of a track before locking it
 const CRANK_DURATION_MS = 6000;       // how long to support/crank after a shot
-const CRANK_OFFSET_DEG = 25;          // STT: hold target this far off boresight (<30° cone)
-const CRANK_OFFSET_TWS_DEG = 18;      // TWS: tighter, its half-azimuth is only 22.5°
+// Whenever a pilot turns its nose off a contact it holds on its own radar - a
+// crank, a bracket's split - it keeps the contact this far (deg) inside the
+// edge of the cone the radar can hold it in (Radar.holdingHalfAzimuthDeg): 30°
+// in RWS and STT, 22.5° in TWS. Not right on the edge, because the bearing it
+// steers by is the track's, a scan old, and a crossing target walks on while
+// the ship's own turn rate lags behind the command. Past the edge the beam
+// never visits the contact again, the track ages out and the attack stops.
+const SCOPE_EDGE_MARGIN_DEG = 6;
+// A flight member that loses its own contact anyway (it out-turned the cone,
+// chaff, a rock) remembers where it last saw it and turns back in towards
+// that point for this long, radar in wide search, rather than giving up the
+// attack: the contact was there a moment ago and has not gone far.
+const REACQUIRE_MEMORY_MS = 10000;
+// ... and stops looking once it has flown this close to the remembered point:
+// whatever was there has moved on and the search found nothing.
+const REACQUIRE_ARRIVAL_PX = 150;
 const SKATE_MS_AGGRESSIVE = 3000;
 const SKATE_MS_DEFENSIVE = 6000;
 const DECOY_COOLDOWN_MS = 1200;       // min gap between chaff drops
@@ -114,9 +131,14 @@ const PATROL_MARGIN_PX = 300;         // keep the ladder this far off the world 
 const ROUTE_ARRIVAL_PX = 60;          // a fixed route's destination counts as reached this close
 // An RWR gives a bearing, never a range, and hears an enemy radar far beyond
 // the range our own radar can paint it at (emission falls with range², the
-// echo with range⁴ — data/signalPath.ts). So a heard emitter is remembered as
-// a bearing line, flown down for this long after the last time it was heard.
-const HUNT_MEMORY_MS = 20000;
+// echo with range⁴ — data/signalPath.ts). But it could not have heard it from
+// beyond the one-way horizon either, so a heard emitter is remembered as a
+// line segment: from where we stood when we heard it, down the bearing, as far
+// as that horizon (or the world edge, if nearer). The hunt flies the segment
+// until the radar makes a real track or the whole segment has been searched —
+// not on a clock: at cruise speed a timer short of the horizon turns back
+// before the emitter could even be reached.
+const HUNT_LOOKAHEAD_PX = 200;        // steer for a point this far down the line, to fly onto it
 const HUNT_RECENT_MS = 4000;          // heard within this = "heard just now" in the picture
 // A defensive hunter approaches with its transmitter off — listening is
 // silent, radiating would give it away — and only turns its radar on this
@@ -177,10 +199,21 @@ export class AiUnitController {
     // Last known contact position, so SKATE/EVADE can flee a direction even after
     // the lock (and thus the live track) is gone.
     private lastTargetPos: { x: number; y: number } | null = null;
+    // Where our own radar last held a matured contact, and when: what REACQUIRE
+    // turns back to. Only our own track counts - a link cue was never ours to
+    // lose - and it is forgotten on purpose when we turn away (SKATE, EVADE).
+    private lastOwnContact: { pos: { x: number; y: number }; seenAt: number } | null = null;
     private nextDecoyAt = 0;
 
-    // Last enemy platform radar the RWR heard: its bearing and when.
-    private heardEmitter: { bearingDeg: number; heardAt: number } | null = null;
+    // Last enemy platform radar the RWR heard: the bearing, when, and the line
+    // segment it must lie on (from where we heard it, `lengthPx` down the
+    // bearing — see HUNT_LOOKAHEAD_PX above).
+    private heardEmitter: {
+        bearingDeg: number;
+        heardAt: number;
+        from: { x: number; y: number };
+        lengthPx: number;
+    } | null = null;
     private huntStartedAt = 0;
 
     // Patrol search ladder.
@@ -295,7 +328,7 @@ export class AiUnitController {
 
     private updateDebugText(): void {
         if (!this.debugText) return;
-        const stateNames = ['PATROL', 'INVESTIGATE', 'ENGAGE', 'CRANK', 'SKATE', 'EVADE', 'HUNT', 'FORMATION'];
+        const stateNames = ['PATROL', 'INVESTIGATE', 'ENGAGE', 'CRANK', 'SKATE', 'EVADE', 'HUNT', 'FORMATION', 'REACQ'];
         const lock = this.sttLockAcquiredAt !== null
             ? `L:${Math.floor((this.scene.time.now - this.sttLockAcquiredAt) / 1000)}s`
             : 'L:--';
@@ -330,6 +363,7 @@ export class AiUnitController {
 
         const preferredTrack = this.selectContact(radar?.getHostileTracks() ?? []);
         const sttTrack = radar?.getSttTrack() ?? null;
+        this.rememberOwnContact(preferredTrack, now);
 
         // Weapon doctrine: spend the fire-and-forget VIM-220s first (TWS shots,
         // no lock needed), then fall back to the SARH VIM-177 (needs STT).
@@ -341,7 +375,7 @@ export class AiUnitController {
         // Are we being locked by an enemy fire-control radar? (from our RWR)
         this.sttTracked = radar?.rwrReceiver.getPrimaryRwrContact()?.isLocked ?? false;
         const platform = radar?.rwrReceiver.getPlatformContact();
-        if (platform) this.heardEmitter = { bearingDeg: platform.bearingDeg, heardAt: this.scene.time.now };
+        if (platform) this.hearEmitter(platform.bearingDeg);
 
         this.updateSttLockTracking(sttTrack?.id ?? null);
         this.updateState(preferredTrack, weapon, engagementTrack);
@@ -355,6 +389,7 @@ export class AiUnitController {
             case AIState.HUNT: this.executeHunt(); break;
             case AIState.PATROL: this.executePatrol(); break;
             case AIState.FORMATION: this.executeFormation(); break;
+            case AIState.REACQUIRE: this.executeReacquire(); break;
         }
         // Whatever the state, a wingman too close to its lead breaks away from
         // it (Flight.guidance): EVADE or the border turn must not fly it into
@@ -518,7 +553,7 @@ export class AiUnitController {
         // A wingman with nothing sorted to it stays on its lead - unless it is
         // still working through a shot it took (crank, skate), which runs to
         // completion before it rejoins.
-        if (this.inFormation() && !track && !this.finishingShot(now)) return AIState.FORMATION;
+        if (this.inFormation() && !track && !this.finishingShot(now) && !this.canReacquire()) return AIState.FORMATION;
 
         // Cargo never prosecutes an attack; it just flies its route (evade above
         // still applies).
@@ -528,15 +563,53 @@ export class AiUnitController {
         if (this.state === AIState.SKATE && now < this.skateUntil) return null;
         if (this.state === AIState.CRANK) {
             // Keep cranking while the window is open and the engagement source
-            // (STT lock / TWS track) survives; otherwise bug out.
+            // (STT lock / TWS track) survives. A flight member that lost it with
+            // the window still open turns back in to find it - the shot needs
+            // supporting and the partner is still pressing; otherwise bug out.
             if (now < this.crankUntil && engagementTrack) return null;
+            if (now < this.crankUntil && !track && this.canReacquire()) return AIState.REACQUIRE;
             return AIState.SKATE;
         }
 
         if (readyToEngage) return AIState.ENGAGE;
-        if (track) return AIState.INVESTIGATE;
+        // A hunt is only broken off for a real track: one confirmed by a second
+        // paint (age ≥ INVESTIGATE_STT_MIN_AGE). A single return may be a
+        // thermal false alarm (RADAR_PFA) or a sidelobe flicker, and chasing it
+        // throws away the one solid lead we have — the bearing. The beam keeps
+        // sweeping down that bearing, so a real target ahead is painted again
+        // within a scan or two and matures on its own.
+        const confirmed = track !== undefined && track.age >= INVESTIGATE_STT_MIN_AGE;
+        if (track && (confirmed || !this.canHunt())) return AIState.INVESTIGATE;
+        // A contact of our own, lost a moment ago, is a better lead than a
+        // heard bearing: it had a range.
+        if (!track && this.canReacquire()) return AIState.REACQUIRE;
         if (this.canHunt()) return AIState.HUNT;
         return AIState.PATROL;
+    }
+
+    // Remember where our own radar holds the contact we work. A cue off the
+    // link is not remembered (it was never ours to lose), nor a contact seen
+    // while turning away from it on purpose.
+    private rememberOwnContact(track: Track | undefined, now: number): void {
+        if (!track || this.contactViaLink || this.contactCueOnly) return;
+        if (track.age < INVESTIGATE_STT_MIN_AGE) return;
+        if (this.state === AIState.SKATE || this.state === AIState.EVADE) return;
+        this.lastOwnContact = { pos: { x: track.pos.x, y: track.pos.y }, seenAt: now };
+    }
+
+    // A contact we held and lost recently enough to be worth turning back for.
+    // In a flight only: a lone ship's doctrine after losing the track is the
+    // skate (decision_tree.md), while a pair that loses a contact mid-bracket
+    // has a partner still pressing and a geometry worth keeping.
+    private canReacquire(): boolean {
+        return this.flight !== null && this.flight.leadAlive()
+            && this.ship.shipType !== 'cargo'
+            && this.activity === 'active'
+            // A wing with empty rails has nothing to prosecute: it stays on
+            // the lead (selectContact), and so does not go looking either.
+            && !(this.flightRole === 'wing' && this.missilesLeft() === 0)
+            && this.lastOwnContact !== null
+            && this.scene.time.now - this.lastOwnContact.seenAt < REACQUIRE_MEMORY_MS;
     }
 
     private finishingShot(now: number): boolean {
@@ -544,12 +617,39 @@ export class AiUnitController {
     }
 
     // A remembered emitter bearing is worth flying down — by a warship, not
-    // by cargo, and not by an emplacement that cannot move.
+    // by cargo, and not by an emplacement that cannot move — until we have
+    // flown past the far end of the segment it must lie on.
     private canHunt(): boolean {
         return this.ship.shipType !== 'cargo'
             && this.activity === 'active'
             && this.heardEmitter !== null
-            && this.scene.time.now - this.heardEmitter.heardAt < HUNT_MEMORY_MS;
+            && this.alongHeardLine() < this.heardEmitter.lengthPx;
+    }
+
+    // Record a bearing the RWR just heard as the segment the emitter lies on:
+    // from here, down the bearing, out to the RWR horizon of a standard search
+    // radar or the world edge, whichever is nearer — nothing beyond either
+    // could have been heard. Every new hearing redraws it from where we are now,
+    // so a moving emitter keeps pulling the line after it.
+    private hearEmitter(bearingDeg: number): void {
+        const from = { x: this.ship.x, y: this.ship.y };
+        const rad = Phaser.Math.DegToRad(bearingDeg);
+        const dx = Math.cos(rad);
+        const dy = Math.sin(rad);
+        const { width, height } = this.worldSize();
+        // Distance along the bearing to the world edge (slab method, one exit).
+        const toEdgeX = dx > 0 ? (width - from.x) / dx : dx < 0 ? -from.x / dx : Infinity;
+        const toEdgeY = dy > 0 ? (height - from.y) / dy : dy < 0 ? -from.y / dy : Infinity;
+        const lengthPx = Math.max(0, Math.min(rwrHorizonPx(RADAR_DEFAULT_RANGE_PX), toEdgeX, toEdgeY));
+        this.heardEmitter = { bearingDeg, heardAt: this.scene.time.now, from, lengthPx };
+    }
+
+    // How far down the heard line we have come: our position projected onto it.
+    private alongHeardLine(): number {
+        if (!this.heardEmitter) return 0;
+        const { from, bearingDeg } = this.heardEmitter;
+        const rad = Phaser.Math.DegToRad(bearingDeg);
+        return (this.ship.x - from.x) * Math.cos(rad) + (this.ship.y - from.y) * Math.sin(rad);
     }
 
     // ── Tactician interface ────────────────────────────────────────────────
@@ -566,6 +666,7 @@ export class AiUnitController {
         const legal: TacticalStateName[] = ['PATROL'];
         if (track) legal.push('INVESTIGATE');
         if (this.canHunt()) legal.push('HUNT');
+        if (!track && this.canReacquire()) legal.push('REACQUIRE');
         if (readyToEngage && this.missilesLeft() > 0) legal.push('ENGAGE');
         // Cranking supports a shot already in the air, so it needs one.
         if (engagementTrack && this.scene.time.now < this.crankUntil) legal.push('CRANK');
@@ -655,6 +756,9 @@ export class AiUnitController {
     // Transition with logging + entry side effects.
     private enter(state: AIState): void {
         if (this.state === state) return;
+        // Turning away is a decision to let the contact go: nothing to come
+        // back for afterwards.
+        if (state === AIState.SKATE || state === AIState.EVADE) this.lastOwnContact = null;
         if (state === AIState.SKATE) {
             this.skateUntil = this.scene.time.now + this.skateDurationMs();
         }
@@ -744,7 +848,11 @@ export class AiUnitController {
     // own radar's reach — the RWR heard it far beyond that. The aggressive
     // pilot searches all the way in; the defensive one listens in EMCON
     // first, so the hunted ship's RWR has nothing to hear, then radiates.
-    // A track turns the hunt into INVESTIGATE (scriptedState).
+    // A confirmed track turns the hunt into INVESTIGATE (scriptedState).
+    //
+    // The ship steers onto the line, not parallel to it: a border turn or an
+    // evade may have pushed it off, and flying the bare bearing from there
+    // would search a strip beside the one the emitter is on.
     private executeHunt(): void {
         if (!this.heardEmitter) return;
         const passive = this.personality === 'defensive'
@@ -754,7 +862,26 @@ export class AiUnitController {
         } else if (this.radar?.getMode() !== 'rws') {
             this.radar?.enterRws();
         }
-        this.turnTowardAngle(this.heardEmitter.bearingDeg);
+        const { from, bearingDeg, lengthPx } = this.heardEmitter;
+        const ahead = Math.min(Math.max(this.alongHeardLine(), 0) + HUNT_LOOKAHEAD_PX, lengthPx);
+        const rad = Phaser.Math.DegToRad(bearingDeg);
+        this.turnToward({ x: from.x + Math.cos(rad) * ahead, y: from.y + Math.sin(rad) * ahead });
+    }
+
+    // Turn back in towards where our own radar last held the contact, in wide
+    // search (RWS: the widest cone, and no lock to keep), until it is back on
+    // the scope (INVESTIGATE takes over), the memory runs out, or we arrive
+    // and it is not there.
+    private executeReacquire(): void {
+        const memory = this.lastOwnContact;
+        if (!memory) return;
+        if (this.radar?.getMode() !== 'rws') this.radar?.enterRws();
+        if (this.isNearPosition(memory.pos, REACQUIRE_ARRIVAL_PX)) {
+            this.lastOwnContact = null;
+            return;
+        }
+        this.lastTargetPos = { ...memory.pos };
+        this.turnToward(memory.pos);
     }
 
     private executeInvestigate(track: Track | undefined, weapon: 'VIM-220' | 'VIM-177'): void {
@@ -788,13 +915,24 @@ export class AiUnitController {
 
         // Wait until the track has matured (~2 scans), then set up the radar for
         // the chosen weapon: TWS for the fire-and-forget 220 (no lock needed),
-        // STT lock for the SARH 177.
+        // STT lock for the SARH 177 — but only once the shot is in reach.
+        // A lock is the loudest thing a radar can do: the target's RWR turns
+        // it into a red spike and a reason to defend. Spiking it from outside
+        // missile range only hands it the warning early, so the attack is
+        // planned in TWS (heard as a plain search) and the lock is the last step
+        // before the trigger.
         if (track.age >= INVESTIGATE_STT_MIN_AGE && this.radar) {
             // Holding fire (the cover) keeps the track in TWS, never the lock
             // the 177 needs: STT would collapse the flight's picture.
-            if (weapon === 'VIM-220' || !this.orders.mayShoot) {
-                if (this.radar.getMode() !== 'tws') this.radar.enterTws();
-            } else if (this.radar.getMode() !== 'stt') {
+            // Only the *taking* of the lock waits for reach. Leaving STT throws
+            // the whole picture away, so a lock already held is kept even if
+            // the target opens past reach again — no flicker at the boundary.
+            const mode = this.radar.getMode();
+            const holdInTws = weapon === 'VIM-220' || !this.orders.mayShoot
+                || (mode !== 'stt' && !this.inReach(weapon, track));
+            if (holdInTws) {
+                if (mode !== 'tws') this.radar.enterTws();
+            } else if (mode !== 'stt') {
                 this.radar.enterStt();
             }
         }
@@ -832,12 +970,12 @@ export class AiUnitController {
 
         this.tryJam(track.pos);
 
-        // Keep the target near the cone edge: aim the offset off the target
-        // bearing so it stays illuminated while we build lateral separation.
-        // TWS cranks tighter than STT — its cone is 45° vs the 60° search cone.
-        const offset = this.radar?.getMode() === 'tws' ? CRANK_OFFSET_TWS_DEG : CRANK_OFFSET_DEG;
+        // Hold the target at the cone edge, less the margin: as far off the
+        // nose as the radar can still keep it (TWS cranks tighter, its cone is
+        // 45° against the 60° search cone), so it stays illuminated while we
+        // build lateral separation and slow the closure.
         const bearing = this.bearingTo(track.pos);
-        this.turnTowardAngle(bearing + this.crankSide * offset);
+        this.turnTowardAngle(bearing + this.crankSide * this.scopeEdgeOffsetDeg());
 
         // Follow-up shot while cranking — this is where the 220s get "spammed"
         // (fireVim220 walks outward across un-engaged tracks by itself).
@@ -1019,12 +1157,32 @@ export class AiUnitController {
     // Close on a contact. Alone that is straight at it; in a flight the tactic
     // shapes the approach (Flight.closing): the bracket's split, the cover's
     // station. The geometry is the flight's, the throttle and turn are ours.
+    //
+    // A heading the flight asks for that would put a contact we hold on our
+    // own radar outside our cone is clamped to the cone's edge, less the
+    // margin: the bracket opens as wide as our scope allows and no wider. A
+    // contact we work off the link, or with the transmitter off, has no cone
+    // of ours to keep.
     private closeOn(position: { x: number; y: number }): void {
         const los = this.bearingTo(position);
         if (!this.flight?.leadAlive() || this.contactCueOnly) { this.turnTowardAngle(los); return; }
         const closing = this.flight.closing(this.ship, los, this.scene.time.now);
         this.speedFactor = closing.speedFactor;
-        this.turnTowardAngle(closing.headingDeg);
+        let heading = closing.headingDeg;
+        if (!this.contactViaLink && this.radar?.holdingHalfAzimuthDeg() != null) {
+            const limit = this.scopeEdgeOffsetDeg();
+            heading = los + Phaser.Math.Clamp(Phaser.Math.Angle.WrapDegrees(heading - los), -limit, limit);
+        }
+        this.turnTowardAngle(heading);
+    }
+
+    // How far (deg) the nose may point off a contact we hold for the radar, in
+    // its present mode, to keep it: the cone's half-width less the margin.
+    // With no cone (transmitter silent) there is nothing to keep, and the
+    // search cone's figure stands in.
+    private scopeEdgeOffsetDeg(): number {
+        const half = this.radar?.holdingHalfAzimuthDeg() ?? ANTENNA_AZIMUTH_DEG_BY_MODE.rws / 2;
+        return Math.max(0, half - SCOPE_EDGE_MARGIN_DEG);
     }
 
     // Which way to crank: in a flight, outboard - away from the partner - so a

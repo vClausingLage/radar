@@ -28,8 +28,10 @@ export interface RadarHost {
 // 360° search used by fixed early-warning radars (the dish station); emcon
 // (Emission Control) shuts the transmitter down entirely — no pulses, no
 // outbound illumination, no active radio — while still passively receiving
-// RWR warnings and incoming radio traffic.
-export type Mode = 'rws' | 'tws' | 'stt' | 'dome' | 'emcon';
+// RWR warnings and incoming radio traffic. irst is EMCON with the infrared
+// search-and-track head working instead: the transmitter is just as silent,
+// and the ship looks for heat in a narrow window straight ahead.
+export type Mode = 'rws' | 'tws' | 'stt' | 'dome' | 'emcon' | 'irst';
 
 // A volume of radar-absorbing medium (a gas cloud) as the signal path sees it:
 // a capsule of `radius` px around the spine `line`, whose `density` (0..1) sets

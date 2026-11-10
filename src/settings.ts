@@ -66,6 +66,11 @@ export const playerShipSettings = {
             load: 2,
             active: false
         },
+        // Infrared, short range, on an STT or IRST lock (FireControl.fireVim90).
+        'VIM-90': {
+            load: 2,
+            active: false
+        },
     }
 }
 

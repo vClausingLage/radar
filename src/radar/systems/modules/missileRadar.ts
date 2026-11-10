@@ -407,18 +407,7 @@ export class MissileRadar {
     point: { x: number; y: number },
     terrain: Terrain[],
   ): boolean {
-    if (terrain.length === 0) return false;
-    const line = new Phaser.Geom.Line(pos.x, pos.y, point.x, point.y);
-    const rangeSq = Phaser.Math.Distance.Squared(pos.x, pos.y, point.x, point.y);
-    for (const body of terrain) {
-      if (!body.active || !body.body) continue;
-      if (this.raycaster.contains(body, pos)) continue;
-      const hit = this.raycaster.nearestPartHit(line, body);
-      if (hit && Phaser.Math.Distance.Squared(pos.x, pos.y, hit.point.x, hit.point.y) < rangeSq) {
-        return true;
-      }
-    }
-    return false;
+    return this.raycaster.isOccluded(pos, point, terrain);
   }
 
   // Whether a ship out there can hear this seeker at all. One way, so the

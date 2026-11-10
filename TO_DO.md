@@ -67,6 +67,18 @@ they are paid; paid items are recorded once so they are not re-opened.
   it too. Still open: the cloud returns no volume clutter of its own, so it
   never paints on the scope — see the clutter item)
 - IRST -> exhaust detection -> IR missiles
+- IRST as its own radar mode
+  (done: mode 'irst' (`Radar.enterIrst()`), stepped RWS > TWS > IRST > EMCON
+  with X / R1 (no HUD button: one more Phaser Text shifts the seeded test dice). Transmitter silent as in EMCON; the head
+  runs only in this mode, across IRST_FIELD_OF_REGARD_DEG = 20 deg off the
+  nose, rated range unchanged. E (pad B) locks it, Esc lets go; G and pad R2
+  are gone. Leaving the mode drops contacts and lock.)
+- AI pairs keep the player on their scope while manoeuvring
+  (done, both halves: crank and bracket headings are held SCOPE_EDGE_MARGIN_DEG
+  inside the member's own cone (`Radar.holdingHalfAzimuthDeg`), and a flight
+  member that loses its own contact anyway turns back to the last known
+  position (REACQUIRE). See decision_tree.md "Flights". Still open: no dead
+  reckoning - it flies to where the contact was, not where it will be.)
 - DRAFT: explanatory layer -> "a struggle of formulas"
   (idea only, not scoped yet. The project is neither a game nor a real
   simulation, so an explanatory, visually appealing layer is a valid path:

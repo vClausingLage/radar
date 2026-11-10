@@ -60,6 +60,15 @@ export function illuminationRangePx(ratedRangePx: number): number {
     return ratedRangePx * SIGNAL_HORIZON_FACTOR;
 }
 
+// One-way horizon for a search radar of this rated range: the furthest a
+// warning receiver can hear its sweep from. An RWR measures bearing, never
+// range — but it does know it could not have heard the emitter from beyond
+// this, so a heard bearing is a line segment, not an endless ray. That is what
+// bounds the AI's hunt down a bearing (AiUnitController.executeHunt).
+export function rwrHorizonPx(ratedRangePx: number): number {
+    return ratedRangePx * RWR_HORIZON_FACTOR;
+}
+
 // Two-way horizon for a radar of this rated range: past it even the largest
 // hull the game allows throws back less than the receiver's noise floor, so
 // there is no return left to find anywhere further out. Where the one-way
@@ -380,10 +389,13 @@ export function specularFactor(
 // exp(-optical depth), the optical depth being the path length inside each
 // cloud times its density. Nothing is blocked outright — the signal is made
 // weaker, and it is the energy budget above that decides what that costs.
+// `attenuationPerPx` is the band's: the radar's by default, and an infrared
+// sensor passes its own, far higher one (IR_GAS_ATTENUATION_PER_PX).
 export function gasTransmission(
     from: { x: number; y: number },
     to: { x: number; y: number },
     gasVolumes: GasVolume[],
+    attenuationPerPx: number = gasCloudSettings.ATTENUATION_PER_PX,
 ): number {
     if (gasVolumes.length === 0) return 1;
 
@@ -394,7 +406,7 @@ export function gasTransmission(
     }
     if (opticalDepth === 0) return 1;
 
-    return Math.exp(-opticalDepth * gasCloudSettings.ATTENUATION_PER_PX);
+    return Math.exp(-opticalDepth * attenuationPerPx);
 }
 
 // How much of `line` runs inside a cloud's capsule (px). Walked in fixed steps

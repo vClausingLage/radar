@@ -112,20 +112,12 @@ export class TrackingComputer {
     if (energyGate && this.states.length === 1) {
       centroids = this.fuseGate(centroids, this.predictedPos(this.states[0]));
     }
+    const assignment = this.associate(centroids);
     const matched = new Set<number>();
 
-    for (const centroid of centroids) {
-      let bestIdx = -1;
-      let bestDist = TRACK_GATE_RADIUS_PX;
-
-      for (let i = 0; i < this.states.length; i++) {
-        const gateCenter = this.predictedPos(this.states[i]);
-        const d = Phaser.Math.Distance.BetweenPoints(centroid.point, gateCenter);
-        if (d < bestDist) {
-          bestDist = d;
-          bestIdx = i;
-        }
-      }
+    for (let c = 0; c < centroids.length; c++) {
+      const centroid = centroids[c];
+      const bestIdx = assignment[c];
 
       if (bestIdx >= 0) {
         matched.add(bestIdx);
@@ -163,6 +155,38 @@ export class TrackingComputer {
     }
 
     return this.states.map(s => s.track);
+  }
+
+  // Plot-to-track association, one-to-one: each track takes at most one plot
+  // per update and each plot feeds at most one track (global nearest
+  // neighbour, solved greedily — every gated pair, shortest first). The
+  // plot extractor (cluster(), below) has already decided by the resolution
+  // cell whether a pair of hulls is one plot or two; the tracker must not
+  // undo that. Letting every plot inside a track's gate feed that track —
+  // the old rule — made the 200 px gate a second, far coarser resolution
+  // limit: two ships 80 px apart came out of the receiver as two plots and
+  // went into the scope as one track wandering between them. Now the second
+  // plot, finding its nearest track already taken, starts a track of its
+  // own. Returns, per centroid, the index of its track, or -1 for a new one.
+  private associate(centroids: RadarReturn[]): number[] {
+    const predicted = this.states.map(s => this.predictedPos(s));
+    const pairs: { c: number; t: number; d: number }[] = [];
+    for (let c = 0; c < centroids.length; c++) {
+      for (let t = 0; t < predicted.length; t++) {
+        const d = Phaser.Math.Distance.BetweenPoints(centroids[c].point, predicted[t]);
+        if (d < TRACK_GATE_RADIUS_PX) pairs.push({ c, t, d });
+      }
+    }
+    pairs.sort((a, b) => a.d - b.d);
+
+    const assignment = new Array<number>(centroids.length).fill(-1);
+    const taken = new Set<number>();
+    for (const { c, t } of pairs) {
+      if (assignment[c] >= 0 || taken.has(t)) continue;
+      assignment[c] = t;
+      taken.add(t);
+    }
+    return assignment;
   }
 
   // Chain single-linkage clustering with amplitude-weighted centroid. Two

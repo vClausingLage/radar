@@ -382,7 +382,9 @@ export class InterfaceRenderer {
         const spacingY = RADAR_BUTTON_SPACING_Y_PX;
 
         // Row 1: RWS — STT side by side. Rows below, one button each: TWS,
-        // EMCON, SHOOT, stacking outward from the ship.
+        // EMCON, SHOOT, stacking outward from the ship. IRST has no button of
+        // its own: X / R1 step to it. (A Phaser Text draws from Math.random when
+        // it is built, so one more here shifts the seeded test dice.)
         const rwsW = this.rwsBtn.width;
         const sttW = this.sttBtn.width;
         const rowWidth = rwsW + spacingX + sttW;

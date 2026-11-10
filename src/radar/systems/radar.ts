@@ -11,6 +11,7 @@ import { TerrainMapper } from "./modules/terrainMapper";
 import { CfarDetector } from "./modules/cfarDetector";
 import { FlightDatalink } from "./modules/flightDatalink";
 import { IffInterrogator, Transponder } from "./modules/iffInterrogator";
+import { Irst } from "./modules/irst";
 
 import { FireControl } from "./fireControl";
 
@@ -50,6 +51,7 @@ import {
     RADAR_PULSE_LENGTH_PX,
     RADAR_DEFAULT_RANGE_PX,
     IFF_MATE_PPLI_PX,
+    IRST_FIELD_OF_REGARD_DEG,
     LINK_TRACK_MIN_AGE_SCANS,
     RWR_BEARING_ACCURACY_DEG,
     STT_ACQUISITION_BEAM_DEG,
@@ -110,6 +112,16 @@ export class Radar {
 
     public rwrReceiver = new RwrReceiver();
     public jammer = new Jammer();
+
+    // The infrared search-and-track head, on a ship that carries one (the
+    // ship factory fits it; the dish has none). Passive: it runs in every
+    // mode, EMCON included, and its lock is the VIM-90's other cue.
+    private irst: Irst | null = null;
+    // The hot hulls, gas and terrain the last update saw, for a VIM-90 shot
+    // taken between updates (the player's key press): its seeker looks at
+    // the same world the IRST does.
+    private irWorld: { sources: (PlayerShip | Target)[]; gasVolumes: GasVolume[]; terrain: Terrain[] } =
+        { sources: [], gasVolumes: [], terrain: [] };
 
     // The flight net this radar's host belongs to, if any. Gives the radar the
     // one thing it cannot measure - whose side a contact is on - for the
@@ -193,6 +205,65 @@ export class Radar {
         this.owner = owner;
     }
 
+    // ── IRST ──────────────────────────────────────────────────────────────
+
+    fitIrst(irst: Irst): void {
+        this.irst = irst;
+    }
+    getIrst(): Irst | null {
+        return this.irst;
+    }
+
+    // IRST mode: the transmitter goes silent exactly as in EMCON (the radar's
+    // picture is no longer refreshed, so it goes dark) and the IRST head takes
+    // over the scope, looking for heat in its narrow window off the nose. No-op
+    // on a ship without an IRST.
+    enterIrst(): void {
+        if (!this.irst) return;
+        if (this.mode === 'stt') this.clearSttState();
+        this.mode = 'irst';
+        this.trackingComputer.setTracks([]);
+        this.sweepBuffer = [];
+        this.falseAlarmBuffer = [];
+    }
+
+    // Lock the IRST onto the heat source nearest the nose (the lock key, in
+    // IRST mode). Returns whether it holds a lock afterwards.
+    lockIrst(): boolean {
+        if (this.mode !== 'irst' || !this.irst || !this.owner) return false;
+        return this.irst.isLocked() || this.irst.lock(this.owner.getDirection());
+    }
+
+    // Let go of the IRST lock and go back to searching with the head.
+    unlockIrst(): void {
+        this.irst?.unlock();
+    }
+
+    // Leaving IRST mode switches the head off: its contacts and lock are a
+    // picture of the window it was looking through, and nothing refreshes them
+    // once the scope belongs to the radar again.
+    private leaveIrst(): void {
+        if (this.mode === 'irst') this.irst?.reset();
+    }
+
+    // Is the transmitter radiating? Not in EMCON, and not in IRST mode, which
+    // is EMCON with the heat sensor working.
+    isTransmitting(): boolean {
+        return this.mode !== 'emcon' && this.mode !== 'irst';
+    }
+
+    // Half-width (deg) of the cone a contact has to stay inside, off the nose,
+    // for this radar to keep it: the search azimuth in RWS and TWS, and the
+    // RWS cone in STT, which is where the dish's gimbal runs out and the lock
+    // breaks. Null with no cone to keep - transmitter silent, or the dome's
+    // full circle. A pilot cranking or splitting off a contact asks this so
+    // as not to turn it off the scope.
+    holdingHalfAzimuthDeg(): number | null {
+        if (this.mode === 'stt') return this.antenna.getAzimuth('rws') / 2;
+        if (this.mode === 'rws' || this.mode === 'tws') return this.antenna.getAzimuth(this.mode) / 2;
+        return null;
+    }
+
     // Join a flight's datalink. From here on the host broadcasts its PPLI every
     // frame, and both sensors can tell a wingman from a stranger: tracks that
     // sit on a member's PPLI are tagged friendly (updateFriendTags), and an RWR
@@ -209,6 +280,7 @@ export class Radar {
     }
 
     setMode(mode: Mode): void {
+        if (mode !== 'irst') this.leaveIrst();
         this.mode = mode;
     }
     getMode(): Mode {
@@ -228,6 +300,7 @@ export class Radar {
     // Switching between them preserves existing tracks. Leaving STT re-acquires
     // from scratch since STT discarded all but the locked track.
     enterRws(): void {
+        this.leaveIrst();
         if (this.mode === 'stt') {
             this.clearSttState();
             this.trackingComputer.setTracks([]);
@@ -238,6 +311,7 @@ export class Radar {
     }
 
     enterTws(): void {
+        this.leaveIrst();
         if (this.mode === 'stt') {
             this.clearSttState();
             this.trackingComputer.setTracks([]);
@@ -260,6 +334,7 @@ export class Radar {
     // too, same as leaving STT. RWR reception and datalink traffic are
     // untouched, since both are driven by other emitters, not our own mode.
     enterEmcon(): void {
+        this.leaveIrst();
         if (this.mode === 'stt') {
             this.clearSttState();
         }
@@ -310,6 +385,7 @@ export class Radar {
         this.sttAcquireFrames = STT_ACQUISITION_FRAMES;
         this.antenna.resetTracking();
 
+        this.leaveIrst();
         this.mode = 'stt';
 
         // Discard all other tracks — STT focuses entirely on one target.
@@ -448,7 +524,7 @@ export class Radar {
     // (an interrogation is an emission, so EMCON has none) and holding at
     // least one track to ask about. What the HUD indicator is shown on.
     hasIffTracks(): boolean {
-        return this.iffAvailable && this.mode !== 'emcon' && this.ownerCode() !== null
+        return this.iffAvailable && this.isTransmitting() && this.ownerCode() !== null
             && this.trackingComputer.getTracks().length > 0;
     }
 
@@ -515,7 +591,7 @@ export class Radar {
 
         // An autonomous set asks on its cadence, and at once about any matured
         // track nobody has asked yet.
-        if (this.iffAutonomous && this.mode !== 'emcon') {
+        if (this.iffAutonomous && this.isTransmitting()) {
             const candidates = IffInterrogator.autoCandidates(tracks);
             const unasked = candidates.some(track => iffStateOf(track) === 'not interrogated');
             if (candidates.length > 0 && (unasked || this.iffInterrogator.autoDue(now))) {
@@ -535,14 +611,14 @@ export class Radar {
     // Trigger a jamming burst (player input). No-op while active, cooling down,
     // or with the transmitter shut down (EMCON) — jamming is itself an emission.
     activateJammer(): void {
-        if (this.mode === 'emcon') return;
+        if (!this.isTransmitting()) return;
         this.jammer.activate(this.scene.time.now);
     }
 
     // True when a jamming burst could be started right now: off cooldown and
     // not blocked by EMCON. Lets an AI check before committing to the burst.
     isJammerReady(): boolean {
-        if (this.mode === 'emcon') return false;
+        if (!this.isTransmitting()) return false;
         return this.jammer.isReady(this.scene.time.now);
     }
 
@@ -559,7 +635,7 @@ export class Radar {
     // EMCON overrides the readout to standby regardless of the underlying
     // timer, since the transmitter is off and the jammer cannot be triggered.
     getJammerHudStatus(): JammerHudStatus {
-        if (this.mode === 'emcon') {
+        if (!this.isTransmitting()) {
             return { label: 'JAMMER STDBY', color: JAMMER_HUD_STANDBY_COLOR };
         }
         return this.jammer.getHudStatus(this.scene.time.now);
@@ -613,6 +689,8 @@ export class Radar {
             sttTrack: this.displayedSttTrack(),
             tracks: only ? tracks.filter(t => t.id === only.id) : tracks,
             designatedId: this.designatedTrack()?.id ?? null,
+            irstLockBearing: this.irst?.getLock()?.bearingDeg ?? null,
+            irWorld: this.irWorld,
         };
         const fired = this.fireControl.shoot(this.mode, ctx);
         if (fired) {
@@ -696,11 +774,17 @@ export class Radar {
         // flight rides the track the scope is showing, so a contact that runs
         // out past the ring takes its mid-course updates (and a SARH missile's
         // illumination) with it until it is back inside.
+        // Heat comes off the ships alone: chaff has none, and terrain is cold.
+        this.irWorld = { sources: targetShips, gasVolumes, terrain };
+        // The IRST head only works while it has the scope (IRST mode).
+        if (this.mode === 'irst') this.irst?.update(ownerPos, shipDirection, targetShips, gasVolumes, terrain);
+
         this.fireControl.update(delta, {
             sttTrack: this.displayedSttTrack(),
             tracks: this.displayedTracks(),
             remoteTracks: this.remoteTracksInRing(),
             targets: targetShips,
+            irSources: targetShips,
             decoyCircles,
             gasVolumes,
             terrain,
@@ -709,12 +793,14 @@ export class Radar {
         }, graphics);
 
         // A silent transmitter puts no echoes on the receiver — noise only.
-        if (this.mode === 'emcon') this.receiverVideoRenderer?.update([]);
+        if (!this.isTransmitting()) this.receiverVideoRenderer?.update([]);
 
         if (this.mode === 'stt') {
             this.updateStt(delta, ownerPos, shipDirection, entities, graphics, decoyCircles, terrain, gasVolumes);
         } else if (this.mode === 'emcon') {
-            this.updateEmcon(ownerPos, shipDirection, graphics);
+            this.updateSilent(ownerPos, shipDirection, graphics, this.antenna.getAzimuth('rws'), 'RDR STDBY');
+        } else if (this.mode === 'irst') {
+            this.updateSilent(ownerPos, shipDirection, graphics, IRST_FIELD_OF_REGARD_DEG, 'IRST');
         } else {
             this.updateRws(ownerPos, shipDirection, entities, graphics, decoyCircles, terrain, gasVolumes);
         }
@@ -727,10 +813,13 @@ export class Radar {
         // The receiver only listens where the antenna can point: the search
         // sector (STT stares inside the RWS cone it can gimbal across). With
         // the transmitter off there is no sector — noise only, all round.
-        const listening = this.mode === 'emcon'
+        const listening = !this.isTransmitting()
             ? null
             : { centreDeg: shipDirection, widthDeg: this.antenna.getAzimuth(this.mode === 'stt' ? 'rws' : this.mode) };
         this.receiverVideoRenderer?.render(graphics, ownerPos, listening);
+        if (this.irst && this.mode === 'irst') {
+            this.radarRenderer?.renderIrst(graphics, ownerPos, this.irst.getContacts(), this.irst.getLock(), this.range);
+        }
     }
 
     // ── RWS sweep ─────────────────────────────────────────────────────────
@@ -1133,17 +1222,19 @@ export class Radar {
         return lines;
     }
 
-    // ── EMCON standby ─────────────────────────────────────────────────────
+    // ── EMCON / IRST: transmitter silent ──────────────────────────────────
 
     // Transmitter off: no sweep, no pulse, no illumination. Still draws the
-    // static cone frame (heading reference) so the HUD isn't blank, with the
-    // range and jammer readouts swapped for standby indicators.
-    private updateEmcon(
+    // static cone frame so the HUD isn't blank - the search cone for EMCON as a
+    // heading reference, the IRST's own window in IRST mode - with the range
+    // and jammer readouts swapped for standby indicators.
+    private updateSilent(
         ownerPos: { x: number; y: number },
         shipDirection: number,
         graphics: Phaser.GameObjects.Graphics,
+        scanWidth: number,
+        standbyLabel: string,
     ): void {
-        const scanWidth = this.antenna.getAzimuth('rws');
         const scanStartAngle = shipDirection - scanWidth / 2;
         const scanEndAngle = shipDirection + scanWidth / 2;
 
@@ -1156,7 +1247,7 @@ export class Radar {
             missileRange: this.fireControl.getActiveMissileRange(),
             jammerStatus: this.getJammerHudStatus(),
             vim220WaypointAlpha: this.fireControl.getWaypointAlpha(),
-            emconStandby: true,
+            standbyLabel,
         });
 
         // A jamming burst triggered just before EMCON was engaged still runs

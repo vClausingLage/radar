@@ -9,6 +9,9 @@ import {
   IFF_FRIENDLY_COLOR,
   IFF_MARK_RING_RADIUS_PX,
   IFF_UNKNOWN_COLOR,
+  IRST_COLOR,
+  IRST_LINE_INNER_FRACTION,
+  IRST_LOCK_TICK_PX,
   JAMMER_CONE_DEG,
   MISSILE_RANGE_CAP_LENGTH_PX,
   RADAR_CONTACT_MARKER_SIZE_PX,
@@ -18,6 +21,7 @@ import {
   VIM220_WAYPOINT_MARKER_SIDES,
 } from "../data/radarGameSettings";
 import { JammerHudStatus } from "../systems/modules/jammer";
+import type { IrstContact, IrstLock } from "../systems/modules/irst";
 
 // One frame of the scope's static picture: the cone, its readouts and the
 // weapons overlay the radar asks to be drawn around its returns. Optional
@@ -39,7 +43,9 @@ export type RadarRendererFrame = {
   missileRange?: number | null;
   jammerStatus?: JammerHudStatus | null;
   vim220WaypointAlpha?: number;
-  emconStandby?: boolean;
+  // Transmitter silent (EMCON, IRST): the range readout is replaced by this
+  // label - 'RDR STDBY', or 'IRST' while the heat sensor has the scope.
+  standbyLabel?: string | null;
   iffHint?: boolean;
 };
 
@@ -90,7 +96,7 @@ export class RadarRenderer {
       vim220TimeToActive = null,
       jammerStatus = null,
       vim220WaypointAlpha = 1,
-      emconStandby = false,
+      standbyLabel = null,
       iffHint = false,
     } = frame;
     const endX = radarPosition.x + radarRange * Math.cos(Phaser.Math.DegToRad(endAngle));
@@ -105,9 +111,9 @@ export class RadarRenderer {
     if (this.rangeText) {
         // Transmitter off: the range readout doesn't mean anything, so it's
         // replaced by a standby indicator rather than a stale/zero range.
-        if (emconStandby) {
+        if (standbyLabel) {
             this.iffHintShown = false;
-            this.rangeText.setText('\n RDR STDBY');
+            this.rangeText.setText(`\n ${standbyLabel}`);
             this.rangeText.setColor('#ffff00');
         } else {
             // IFF indicator: only while there is a track to ask about.
@@ -222,6 +228,37 @@ export class RadarRenderer {
     graphics.arc(position.x, position.y, range, startRad, endRad, false);
     graphics.closePath();
     graphics.fillPath();
+  }
+
+  // The IRST picture: every search contact as a faint bearing line across the
+  // scope, the lock as a solid one ending in a tick outside the ring. Lines,
+  // not marks - a passive sensor knows the direction of the heat, not how far
+  // away it is, so the only honest thing to draw is the whole line it lies on.
+  renderIrst(
+    graphics: Phaser.GameObjects.Graphics,
+    position: Vector2,
+    contacts: IrstContact[],
+    lock: IrstLock | null,
+    range: number,
+  ): void {
+    const inner = range * IRST_LINE_INNER_FRACTION;
+    const line = (bearingDeg: number, from: number, to: number) => {
+      const rad = Phaser.Math.DegToRad(bearingDeg);
+      graphics.lineBetween(
+        position.x + Math.cos(rad) * from, position.y + Math.sin(rad) * from,
+        position.x + Math.cos(rad) * to, position.y + Math.sin(rad) * to,
+      );
+    };
+    for (const c of contacts) {
+      graphics.lineStyle(1, IRST_COLOR, c.missedScans === 0 ? 0.35 : 0.15);
+      line(c.bearingDeg, inner, range);
+    }
+    if (lock) {
+      graphics.lineStyle(2, IRST_COLOR, 0.9);
+      line(lock.bearingDeg, inner, range + IRST_LOCK_TICK_PX);
+      line(lock.bearingDeg - 2, range, range + IRST_LOCK_TICK_PX);
+      line(lock.bearingDeg + 2, range, range + IRST_LOCK_TICK_PX);
+    }
   }
 
   // Onboard-seeker cone for a VIM-220 whose active radar has gone live. Drawn

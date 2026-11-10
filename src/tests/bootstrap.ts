@@ -6,6 +6,7 @@ import { tacticianTests } from './tacticianTests';
 import { flightTests } from './flightTests';
 import { iffTests } from './iffTests';
 import { gamepadTests } from './gamepadTests';
+import { irTests } from './irTests';
 
 // DEV-only wiring for the in-game tests: registers the test scene and hangs the
 // runner off the window, so a run can be started from the start menu, from the
@@ -49,7 +50,7 @@ export function installTestHooks(game: Phaser.Game): void {
     // `nameFilter` is a regex on test names, to run a few tests while working
     // on them rather than the whole suite.
     testWindow.runRadarTests = async (seed?: number, nameFilter?: string) => {
-        const all = [...radarTests, ...tacticianTests, ...flightTests, ...iffTests, ...gamepadTests];
+        const all = [...radarTests, ...tacticianTests, ...flightTests, ...iffTests, ...gamepadTests, ...irTests];
         const tests = nameFilter ? all.filter(t => new RegExp(nameFilter, 'i').test(t.name)) : all;
         const report = await runGameTests(game, tests, seed);
         testWindow.radarTestReport = report;

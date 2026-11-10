@@ -9,6 +9,7 @@ import { decoySettings } from "../radar/data/radarGameSettings";
 import { Exhaust, EXHAUST_NOZZLES, SHIP_EXHAUST } from "./exhaust";
 import { fitBodyToOutline } from "../physics/bodyShape";
 import { SHIP_OUTLINES } from "./spriteOutlines";
+import { irSignature } from "../radar/data/infraredPath";
 
 export abstract class Ship extends Phaser.Physics.Matter.Sprite {
     public readonly id: number;
@@ -84,6 +85,20 @@ export abstract class Ship extends Phaser.Physics.Matter.Sprite {
 
     shutDownEngines(): void {
         for (let i = 0; i < this.getEngineCount(); i++) this.setEngineRunning(i, false);
+    }
+
+    // ── Infrared signature ─────────────────────────────────────────────────
+    // How hot this hull looks from `from` (data/infraredPath.ts): a warm skin
+    // from every side, plus the engines - by throttle, by how many are lit,
+    // and by aspect, since the nozzles face aft. Full speed tail-on is the
+    // brightest this ship gets; stopped (or cold on the pad) it is nearly
+    // dark. The speed the ship was built with is its full throttle; a hull
+    // built at rest that is under way counts as running flat out.
+    irIntensityToward(from: { x: number; y: number }): number {
+        const current = Math.abs(this.currentSpeed);
+        const throttle = this.speed > 0 ? current / this.speed : (current > 0 ? 1 : 0);
+        const engines = this.exhaust.nozzleCount > 0 ? this.exhaust.runningCount / this.exhaust.nozzleCount : 0;
+        return irSignature({ x: this.x, y: this.y }, this.angle, throttle * engines, from);
     }
 
     getCircle(): Phaser.Geom.Circle {
