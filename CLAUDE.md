@@ -242,9 +242,8 @@ display-and-weapons concern.
   the radar modules.
 - Comments explain the radar/physics reasoning ("chaff between the antenna and
   the target can swallow the return"), not the syntax. Match that density.
-- Known simulation/architecture debt is tracked in the debt ledger in
-  `TO_DO.md`. Any `HACK:`/`TODO:` markers in the source point there — don't
-  silently rewrite them as drive-bys.
+- Open work is tracked in `TO_DO.md`. Don't silently rewrite any
+  `HACK:`/`TODO:` markers in the source as drive-bys.
 
 ## Verification
 

@@ -5,6 +5,7 @@ import type { IrSource } from '../../data/infraredPath';
 import { Track } from '../../data/track';
 import type { GuidanceTarget } from './missileRadar';
 import type { FlightDatalink } from './flightDatalink';
+import { profileStart, profileStop } from '../../../performance/profiler';
 import {
   MISSILE_AGE_TICK_MS,
   MISSILE_BOOST_PHASE_MAX_AGE,
@@ -68,11 +69,13 @@ export class MissileGuidance {
   private ageTimer = 0;
 
   update(missiles: Missile[], delta: number, ctx: GuidanceContext): Missile[] {
+    profileStart('missileGuidance_update');
     // Age missiles once per real second regardless of frame rate.
     this.ageTimer += delta;
     let live = missiles.filter(m => m.active);
 
     if (this.ageTimer >= MISSILE_AGE_TICK_MS) {
+      profileStart('missileGuidance_age');
       live = live.filter(m => {
         m.missileAge++;
       if (m.missileAge > m.missileBurnTime) {
@@ -82,13 +85,16 @@ export class MissileGuidance {
         return true;
       });
       this.ageTimer = 0;
+      profileStop('missileGuidance_age');
     }
 
     for (const missile of live) {
       // The IR seeker has to keep its head on the source through the boost,
       // so the VIM-90 runs its own loop from the rail on.
       if (missile instanceof InfraredMissile) {
+        profileStart('missileGuidance_infrared');
         this.guideInfrared(missile, delta, ctx);
+        profileStop('missileGuidance_infrared');
         continue;
       }
 
@@ -102,9 +108,11 @@ export class MissileGuidance {
       }
 
       // Phase 2 — steer toward intercept.
+      profileStart('missileGuidance_missileType');
       const dir = missile instanceof ActiveRadarMissile
         ? this.guideActiveRadar(missile, delta, ctx)
         : this.guideSarh(missile as SARHMissile, ctx);
+      profileStop('missileGuidance_missileType');
 
       // No guidance source → missile flies ballistic (holds last heading).
       if (!dir) continue;
@@ -116,6 +124,7 @@ export class MissileGuidance {
       missile.updateHeading(nx / mag, ny / mag);
     }
 
+    profileStop('missileGuidance_update');
     return live;
   }
 

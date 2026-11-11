@@ -3,6 +3,7 @@ import { RadarReturn } from '../../data/radarReturn';
 import { Track } from '../../data/track';
 import { Vector2 } from '../../../types';
 import { sameResolutionCell } from '../../data/signalPath';
+import { profileStart, profileStop } from '../../../performance/profiler';
 import {
   MTI_ACTIVATION_DENSITY,
   MTI_RANGE_GLINT_PX,
@@ -107,8 +108,11 @@ export class TrackingComputer {
       energyGate = false,
     }: TrackingOptions = {},
   ): Track[] {
+    profileStart('TrackingComputer_update');
     this.scan++;
+    profileStart('TrackingComputer_cluster');
     let centroids = this.cluster(returns);
+    profileStop('TrackingComputer_cluster');
     if (energyGate && this.states.length === 1) {
       centroids = this.fuseGate(centroids, this.predictedPos(this.states[0]));
     }
@@ -154,6 +158,7 @@ export class TrackingComputer {
       this.states = this.states.slice(0, maxTracks);
     }
 
+    profileStop('TrackingComputer_update');
     return this.states.map(s => s.track);
   }
 
@@ -169,6 +174,7 @@ export class TrackingComputer {
   // plot, finding its nearest track already taken, starts a track of its
   // own. Returns, per centroid, the index of its track, or -1 for a new one.
   private associate(centroids: RadarReturn[]): number[] {
+    profileStart('TrackingComputer_associate');
     const predicted = this.states.map(s => this.predictedPos(s));
     const pairs: { c: number; t: number; d: number }[] = [];
     for (let c = 0; c < centroids.length; c++) {
@@ -186,6 +192,7 @@ export class TrackingComputer {
       assignment[c] = t;
       taken.add(t);
     }
+    profileStop('TrackingComputer_associate');
     return assignment;
   }
 
@@ -200,6 +207,7 @@ export class TrackingComputer {
   private cluster(returns: RadarReturn[]): RadarReturn[] {
     if (returns.length === 0) return [];
 
+    profileStart('TrackingComputer_cluster_finding');
     const used = new Array(returns.length).fill(false);
     const centroids: RadarReturn[] = [];
 
@@ -223,6 +231,7 @@ export class TrackingComputer {
 
       centroids.push(this.weightedCentroid(group));
     }
+    profileStop('TrackingComputer_cluster_finding');
 
     return centroids;
   }

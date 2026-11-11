@@ -7,6 +7,7 @@ import { createGasCloudFactory } from "../entities/gasCloudFactory";
 import { createFlightFactory } from "../entities/flightFactory";
 import { Terrain } from "../radar/data/types";
 import { WorldSize } from "../types";
+import { profiler } from "../performance/profiler";
 import { GasCloud } from "../entities/gasCloud";
 import { Starfield } from "../entities/starfield";
 import { PlayerShip, Target } from "../entities/ship";
@@ -609,6 +610,9 @@ export default class Game extends Phaser.Scene
     if (player.radar) {
       this.player?.radar.getInterfaceRenderer()?.update();
     }
+
+    // Profiler frame marker
+    profiler.frame();
   }
 
   // The boundary is a wall: a ship that presses on against it stays there

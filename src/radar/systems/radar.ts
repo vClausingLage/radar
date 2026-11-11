@@ -12,6 +12,7 @@ import { CfarDetector } from "./modules/cfarDetector";
 import { FlightDatalink } from "./modules/flightDatalink";
 import { IffInterrogator, Transponder } from "./modules/iffInterrogator";
 import { Irst } from "./modules/irst";
+import { profileStart, profileStop } from "../../performance/profiler";
 
 import { FireControl } from "./fireControl";
 
@@ -740,6 +741,7 @@ export class Radar {
         terrain: Terrain[] = [],
         gasVolumes: GasVolume[] = [],
     ): void {
+        profileStart('Radar_update');
         if (!this.owner) return;
 
         const ownerPos = this.owner.getPosition();
@@ -820,6 +822,7 @@ export class Radar {
         if (this.irst && this.mode === 'irst') {
             this.radarRenderer?.renderIrst(graphics, ownerPos, this.irst.getContacts(), this.irst.getLock(), this.range);
         }
+        profileStop('Radar_update');
     }
 
     // ── RWS sweep ─────────────────────────────────────────────────────────
@@ -833,6 +836,7 @@ export class Radar {
         terrain: Terrain[],
         gasVolumes: GasVolume[],
     ): void {
+        profileStart('Radar_updateRws');
         const scanWidth = this.antenna.getAzimuth(this.mode);
         const scanStartAngle = shipDirection - scanWidth / 2;
         const scanEndAngle = shipDirection + scanWidth / 2;
@@ -1001,6 +1005,7 @@ export class Radar {
         for (const track of this.displayedTracks()) {
             this.radarRenderer?.renderRwsContacts(graphics, track, track.id === designated);
         }
+        profileStop('Radar_updateRws');
     }
 
     // ── STT concentrated illumination ─────────────────────────────────────
@@ -1026,6 +1031,7 @@ export class Radar {
         terrain: Terrain[],
         gasVolumes: GasVolume[],
     ): void {
+        profileStart('Radar_updateStt');
         const rwsHalfAz = this.antenna.getAzimuth('rws') / 2;
         const targets = entities.filter(e => e.id !== this.owner?.id);
 
@@ -1192,6 +1198,7 @@ export class Radar {
         if (stt && this.withinDisplayRange(ownerPos, stt.pos)) {
             this.radarRenderer?.renderStt(stt, graphics);
         }
+        profileStop('Radar_updateStt');
     }
 
     // Rays sampling a beam of `widthDeg` centred on `direction`, at fixed

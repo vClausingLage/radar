@@ -1,3 +1,7 @@
+// PERFORMANCE PROFILING
+// Enable profiling by setting DEBUG_PERFORMANCE in src/performance/profiler.ts
+// When enabled, logs system timing metrics every 60 frames
+
 // GAME
 export const CAMERA_ZOOM = .8
 

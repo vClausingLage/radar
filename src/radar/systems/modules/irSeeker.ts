@@ -3,6 +3,7 @@ import type { Vector2 } from '../../../types';
 import type { GasVolume, Terrain } from '../../data/types';
 import { Ray } from '../../../physics/ray';
 import { irSignal, irTransmission, type IrSource } from '../../data/infraredPath';
+import { profileStart, profileStop } from '../../../performance/profiler';
 import {
   IR_SEEKER_FOV_DEG,
   IR_SEEKER_GIMBAL_DEG,
@@ -44,9 +45,11 @@ export class IrSeeker {
   // inside the field of view clears the seeker's threshold; if so the head
   // is left pointing at it.
   acquire(pos: Vector2, cueDeg: number, sources: IrSource[], gasVolumes: GasVolume[], terrain: Terrain[]): boolean {
+    profileStart('irSeeker_acquire');
     const seen = this.strongestInWindow(pos, cueDeg, sources, gasVolumes, terrain);
     this.lookDeg = seen;
     this.lostFrames = 0;
+    profileStop('irSeeker_acquire');
     return seen !== null;
   }
 
@@ -62,9 +65,11 @@ export class IrSeeker {
   ): number | null {
     if (this.lookDeg === null) return null;
 
+    profileStart('irSeeker_update');
     const seen = this.strongestInWindow(pos, this.lookDeg, sources, gasVolumes, terrain);
     if (seen === null) {
       if (++this.lostFrames > IR_SEEKER_LOST_FRAMES) this.lookDeg = null;
+      profileStop('irSeeker_update');
       return null;
     }
     // The source is in the window: its bearing is measured, and the head slews
@@ -76,9 +81,11 @@ export class IrSeeker {
     // or been out-turned — is lost: the head is against its stops.
     if (Math.abs(Phaser.Math.Angle.WrapDegrees(this.lookDeg - missileHeadingDeg)) > IR_SEEKER_GIMBAL_DEG) {
       this.lookDeg = null;
+      profileStop('irSeeker_update');
       return null;
     }
     this.lostFrames = 0;
+    profileStop('irSeeker_update');
     return seen;
   }
 

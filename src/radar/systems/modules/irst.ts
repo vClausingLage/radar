@@ -3,6 +3,7 @@ import type { Vector2 } from '../../../types';
 import type { GasVolume, Terrain } from '../../data/types';
 import { Ray } from '../../../physics/ray';
 import { irSignal, irTransmission, type IrSource } from '../../data/infraredPath';
+import { profileStart, profileStop } from '../../../performance/profiler';
 import {
   IRST_BEARING_GATE_DEG,
   IRST_FIELD_OF_REGARD_DEG,
@@ -114,15 +115,26 @@ export class Irst {
     gasVolumes: GasVolume[],
     terrain: Terrain[],
   ): void {
-    if (this.lockState) this.track(ownerPos, headingDeg, sources, gasVolumes, terrain);
+    if (this.lockState) {
+      profileStart('IRST_track');
+      this.track(ownerPos, headingDeg, sources, gasVolumes, terrain);
+      profileStop('IRST_track');
+    }
 
     if (--this.ticksToScan > 0) return;
     this.ticksToScan = IRST_SCAN_FRAMES;
-    const detections = this.resolve(
-      this.detect(ownerPos, headingDeg, IRST_FIELD_OF_REGARD_DEG / 2, sources, gasVolumes, terrain),
-      headingDeg,
-    );
-    this.associate(detections);
+    
+    profileStart('IRST_detect');
+    const detections = this.detect(ownerPos, headingDeg, IRST_FIELD_OF_REGARD_DEG / 2, sources, gasVolumes, terrain);
+    profileStop('IRST_detect');
+    
+    profileStart('IRST_resolve');
+    const resolved = this.resolve(detections, headingDeg);
+    profileStop('IRST_resolve');
+    
+    profileStart('IRST_associate');
+    this.associate(resolved);
+    profileStop('IRST_associate');
   }
 
   // Everything hot enough to clear the threshold inside a window of half-width

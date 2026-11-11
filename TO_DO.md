@@ -10,75 +10,13 @@ flanking beaming etc RIGHT? -> test!
   don't know it, so no AI beams deliberately, and nothing on the HUD tells the
   player which aspect they are presenting)
 
-# Debt ledger
-
-Known simulation/architecture debt, in one place. Items leave the list when
-they are paid; paid items are recorded once so they are not re-opened.
-
-- STT reading the target entity directly — PAID. The lock is keyed by track
-  id only and closes entirely through the beam (predicted position → antenna
-  servo → ray fan → receiver), so a lock is defeated by out-turning the
-  antenna, terrain, chaff or jamming — never by reading the hull. What reads
-  another ship's true state by design is inter-set signalling: RWR
-  illumination and the jamming contest (my emission, your receiver), never
-  track formation.
-- VIM-220 wakeup near the target — PAID, differently than first sketched: the
-  seeker arms by closing range (`ACTIVE_RADAR_ACTIVATION_RANGE` in
-  `entities/entitySettings.ts`) or at WP1 on a maddog route, so the wake-up
-  point is the missile's own energy budget rather than a radar-planted one.
-- Loadout manager — PAID (`systems/modules/loadoutManager.ts`), made
-  per-ship via `Radar.setLoadout` (player vs target loadouts in `settings.ts`).
-- Missile tuning spans three homes, by subsystem: what the airframe does
-  (`entities/entitySettings.ts`, re-shaped as `MISSILE_FLIGHT` in
-  `entities/missiles.ts` — the single read point for speed/burn/turn), what
-  its radar does (`radarGameSettings.ts`, missile radar section), what it
-  carries (`settings.ts` loadouts). Retune within a home; don't add a fourth.
-- Chain single-linkage clustering and the amplitude-weighted centroid exist
-  twice — `Receiver` (hits → integration groups) and `TrackingComputer.cluster()`
-  (returns → measurements). Same resolution-cell rule on both sides, so a
-  retune of one silently diverges from the other. Open.
-
-
 # To Dos
 
-- ADD Clutter -> https://de.wikipedia.org/wiki/Clutter_%28Radar%29
-  (done: `systems/modules/cfarDetector.ts`. Ground clutter off terrain and
-  volume clutter off gas raise the noise floor in the world-space cells they
-  occupy instead of blocking anything, and `Receiver.processHits` folds that
-  into the signal budget as a real cell-averaging CFAR test — a contact
-  against a rock is genuinely harder to pull out than one against empty
-  space, verified directly: 2.5x the signal needed at a rock's centre, 1.875x
-  at its edge, no effect somewhere clean. Scoped to RWS/TWS, not STT.
-  The MTI follow-on is done too, as the scan-to-scan stand-in (see the
-  realism roadmap §9): the tracking computer's fitted radial rate rejects
-  near-zero-radial-rate echoes inside significant clutter — a parked hull in
-  clutter never holds a stable track while the same hull under way lifts out.
-  A Doppler notch is in now as well: every echo carries the reflector's
-  radial speed off its Matter velocity, and where the clutter map holds
-  clutter the search modes and the VIM-220 seeker attenuate near-zero-Doppler
-  echoes (`CfarDetector.notchGain`, `signalPath.dopplerNotchGain`) — a beaming
-  hull among rocks, gas or chaff sinks with them. Still no carrier phase: the
-  Doppler is read off the body, not measured from a pulse train.)
+- Clutter: no carrier phase yet - Doppler is read off the Matter body, not
+  measured from a pulse train. (CFAR, MTI and the Doppler notch are done.)
 - move visibility material etc and other atributes to group instead of the objects themselves
-- gas clouds that reduce radar effectiveness   (done: `entities/gasCloud.ts`.
-  Absorption is now a cost in the energy budget rather than a coin flip
-  (`gasTransmission` in `data/signalPath.ts`), so gas shortens detection range
-  instead of hiding a contact outright, and the missile seeker and the RWR pay
-  it too. Still open: the cloud returns no volume clutter of its own, so it
-  never paints on the scope — see the clutter item)
-- IRST -> exhaust detection -> IR missiles
-- IRST as its own radar mode
-  (done: mode 'irst' (`Radar.enterIrst()`), stepped RWS > TWS > IRST > EMCON
-  with X / R1 (no HUD button: one more Phaser Text shifts the seeded test dice). Transmitter silent as in EMCON; the head
-  runs only in this mode, across IRST_FIELD_OF_REGARD_DEG = 20 deg off the
-  nose, rated range unchanged. E (pad B) locks it, Esc lets go; G and pad R2
-  are gone. Leaving the mode drops contacts and lock.)
-- AI pairs keep the player on their scope while manoeuvring
-  (done, both halves: crank and bracket headings are held SCOPE_EDGE_MARGIN_DEG
-  inside the member's own cone (`Radar.holdingHalfAzimuthDeg`), and a flight
-  member that loses its own contact anyway turns back to the last known
-  position (REACQUIRE). See decision_tree.md "Flights". Still open: no dead
-  reckoning - it flies to where the contact was, not where it will be.)
+- gas clouds: the cloud returns no volume clutter of its own, so it never paints
+  on the scope (the absorption half is done, `entities/gasCloud.ts`)
 - DRAFT: explanatory layer -> "a struggle of formulas"
   (idea only, not scoped yet. The project is neither a game nor a real
   simulation, so an explanatory, visually appealing layer is a valid path:
@@ -90,6 +28,43 @@ they are paid; paid items are recorded once so they are not re-opened.
   - jamming -> jammer vs. radar signal, and burn-through as the two energy
     budgets crossing
   Challenging, but worth it.)
+
+# Performance Profiling
+
+A performance profiling infrastructure has been added to measure system overhead
+for IRST and missile guidance systems. The profiler is configured by the
+`DEBUG_PERFORMANCE` flag in `src/performance/profiler.ts` and logs metrics to
+the console every 60 frames when enabled.
+
+## Usage
+
+```typescript
+import { profiler, profileStart, profileStop } from '../performance/profiler';
+
+// Wrap code sections to profile
+profileStart('system_name');
+// ... code to profile ...
+profileStop('system_name');
+
+// Or use the measure helper
+const result = measure('expensive_operation', () => myFunction());
+```
+
+## Instrumented Systems
+
+- `IRST_update`: Full IRST update cycle (detect, resolve, associate, track)
+- `IRST_track`: Tracking mode update
+- `IRST_detect`: Detection in field of regard
+- `IRST_resolve`: Bearing resolution and merging
+- `IRST_associate`: Scan-to-scan association
+- `missileGuidance_update`: Missile guidance update loop
+- `missileGuidance_age`: Missile aging logic
+- `missileGuidance_infrared`: VIM-90 seeker guidance
+- `missileGuidance_missileType`: ARH/SARH guidance
+- `irSeeker_acquire`: Initial seeker acquisition
+- `irSeeker_update`: Seeker update during flight
+
+For more information, see `src/performance/profiler.ts`.
 
 # RADAR
 
@@ -105,33 +80,6 @@ contact beyond it, but fire control is handed only the picture the scope draws
 (`Radar.displayedTracks`), so an undisplayed track cannot be locked, shot at, or
 guided onto — for the AI as much as for the player.
 
-- noise                (done, as the thing everything is measured against: a
-                        signal ratio of 1 is the receiver's noise floor, and
-                        `detectionProbability` fades in above it. A real noise
-                        *floor that moves* — clutter — is the item above)
-- distance -> exponential falloff   (done: `returnSignal` falls with the fourth
-                        power of range, `emissionSignal` with the square)
-- target size          (done: measured off the hull polygon, in px of presented
-                        width, against `RADAR_REFERENCE_CROSS_SECTION_PX`)
-- cross section -> side / front     (done: the same measurement is taken across
-                        the line of sight, so aspect falls straight out of it)
-- seeker on the shared signal path   (done, see the realism roadmap's §8:
-                        `MissileRadar` now detects on the same energy budget as
-                        the ship radar — aspect, specular glint, gas, and
-                        terrain shadowing all reach the seeker; its detection
-                        is a hard SNR gate at the noise floor rather than a
-                        probabilistic roll, because it re-tests every frame)
-- integration gain + dwell grouping  (done, see the realism roadmap's §13:
-                        non-coherent integration now buys ~√N not N, dwell
-                        grouping uses the same anisotropic resolution cell as
-                        contact resolution, and scintillation is one draw per
-                        scan shared by every cell the dwell lit)
-- beam shape / monopulse             (done, see the realism roadmap's §12:
-                        a Gaussian main lobe floored at the sidelobe level
-                        prices every hit by its off-axis angle, the receiver's
-                        amplitude rides the return, and the tracking
-                        computer's centroid is amplitude-weighted — the poor
-                        man's monopulse replacing the discrete α-trim)
 
 # Testing
 
@@ -149,24 +97,4 @@ current sixty-odd tests, the first scene start alone costing a few hundred while
 assets load), and read the returned report rather than the on-screen one.
 
 - radar effectiveness tests
-  - target size / cross section  (done: aspect decides how far a hull is seen)
-  - target distance              (done: covered by the two RWR range tests, which
-                                  bracket the return and the emission separately)
-  - jamming                      (done: jamming ship shows as a displaced false track)
-  - gas / medium                 (done: gas costs the radar range, not sight)
-  - weapons stop at the ring     (done: fire control will not shoot at what the
-                                  scope does not show)
-  - countermeasures (chaff)   (done: chaff is volume clutter, not a coin flip
-                            — the cloud echoes per range cell, brighter with
-                            range (R·θ), and lets the beam through to the hull;
-                            an STT range/energy gate follows the louder echo,
-                            so chaff walks a distant lock off and a close lock
-                            burns through; see the realism roadmap §10)
-  - clutter, once it exists
-- RWR
-  - warned outside the emitting radar's own range   (done: illumination is now
-    traced past the rated range and judged on one-way energy, so a ship at 1.15x
-    is warned while returning nothing)
-  - silent far outside the sweep                    (done)
-  - missile seeker warning                          (done, and it now arrives as
-    a search contact first and goes to a lock as the seeker closes)
+  - clutter (the item above is built now, so this test is open)
