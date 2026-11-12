@@ -196,6 +196,24 @@ come from the link only while the track is inside that ring and the lead still
 holds it. When touching detection, put the physics in `signalPath.ts` and keep the ring a
 display-and-weapons concern.
 
+## Larger requests: split up and delegate
+
+When a prompt has several independent parts (e.g. several systems, scenes or HUD elements):
+
+1. **Split**: read the code first, then break the request into small, clearly bounded subtasks and list them briefly
+2. **Build the shared parts yourself first**: shared types, interfaces, config/constants – so parallel agents don't
+   touch the same files or invent their own contracts
+3. **Delegate**: hand each well-bounded subtask to a subagent with `model: 'sonnet'` (Sonnet 5.5), independent ones
+   in parallel. The brief is self-contained: goal, files, reference code, the relevant sections of this file (load
+   the `radar-game-typescript` skill), what **not** to touch, how to verify (see "Verification"), no commit.
+   Agents writing in parallel only on separate files, otherwise `isolation: 'worktree'`
+4. **Merge and verify**: review the results yourself (signal-path rule, conventions, duplication), then run the
+   checks from "Verification"; the report says what the agents did
+
+Keep for yourself: planning, architecture and radar-modelling decisions, the radar reasoning the owner wants
+explained, questions to the owner, tightly coupled changes. Do small tasks directly – delegating only pays off when
+briefing the agent is cheaper than doing the work.
+
 ## Conventions
 
 - OOP, class-per-subsystem, constructor takes a params object. Ship-like
